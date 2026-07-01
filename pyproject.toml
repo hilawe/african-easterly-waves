@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aew"
+version = "0.0.1"
+description = "Reproducible pipeline for African Easterly Wave / convective-system analysis (Python port of the PhD NCL code)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.24",
+  "scipy>=1.10",
+  "xarray>=2023.1",
+  "pandas>=2.0",
+  "netCDF4>=1.6",
+  "cftime>=1.6",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.7", "cartopy>=0.22"]
+data = ["cdsapi>=0.6"]
+dev = ["pytest>=7", "pytest-cov>=4"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+  "ignore:numpy.ndarray size changed:RuntimeWarning",
+  "ignore:Setting the shape on a NumPy array:DeprecationWarning",
+]
