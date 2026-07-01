@@ -22,7 +22,9 @@ import xarray as xr
 # default analysis domain (N, W, S, E) covering the AEW maps and the 5-15N composite band
 DEFAULT_AREA = [35.0, -45.0, -25.0, 75.0]
 SYNOPTIC_HOURS = ["00:00", "06:00", "12:00", "18:00"]
-# CDS variable names
+# CDS variable names: (cds_variable, pressure_level or None). A None level means the
+# variable lives on the single-levels dataset (e.g. total column water vapour) rather than
+# the pressure-levels dataset, and the request must not carry a pressure_level key.
 VAR_CDS = {
     "v700": ("v_component_of_wind", "700"),
     "u700": ("u_component_of_wind", "700"),
@@ -30,7 +32,42 @@ VAR_CDS = {
     "u600": ("u_component_of_wind", "600"),
     "v850": ("v_component_of_wind", "850"),
     "u850": ("u_component_of_wind", "850"),
+    "v925": ("v_component_of_wind", "925"),
+    "u925": ("u_component_of_wind", "925"),
+    "r700": ("relative_humidity", "700"),
+    "r600": ("relative_humidity", "600"),
+    "tcwv": ("total_column_water_vapour", None),
 }
+# short NetCDF variable names CDS uses for the fields above (for build_* concat helpers)
+CDS_SHORT_NAMES = ("u", "v", "r", "tcwv")
+
+
+def cds_request(var_key, year, months=range(1, 13), hours=SYNOPTIC_HOURS,
+                area=DEFAULT_AREA, grid=(0.5, 0.5)):
+    """Build the (dataset, request) pair for one year of one variable.
+
+    Pure function (no network) so the dataset routing and request shape are testable:
+    pressure-level variables go to reanalysis-era5-pressure-levels with a pressure_level
+    key; single-level variables (level None in VAR_CDS) go to
+    reanalysis-era5-single-levels without one.
+    """
+    cds_var, level = VAR_CDS[var_key]
+    request = {
+        "product_type": "reanalysis",
+        "variable": cds_var,
+        "year": str(year),
+        "month": [f"{m:02d}" for m in months],
+        "day": [f"{d:02d}" for d in range(1, 32)],
+        "time": list(hours),
+        "area": list(area),
+        "grid": [grid[0], grid[1]],
+        "data_format": "netcdf",
+        "download_format": "unarchived",
+    }
+    if level is None:
+        return "reanalysis-era5-single-levels", request
+    request["pressure_level"] = level
+    return "reanalysis-era5-pressure-levels", request
 
 
 def _client():
@@ -132,6 +169,25 @@ def download_year_6hourly_global(year, var_key="v700", area=GLOBAL_BAND,
         "download_format": "unarchived",
     }
     _client().retrieve("reanalysis-era5-pressure-levels", request, out)
+    return out
+
+
+def download_year_6hourly_region(year, var_key, months=(6, 7, 8, 9), area=DEFAULT_AREA,
+                                 grid=(0.5, 0.5), hours=SYNOPTIC_HOURS,
+                                 out_dir="data/era5/region6h"):
+    """Download one year of an ERA5 field at synoptic hours on the AEW analysis domain.
+
+    For the trough-environment fields (700 hPa relative humidity, total column water
+    vapour): 6-hourly, regional, June-September by default so a pre-trough sample 24 h
+    before an early-July trough still has data. No band-pass touches these fields, so a
+    seasonal (non-continuous) record is fine here, unlike the wave series.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, f"era5_{var_key}_{year}_6h_region.nc")
+    if os.path.exists(out):
+        return out
+    dataset, request = cds_request(var_key, year, months, hours, area, grid)
+    _client().retrieve(dataset, request, out)
     return out
 
 

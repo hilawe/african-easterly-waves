@@ -27,7 +27,8 @@ from collections import defaultdict
 import numpy as np
 import pandas as pd
 
-__all__ = ["forward_response", "lead_value", "terciles", "cluster_bootstrap_diff"]
+__all__ = ["forward_response", "lead_value", "lead_field_box", "terciles",
+           "cluster_bootstrap_diff"]
 
 
 def _ns_hours(times):
@@ -119,6 +120,70 @@ def lead_value(trough_times, traj_id, values, lead_h=24.0, tol_h=6.0):
     return out
 
 
+def lead_field_box(trough_times, trough_lons, f_time, f_lat, f_lon, field,
+                   lead_h=24.0, tol_h=3.0, dlon=5.0, lat_lo=5.0, lat_hi=15.0):
+    """Pre-arrival environment from a gridded field: box mean at the trough's meridian,
+    ``lead_h`` hours BEFORE the trough observation.
+
+    For a trough observed at ``(t, L)``, the sampled air is the box ``L +/- dlon``,
+    ``[lat_lo, lat_hi]`` at time ``t - lead_h``, taken from the nearest field time within
+    ``tol_h``. Because an African easterly wave moves westward (~7 deg/day), at ``t - 24 h``
+    the trough sits ~7 deg east of ``L``, so with the default 5-deg half-width its prior-day
+    convective envelope can reach the eastern box edge; the separation grows with a westward
+    box offset (pass a shifted ``trough_lons``) or a longer lead, and the caller should report
+    those sensitivities rather than treat a single box as fully upstream. This is the
+    full-coverage (e.g. ERA5) replacement for the sparse along-track satellite sampler
+    ``lead_value``.
+
+    Parameters
+    ----------
+    trough_times : array of datetime64
+    trough_lons : array of float
+    f_time : array of datetime64      field times (sorted ascending)
+    f_lat, f_lon : 1-D arrays          field coordinates (degrees)
+    field : ndarray (ntime, nlat, nlon)
+    lead_h, tol_h : float              lead and time-match tolerance in hours
+    dlon : float                       box half-width in longitude
+    lat_lo, lat_hi : float             latitude band
+
+    Returns
+    -------
+    out : ndarray, one box-mean value per trough observation (NaN where no field time is
+          within ``tol_h`` of the target, or the box has no finite cells)
+    """
+    tt = _ns_hours(trough_times)
+    L = np.asarray(trough_lons, dtype=float)
+    ft = _ns_hours(f_time)
+    if ft.size > 1 and not np.all(np.diff(ft) > 0):
+        raise ValueError("f_time must be sorted ascending")
+    f_lat = np.asarray(f_lat, dtype=float)
+    f_lon = np.asarray(f_lon, dtype=float)
+    field = np.asarray(field, dtype=float)
+    band = (f_lat >= lat_lo) & (f_lat <= lat_hi)
+    if not band.any():
+        raise ValueError(f"no field latitudes in [{lat_lo}, {lat_hi}]")
+
+    out = np.full(tt.size, np.nan)
+    for i in range(tt.size):
+        target = tt[i] - lead_h
+        j = int(np.searchsorted(ft, target))
+        # nearest of the two bracketing field times
+        cand = [k for k in (j - 1, j) if 0 <= k < ft.size]
+        if not cand:
+            continue
+        k = min(cand, key=lambda k: abs(ft[k] - target))
+        if abs(ft[k] - target) > tol_h:
+            continue
+        rel = (f_lon - L[i] + 180.0) % 360.0 - 180.0
+        box = np.abs(rel) <= dlon
+        if not box.any():
+            continue
+        cell = field[k][np.ix_(band, box)]
+        if np.isfinite(cell).any():
+            out[i] = np.nanmean(cell)
+    return out
+
+
 def cluster_bootstrap_diff(gid_a, val_a, gid_b, val_b, rng, n_boot=2000, pct=(2.5, 97.5)):
     """Cluster bootstrap CI for mean(b) - mean(a), resampling CLUSTERS not observations.
 
@@ -126,6 +191,12 @@ def cluster_bootstrap_diff(gid_a, val_a, gid_b, val_b, rng, n_boot=2000, pct=(2.
     samples), so treating each observation as independent overstates the sample size. This
     resamples whole trajectories (clusters) with replacement and recomputes the difference of
     the two pooled means, so the interval reflects the number of independent waves.
+
+    Estimand note: the pooled means are OBSERVATION-weighted (a long-lived wave contributes
+    more observations), which matches a per-trough-observation contrast ("is development at a
+    given time and place associated with a moister environment"). For a WAVE-level contrast
+    ("do developing waves live in moister air"), collapse to per-trajectory means first and
+    pass one value per trajectory; the two estimands can differ and both should be reported.
 
     A wave can straddle both groups (some of its observations high-response, some low), so the
     resample draws from the UNION of trajectory ids once per iteration; a drawn wave

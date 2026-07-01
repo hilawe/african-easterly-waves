@@ -4,6 +4,7 @@ import pandas as pd
 from aew.environment import (
     cluster_bootstrap_diff,
     forward_response,
+    lead_field_box,
     lead_value,
     terciles,
 )
@@ -91,6 +92,64 @@ def test_cluster_bootstrap_reports_cluster_counts_and_brackets_diff():
     assert na == 20 and nb == 30
     assert lo < diff < hi
     assert diff > 0  # group b is ~3 higher
+
+
+def _synthetic_field():
+    # 6-hourly field over 3 days; value = day index so the lead time is checkable
+    f_time = pd.date_range("2000-08-01", periods=12, freq="6h").values
+    f_lat = np.arange(0.0, 21.0, 5.0)          # 0..20N
+    f_lon = np.arange(-20.0, 21.0, 5.0)        # -20..20E
+    day = np.arange(12) // 4                   # 0,0,0,0,1,1,1,1,2,...
+    field = np.broadcast_to(
+        day[:, None, None], (12, f_lat.size, f_lon.size)
+    ).astype(float).copy()
+    return f_time, f_lat, f_lon, field
+
+
+def test_lead_field_box_samples_24h_earlier():
+    f_time, f_lat, f_lon, field = _synthetic_field()
+    # trough at day-2 00Z: 24 h earlier is day-1 00Z, where the field value is 1.0
+    t = pd.to_datetime(["2000-08-03 00:00"]).values
+    out = lead_field_box(t, np.array([0.0]), f_time, f_lat, f_lon, field,
+                         lead_h=24.0, tol_h=3.0)
+    assert out[0] == 1.0
+
+
+def test_lead_field_box_nan_outside_tolerance_and_before_record():
+    f_time, f_lat, f_lon, field = _synthetic_field()
+    # target time is before the field record starts -> NaN
+    t = pd.to_datetime(["2000-08-01 06:00"]).values   # t-24h = Jul 31 06Z, not in record
+    out = lead_field_box(t, np.array([0.0]), f_time, f_lat, f_lon, field,
+                         lead_h=24.0, tol_h=3.0)
+    assert np.isnan(out[0])
+
+
+def test_lead_field_box_restricts_to_lon_box_and_lat_band():
+    f_time, f_lat, f_lon, field = _synthetic_field()
+    # make one longitude column inside the box hugely different to prove box selection
+    field = field.copy()
+    jlat = np.where((f_lat >= 5) & (f_lat <= 15))[0]
+    jlon = np.where(f_lon == 0.0)[0]
+    field[4, jlat[:, None], jlon] = 100.0             # Aug-2 00Z (index 4), lon 0, in-band
+    t = pd.to_datetime(["2000-08-03 00:00"]).values   # 24 h earlier is Aug-2 00Z
+    # box centered at 0E with half-width 2.5 -> only lon 0 column, only 5..15N rows
+    out = lead_field_box(t, np.array([0.0]), f_time, f_lat, f_lon, field,
+                         lead_h=24.0, tol_h=3.0, dlon=2.5)
+    assert out[0] == 100.0
+    # a box centered far from the tampered column keeps the background value
+    out2 = lead_field_box(t, np.array([-15.0]), f_time, f_lat, f_lon, field,
+                          lead_h=24.0, tol_h=3.0, dlon=2.5)
+    assert out2[0] == 1.0
+
+
+def test_lead_field_box_is_nan_aware():
+    f_time, f_lat, f_lon, field = _synthetic_field()
+    field = field.copy()
+    field[4] = np.nan                                   # whole Aug-2 00Z step NaN
+    t = pd.to_datetime(["2000-08-03 00:00"]).values     # 24 h earlier is Aug-2 00Z
+    out = lead_field_box(t, np.array([0.0]), f_time, f_lat, f_lon, field,
+                         lead_h=24.0, tol_h=3.0)
+    assert np.isnan(out[0])
 
 
 def test_cluster_bootstrap_handles_waves_shared_across_arms():
