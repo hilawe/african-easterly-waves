@@ -1,0 +1,162 @@
+"""Download ERA5 winds from the Copernicus CDS and reduce to daily means.
+
+The original AEW work used ERA-Interim daily-averaged v700 (0.75 deg, 6-hourly). ERA-
+Interim is decommissioned, so ERA5 is the supported successor; expect close but not
+bit-identical results (the published threshold 3.26136 m/s is an ERA-Interim number).
+
+Correctness note: the band-pass filter is applied to the CONTINUOUS daily record (with
+a ~30-day buffer), then JAS is subset for compositing. So we download FULL YEARS, not
+JAS-only -- filtering a JAS-only series would corrupt the Lanczos window at season edges.
+
+Requires a configured ~/.cdsapirc (url + key). One CDS request per year keeps each job
+within size limits; daily means are computed from the synoptic hours and concatenated.
+"""
+
+from __future__ import annotations
+
+import os
+
+import numpy as np
+import xarray as xr
+
+# default analysis domain (N, W, S, E) covering the AEW maps and the 5-15N composite band
+DEFAULT_AREA = [35.0, -45.0, -25.0, 75.0]
+SYNOPTIC_HOURS = ["00:00", "06:00", "12:00", "18:00"]
+# CDS variable names
+VAR_CDS = {
+    "v700": ("v_component_of_wind", "700"),
+    "u700": ("u_component_of_wind", "700"),
+    "v600": ("v_component_of_wind", "600"),
+    "u600": ("u_component_of_wind", "600"),
+    "v850": ("v_component_of_wind", "850"),
+    "u850": ("u_component_of_wind", "850"),
+}
+
+
+def _client():
+    import cdsapi
+
+    return cdsapi.Client()
+
+
+def download_year_hourly(year, var_key, area=DEFAULT_AREA, grid=(0.5, 0.5),
+                         hours=SYNOPTIC_HOURS, out_dir="data/era5/raw"):
+    """Download one year of ERA5 pressure-level wind at synoptic hours (all months).
+
+    Returns the output NetCDF path. Skips the request if the file already exists.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    cds_var, level = VAR_CDS[var_key]
+    out = os.path.join(out_dir, f"era5_{var_key}_{year}_hourly.nc")
+    if os.path.exists(out):
+        return out
+    request = {
+        "product_type": "reanalysis",
+        "variable": cds_var,
+        "pressure_level": level,
+        "year": str(year),
+        "month": [f"{m:02d}" for m in range(1, 13)],
+        "day": [f"{d:02d}" for d in range(1, 32)],
+        "time": list(hours),
+        "area": list(area),  # N, W, S, E
+        "grid": [grid[0], grid[1]],
+        "data_format": "netcdf",
+        "download_format": "unarchived",
+    }
+    _client().retrieve("reanalysis-era5-pressure-levels", request, out)
+    return out
+
+
+def hourly_to_daily_mean(path, var_key):
+    """Open an hourly file and return a daily-mean DataArray named ``var_key``."""
+    ds = xr.open_dataset(path)
+    # ERA5 wind component variable in the file (cds short name)
+    name = [v for v in ds.data_vars if v in ("v", "u", "v_component_of_wind",
+                                             "u_component_of_wind")]
+    da = ds[name[0]] if name else ds[list(ds.data_vars)[0]]
+    # time coordinate may be 'time' or 'valid_time'
+    tname = "valid_time" if "valid_time" in da.coords else "time"
+    daily = da.resample({tname: "1D"}).mean()
+    daily = daily.rename(var_key)
+    daily = daily.rename({tname: "time"}) if tname != "time" else daily
+    ds.close()
+    return daily
+
+
+def build_daily_series(var_key, years, area=DEFAULT_AREA, grid=(0.5, 0.5),
+                       out_dir="data/era5", raw_dir="data/era5/raw"):
+    """Download all years, compute daily means, concatenate, and save one NetCDF.
+
+    Returns the path to the combined daily-mean file.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    combined = os.path.join(out_dir, f"era5_{var_key}_{years[0]}-{years[-1]}_daily.nc")
+    if os.path.exists(combined):
+        return combined
+    pieces = []
+    for y in years:
+        raw = download_year_hourly(y, var_key, area=area, grid=grid, out_dir=raw_dir)
+        pieces.append(hourly_to_daily_mean(raw, var_key))
+    da = xr.concat(pieces, dim="time").sortby("time")
+    da.to_netcdf(combined)
+    return combined
+
+
+# global longitude band for the space-time (wk_bandpass) filter: needs the full 0-360 circle
+GLOBAL_BAND = [30.0, -180.0, -5.0, 179.0]  # N, W, S, E  (tropical band, all longitudes)
+
+
+def download_year_6hourly_global(year, var_key="v700", area=GLOBAL_BAND,
+                                 grid=(1.5, 1.5), hours=SYNOPTIC_HOURS,
+                                 out_dir="data/era5/global6h"):
+    """Download one year of ERA5 wind at synoptic hours on a GLOBAL-longitude tropical
+    band, kept 6-hourly (no daily averaging). For wk_bandpass, which needs a full cyclic
+    longitude circle to do a true zonal-wavenumber FFT. 1.5 deg mirrors the original
+    v700.anom.waves grid (240 longitudes)."""
+    os.makedirs(out_dir, exist_ok=True)
+    cds_var, level = VAR_CDS[var_key]
+    out = os.path.join(out_dir, f"era5_{var_key}_{year}_6h_global.nc")
+    if os.path.exists(out):
+        return out
+    request = {
+        "product_type": "reanalysis",
+        "variable": cds_var,
+        "pressure_level": level,
+        "year": str(year),
+        "month": [f"{m:02d}" for m in range(1, 13)],
+        "day": [f"{d:02d}" for d in range(1, 32)],
+        "time": list(hours),
+        "area": list(area),
+        "grid": [grid[0], grid[1]],
+        "data_format": "netcdf",
+        "download_format": "unarchived",
+    }
+    _client().retrieve("reanalysis-era5-pressure-levels", request, out)
+    return out
+
+
+def build_6hourly_global(var_key, years, out_dir="data/era5", raw_dir="data/era5/global6h",
+                         grid=(1.5, 1.5)):
+    """Download all years (6-hourly, global band), concatenate to one NetCDF (time,lat,lon)."""
+    os.makedirs(out_dir, exist_ok=True)
+    combined = os.path.join(out_dir, f"era5_{var_key}_{years[0]}-{years[-1]}_6h_global.nc")
+    if os.path.exists(combined):
+        return combined
+    pieces = []
+    for y in years:
+        raw = download_year_6hourly_global(y, var_key, grid=grid, out_dir=raw_dir)
+        ds = xr.open_dataset(raw)
+        name = [v for v in ds.data_vars if v in ("v", "u", cds_from(var_key))]
+        da = ds[name[0]] if name else ds[list(ds.data_vars)[0]]
+        tname = "valid_time" if "valid_time" in da.coords else "time"
+        da = da.rename(var_key)
+        if tname != "time":
+            da = da.rename({tname: "time"})
+        pieces.append(da)
+    out = xr.concat(pieces, dim="time").sortby("time")
+    out.to_netcdf(combined)
+    return combined
+
+
+def cds_from(var_key):
+    return VAR_CDS[var_key][0]
