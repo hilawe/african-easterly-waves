@@ -82,7 +82,7 @@ with African easterly waves, International Journal of Climatology.
 
 ## License
 
-MIT. See `LICENSE`.
+CC0 1.0 Universal (public domain dedication). See `LICENSE`.
 
 ## Author
 

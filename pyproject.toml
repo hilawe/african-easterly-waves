@@ -7,6 +7,7 @@ name = "aew"
 version = "0.0.1"
 description = "Reproducible pipeline for African Easterly Wave / convective-system analysis (Python port of the PhD NCL code)"
 readme = "README.md"
+license = "CC0-1.0"
 requires-python = ">=3.10"
 dependencies = [
   "numpy>=1.24",
