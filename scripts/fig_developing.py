@@ -54,6 +54,7 @@ ENV_LABEL = {
     "tpw": ("SSM/I trough-mean TCWV", "mm"),
     "r700": ("ERA5 700 hPa relative humidity", "%"),
     "tcwv": ("ERA5 total column water vapour", "mm"),
+    "shear": ("ERA5 600-925 hPa shear", "m/s"),
 }
 
 
@@ -75,7 +76,7 @@ def load_era5_region(var_key, path_glob=None):
         ts.append(pd.DatetimeIndex(ds[tname].values))
         lat = np.asarray(ds["latitude"].values, float)
         lon = np.asarray(ds["longitude"].values, float)
-        name = [v for v in ds.data_vars if v in ("r", "tcwv", "q")]
+        name = [v for v in ds.data_vars if v in ("r", "tcwv", "q", "u", "v")]
         da = ds[name[0]] if name else ds[list(ds.data_vars)[0]]
         blocks.append(np.asarray(da.squeeze().values, float))
         ds.close()
@@ -95,9 +96,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--aewc-glob", default="data/aewc/ERA-Int_ew_700hPa_*_AFR.nc")
     ap.add_argument("--csct", default="data/original/csct/csct_africa_cs245.nc")
-    ap.add_argument("--env", default="tpw", choices=("tpw", "r700", "tcwv"),
+    ap.add_argument("--env", default="tpw", choices=("tpw", "r700", "tcwv", "shear"),
                     help="pre-trough environment source (tpw = sparse SSM/I along-track; "
-                         "r700/tcwv = full-coverage ERA5 fixed-box)")
+                         "r700/tcwv = full-coverage ERA5 fixed-box moisture; shear = ERA5 "
+                         "600-925 hPa vector shear magnitude, the organization axis)")
     ap.add_argument("--out", default="fig_developing.png")
     a = ap.parse_args()
 
@@ -120,7 +122,22 @@ def main():
                               LEAD_H, TOL_H)
     else:
         # full-coverage ERA5 field, fixed box at the trough meridian 24 h before arrival
-        ft, flat, flon, ffield = load_era5_region(a.env)
+        if a.env == "shear":
+            # 600-925 hPa vector shear magnitude from the four wind components; the four
+            # records must share one time/grid base before mixing them point by point
+            comps = {}
+            for k in ("u600", "v600", "u925", "v925"):
+                comps[k] = load_era5_region(k)
+            ft, flat, flon, _ = comps["u600"]
+            for k in ("v600", "u925", "v925"):
+                tk, lk, ok, _ = comps[k]
+                if not (tk.equals(ft) and np.array_equal(lk, flat)
+                        and np.array_equal(ok, flon)):
+                    raise ValueError(f"ERA5 {k} grid/time differs from u600")
+            ffield = np.sqrt((comps["u600"][3] - comps["u925"][3]) ** 2
+                             + (comps["v600"][3] - comps["v925"][3]) ** 2)
+        else:
+            ft, flat, flon, ffield = load_era5_region(a.env)
         print(f"ERA5 {a.env}: {ft.size} steps {ft.min().date()}..{ft.max().date()}")
         lead_env = lead_field_box(tr.time, tr.lon, ft.values, flat, flon, ffield,
                                   LEAD_H, tol_h=3.0, dlon=5.0,
@@ -237,11 +254,17 @@ def main():
             print(f"  {label}:  {dS:+.2f} {unit}  CI [{loS:+.2f}, {hiS:+.2f}]  {sS}")
         print("\nNOTE: the environment is the full-coverage " + env_name + " in a fixed box "
               "at the trough meridian 24 h before arrival. The trough is then ~7 deg east of "
-              "the box, so its prior-day convective envelope can reach the eastern box edge; "
-              "the sensitivity block above shows how the contrast responds as the box moves "
-              "farther upstream. The contrast attenuates with upstream distance, as a "
-              "spatially local moisture field would. A moisture precondition is consistent "
-              "with, but does not by itself prove, convection organizing the wave.")
+              "the box, so its prior-day circulation can reach the eastern box edge; the "
+              "sensitivity block above shows how the contrast responds as the box moves "
+              "farther upstream.")
+        if a.env == "shear":
+            print("Shear is the ORGANIZATION axis, kept separate from moisture by design; "
+                  "there is no one-directional expectation (moderate shear can favor "
+                  "organized systems while strong shear disrupts them), so the sign and "
+                  "magnitude are reported without a precondition claim.")
+        else:
+            print("A moisture precondition is consistent with, but does not by itself "
+                  "prove, convection organizing the wave.")
 
     import matplotlib
     matplotlib.use("Agg")
