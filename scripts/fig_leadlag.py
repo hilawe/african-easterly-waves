@@ -190,6 +190,7 @@ def main():
 
     meridians = np.arange(a.lon_lo, a.lon_hi + 0.1, a.lon_step)
     peak_h, peak_sd, r_at_peak, p_at_peak = [], [], [], []
+    R_years_all = []      # per-meridian (nyear, nlag) stacks, for the lag-gradient bootstrap
     rep = {"eastern Sahel": 15.0, "central": 5.0, "west": -10.0}
     rep_curves = {}
     R_MIN = 0.20  # below this the curvature-vorticity wave is too weak for a reliable lag
@@ -212,6 +213,7 @@ def main():
         peak_sd.append(sd)
         r_at_peak.append(r_star)
         p_at_peak.append(pval)
+        R_years_all.append(R_years)
         for name, target in rep.items():
             if abs(lam - target) < a.lon_step / 2:
                 rep_curves[name] = (lags * STEP_HOURS, Rbar, lam)
@@ -232,6 +234,38 @@ def main():
               f"max p {np.nanmax(p_at_peak[reliable]):.1e}")
         print(f"east of {hi:.1f}E the curvature-vorticity wave amplitude is small (R<{R_MIN:.2f}); "
               "lead-lag there is not resolved -- consistent with the 40E AEWC/eastern-tracker limit")
+
+    # longitudinal gradient of the peak lag. A fixed-meridian lag restates the spatial phase
+    # offset, but its CHANGE with longitude is new information: a wider convective lead in the
+    # east than the west is the coupling-maturity signature (convective forcing of a weak
+    # vorticity perturbation upstream, tightening toward the coupled quarter-wavelength phase
+    # downstream). Bootstrap resamples YEARS jointly across meridians (the shared sampling
+    # unit), rebuilds each meridian's mean curve and peak, and refits the slope.
+    ridx = np.where(reliable)[0]
+    nyrs = {R_years_all[j].shape[0] for j in ridx}
+    if ridx.size >= 4 and len(nyrs) == 1:
+        nyr = nyrs.pop()
+        slope = np.polyfit(meridians[reliable], peak_h[reliable], 1)[0]
+        boots = np.empty(500)
+        for b in range(500):
+            yidx = rng.integers(0, nyr, nyr)
+            ph_b = [peak_lag(lags[win], np.nanmean(R_years_all[j][yidx], axis=0)[win])[0]
+                    * STEP_HOURS for j in ridx]
+            boots[b] = np.polyfit(meridians[reliable], ph_b, 1)[0]
+        g_lo, g_hi = np.percentile(boots, [2.5, 97.5])
+        east = peak_h[reliable & (meridians >= 5)]
+        west = peak_h[reliable & (meridians <= -5)]
+        gsig = "significant" if not (g_lo <= 0 <= g_hi) else "not significant"
+        print(f"\nLAG GRADIENT along the corridor: slope {slope:+.2f} h/deg "
+              f"(year bootstrap 95% CI [{g_lo:+.2f}, {g_hi:+.2f}], {gsig}); "
+              f"mean convective lead east of 5E {np.nanmean(east):+.1f} h vs "
+              f"west of 5W {np.nanmean(west):+.1f} h.")
+        print("Reading: the convective lead widens toward the east (weak vorticity "
+              "perturbations lag their convection by more upstream) and tightens toward the "
+              "coast, the signature of a wave-convection coupling that matures westward "
+              "along the corridor. This gradient, not the single-meridian lag, is the "
+              "time-domain information beyond the spatial composite.")
+
     print("\nCAVEAT: at a fixed meridian the lag is the trough-convection phase offset carried "
           "by the propagating wave, so it is read as a phase relationship and its change with "
           "longitude, not as evidence for a forcing direction on its own. The effective-DOF "

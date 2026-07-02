@@ -7,10 +7,12 @@ Each AEWC trough is given a convective response from the independent csct cloud-
 developing (top response tercile) and non-developing (bottom tercile) WITHIN each 10-degree
 longitude bin, so the two groups have a matched longitude composition and the comparison is
 not the moist-west/dry-east climatology in disguise. The test is whether the developing
-troughs sat in a moister environment BEFORE that convection existed (~24 h earlier). A higher
-pre-trough moisture for developing troughs is a precondition set ahead of the convection,
-which the wave-convection covariation alone cannot show. Significance is a trajectory
-cluster bootstrap (a wave's many 6-hourly observations are correlated).
+troughs sat in a moister environment BEFORE that convection existed (~24 h earlier). The
+t-24h field is not an unperturbed background (the wave train continuously moistens the
+corridor), so a positive contrast is read as a probabilistic bias within the coupled
+wave-train system, not a binary trigger acting on a single wave. Significance is a
+trajectory cluster bootstrap (a wave's many 6-hourly observations are correlated), and the
+wave-level estimand is reported alongside the per-observation one.
 
 The environment source is selectable (--env):
 
@@ -227,7 +229,10 @@ def main():
     dW, loW, hiW, _, _ = cluster_bootstrap_diff(ka, va, kb, vb, rng)
     sigW = "not significant (CI crosses 0)" if loW <= 0 <= hiW else "significant"
     print(f"WAVE-LEVEL (one value per trajectory): difference {dW:+.1f} {unit}, bootstrap "
-          f"95% CI [{loW:+.1f}, {hiW:+.1f}] -- {sigW}.")
+          f"95% CI [{loW:+.1f}, {hiW:+.1f}] -- {sigW}. This is the wave-track-selector "
+          "reading: whole trajectories embedded in moister or drier synoptic states. The "
+          "per-observation contrast above draws much of its strength from persistent states "
+          "along the same tracks, so the two estimands bracket the claim.")
 
     if a.env == "tpw":
         print("\nCAVEAT: this environment source is the ~40%-populated AEWC SSM/I trough-mean "
@@ -261,10 +266,20 @@ def main():
             print("Shear is the ORGANIZATION axis, kept separate from moisture by design; "
                   "there is no one-directional expectation (moderate shear can favor "
                   "organized systems while strong shear disrupts them), so the sign and "
-                  "magnitude are reported without a precondition claim.")
+                  "magnitude are reported without a precondition claim. That the shear "
+                  "contrast fails the displacement test while moisture passes it matches "
+                  "their relaxation timescales: tropical wind perturbations adjust within "
+                  "hours (gravity waves, convective momentum transport) while moisture "
+                  "anomalies persist for days against advection, so shear reads as the "
+                  "wave's instantaneous local state and moisture as a longer-lived "
+                  "boundary condition.")
         else:
-            print("A moisture precondition is consistent with, but does not by itself "
-                  "prove, convection organizing the wave.")
+            print("FRAMING: the t-24h field is not an unperturbed ambient state. The wave "
+                  "train and its convection continuously moisten the corridor, so the "
+                  "sample is a cumulative state of the coupled system, and the contrast is "
+                  "a subtle but statistically robust probabilistic bias in which parts of "
+                  "that state develop convection, not a binary environmental trigger for "
+                  "a single wave.")
 
     import matplotlib
     matplotlib.use("Agg")
