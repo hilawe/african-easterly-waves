@@ -216,3 +216,43 @@ def build_6hourly_global(var_key, years, out_dir="data/era5", raw_dir="data/era5
 
 def cds_from(var_key):
     return VAR_CDS[var_key][0]
+
+
+def load_region_6h(var_key, path_glob=None):
+    """Load and concatenate 6-hourly ERA5 files for one variable into plain arrays.
+
+    Defaults to the regional environment files (data/era5/region6h); pass ``path_glob`` to
+    read another set (e.g. the global 1.5-degree wind band). Returns
+    ``(times, lat, lon, field)`` with field shaped (ntime, nlat, nlon) float32, latitude
+    ascending, times sorted with duplicate steps dropped.
+    """
+    import glob as _glob
+
+    import pandas as pd
+
+    pg = path_glob or f"data/era5/region6h/era5_{var_key}_*_6h_region.nc"
+    paths = sorted(_glob.glob(pg))
+    if not paths:
+        raise FileNotFoundError(
+            f"no ERA5 files match {pg!r}; run scripts/download_era5_env.py first")
+    ts, blocks, lat, lon = [], [], None, None
+    for p in paths:
+        ds = xr.open_dataset(p)
+        tname = "valid_time" if "valid_time" in ds.coords else "time"
+        ts.append(pd.DatetimeIndex(ds[tname].values))
+        lat = np.asarray(ds["latitude"].values, float)
+        lon = np.asarray(ds["longitude"].values, float)
+        name = [v for v in ds.data_vars if v in ("r", "tcwv", "q", "u", "v")]
+        da = ds[name[0]] if name else ds[list(ds.data_vars)[0]]
+        blocks.append(np.asarray(da.squeeze().values, dtype=np.float32))
+        ds.close()
+    t = pd.DatetimeIndex(np.concatenate([x.values for x in ts]))
+    field = np.concatenate(blocks, axis=0)
+    o = np.argsort(t.values)
+    t, field = t[o], field[o]
+    uniq = np.concatenate([[True], t.values[1:] != t.values[:-1]])
+    t, field = t[uniq], field[uniq]
+    if lat[0] > lat[-1]:
+        lat = lat[::-1]
+        field = field[:, ::-1, :]
+    return t, lat, lon, field

@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 __all__ = ["forward_response", "lead_value", "lead_field_box", "terciles",
-           "cluster_bootstrap_diff"]
+           "stratified_terciles", "cluster_bootstrap_diff"]
 
 
 def _ns_hours(times):
@@ -182,6 +182,50 @@ def lead_field_box(trough_times, trough_lons, f_time, f_lat, f_lon, field,
         if np.isfinite(cell).any():
             out[i] = np.nanmean(cell)
     return out
+
+
+def stratified_terciles(x, strat, edges, min_bin=30, strat2=None, edges2=None):
+    """Bottom/top tercile masks of ``x`` computed WITHIN each stratification cell.
+
+    Used to split troughs into non-developing/developing within longitude bins (and
+    optionally a second coordinate, e.g. calendar month), so the two groups have a matched
+    composition in the stratifiers and a pooled contrast is a within-cell comparison.
+    Cells with fewer than ``min_bin`` members are left out of both groups.
+
+    Parameters
+    ----------
+    x : array               the split variable (e.g. forward convective response)
+    strat : array           the stratification coordinate (e.g. trough longitude)
+    edges : 1-D array       bin edges over ``strat``
+    min_bin : int           minimum members for a cell to participate
+    strat2, edges2 : optional second stratification coordinate and its edges (e.g.
+        month with edges [6.5, 7.5, 8.5, 9.5])
+
+    Returns
+    -------
+    low, high : boolean masks over ``x``
+    """
+    x = np.asarray(x, dtype=float)
+    strat = np.asarray(strat, dtype=float)
+    cells = [(lo, hi, None, None) for lo, hi in zip(edges[:-1], edges[1:])]
+    if strat2 is not None:
+        strat2 = np.asarray(strat2, dtype=float)
+        cells = [(lo, hi, lo2, hi2)
+                 for lo, hi in zip(edges[:-1], edges[1:])
+                 for lo2, hi2 in zip(edges2[:-1], edges2[1:])]
+    low = np.zeros(x.size, dtype=bool)
+    high = np.zeros(x.size, dtype=bool)
+    for lo, hi, lo2, hi2 in cells:
+        m = (strat >= lo) & (strat < hi)
+        if lo2 is not None:
+            m &= (strat2 >= lo2) & (strat2 < hi2)
+        if m.sum() < min_bin:
+            continue
+        idx = np.where(m)[0]
+        bl, bh = terciles(x[m])
+        low[idx[bl]] = True
+        high[idx[bh]] = True
+    return low, high
 
 
 def cluster_bootstrap_diff(gid_a, val_a, gid_b, val_b, rng, n_boot=2000, pct=(2.5, 97.5)):

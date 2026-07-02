@@ -6,8 +6,20 @@ from aew.environment import (
     forward_response,
     lead_field_box,
     lead_value,
+    stratified_terciles,
     terciles,
 )
+
+
+def test_stratified_terciles_split_within_bins_and_skip_small_bins():
+    # bin A (strat ~0) has 30 members with values 0..29; bin B (strat ~10) only 5 members
+    x = np.concatenate([np.arange(30.0), np.arange(5.0)])
+    strat = np.concatenate([np.zeros(30), np.full(5, 10.0)])
+    low, high = stratified_terciles(x, strat, np.array([-5.0, 5.0, 15.0]), min_bin=30)
+    assert low[:30].sum() > 0 and high[:30].sum() > 0     # bin A participates
+    assert not low[30:].any() and not high[30:].any()     # bin B skipped (< min_bin)
+    # within bin A the split is by bin-A terciles, not global ones
+    assert low[0] and not low[29] and high[29] and not high[0]
 
 
 def test_forward_response_counts_forward_window_box_and_wrap():

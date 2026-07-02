@@ -5,8 +5,9 @@ Conditions the causality question on the environment instead of chasing linear w
 Each AEWC trough is given a convective response from the independent csct cloud-system record
 (count of systems in a trough-relative box over the next 24 h), and troughs are split into
 developing (top response tercile) and non-developing (bottom tercile) WITHIN each 10-degree
-longitude bin, so the two groups have a matched longitude composition and the comparison is
-not the moist-west/dry-east climatology in disguise. The test is whether the developing
+longitude x calendar-month cell, so the two groups have a matched composition in geography
+and season and the comparison is neither the moist-west/dry-east climatology nor the
+seasonal moisture cycle in disguise. The test is whether the developing
 troughs sat in a moister environment BEFORE that convection existed (~24 h earlier). The
 t-24h field is not an unperturbed background (the wave train continuously moistens the
 corridor), so a positive contrast is read as a probabilistic bias within the coupled
@@ -32,7 +33,6 @@ ERA5 environment files (data/era5/region6h). Writes fig_developing.png.
 """
 
 import argparse
-import glob
 
 import numpy as np
 import pandas as pd
@@ -44,7 +44,7 @@ from aew.environment import (
     forward_response,
     lead_field_box,
     lead_value,
-    terciles,
+    stratified_terciles,
 )
 
 LEAD_H = 24.0
@@ -60,38 +60,7 @@ ENV_LABEL = {
 }
 
 
-def load_era5_region(var_key, path_glob=None):
-    """Load and concatenate the regional 6-hourly ERA5 environment files for one variable.
-
-    Returns (times, lat, lon, field) with field shaped (ntime, nlat, nlon), latitude
-    ascending, sorted unique times.
-    """
-    pg = path_glob or f"data/era5/region6h/era5_{var_key}_*_6h_region.nc"
-    paths = sorted(glob.glob(pg))
-    if not paths:
-        raise FileNotFoundError(
-            f"no ERA5 files match {pg!r}; run scripts/download_era5_env.py first")
-    ts, blocks, lat, lon = [], [], None, None
-    for p in paths:
-        ds = xr.open_dataset(p)
-        tname = "valid_time" if "valid_time" in ds.coords else "time"
-        ts.append(pd.DatetimeIndex(ds[tname].values))
-        lat = np.asarray(ds["latitude"].values, float)
-        lon = np.asarray(ds["longitude"].values, float)
-        name = [v for v in ds.data_vars if v in ("r", "tcwv", "q", "u", "v")]
-        da = ds[name[0]] if name else ds[list(ds.data_vars)[0]]
-        blocks.append(np.asarray(da.squeeze().values, float))
-        ds.close()
-    t = pd.DatetimeIndex(np.concatenate([x.values for x in ts]))
-    field = np.concatenate(blocks, axis=0)
-    o = np.argsort(t.values)
-    t, field = t[o], field[o]
-    uniq = np.concatenate([[True], t.values[1:] != t.values[:-1]])  # drop duplicate steps
-    t, field = t[uniq], field[uniq]
-    if lat[0] > lat[-1]:
-        lat = lat[::-1]
-        field = field[:, ::-1, :]
-    return t, lat, lon, field
+from aew.data.era5 import load_region_6h as load_era5_region  # noqa: E402  shared loader
 
 
 def main():
@@ -156,25 +125,20 @@ def main():
     from scipy import stats
     rng = np.random.default_rng(0)
 
-    # LONGITUDE-STRATIFIED tercile split: the convective response climatology varies strongly
-    # with longitude (more forward-window systems in the east), so a pooled tercile split
-    # partly re-encodes longitude and any moisture contrast inherits the moist-west/dry-east
-    # gradient (Simpson). Splitting within each 10-degree bin gives the two groups a matched
-    # longitude composition by construction, so the pooled difference is a within-geography
-    # contrast. Bins with too few analyzable troughs are left out of the split entirely.
-    MIN_BIN = 30
+    # LONGITUDE x MONTH stratified tercile split: the convective response climatology varies
+    # with longitude (more forward-window systems in the east) AND with the season, so a
+    # pooled tercile split re-encodes both coordinates and any moisture contrast inherits
+    # the moist-west/dry-east gradient and the seasonal moisture cycle (Simpson at two
+    # scales). Splitting within each 10-degree x calendar-month cell gives the two groups a
+    # matched composition in both, so the pooled difference is a within-geography,
+    # within-season contrast. Cells with too few analyzable troughs are left out entirely.
     edges = np.arange(-30, 41, 10.0)
     centers = 0.5 * (edges[:-1] + edges[1:])
-    low = np.zeros(resp_k.size, dtype=bool)
-    high = np.zeros(resp_k.size, dtype=bool)
-    for lo, hi in zip(edges[:-1], edges[1:]):
-        m = (lon_k >= lo) & (lon_k < hi)
-        if m.sum() < MIN_BIN:
-            continue
-        idx = np.where(m)[0]
-        bl, bh = terciles(resp_k[m])
-        low[idx[bl]] = True
-        high[idx[bh]] = True
+    month_k = pd.DatetimeIndex(tr.time[keep]).month.values.astype(float)
+    m_edges = np.array([6.5, 7.5, 8.5, 9.5])
+    low, high = stratified_terciles(resp_k, lon_k, edges, min_bin=30,
+                                    strat2=month_k, edges2=m_edges)
+    low_lon, high_lon = stratified_terciles(resp_k, lon_k, edges, min_bin=30)
 
     # per-bin table (same stratified masks); per-bin p is observation-level, indicative only
     MIN_N = 15
@@ -205,15 +169,25 @@ def main():
         tid_k[low], ndw, tid_k[high], dvw, rng)
     _, pw_obs = stats.ttest_ind(dvw, ndw, equal_var=False)
     sig = "not significant (CI crosses 0)" if lo_ci <= 0 <= hi_ci else "significant"
-    print("\n(developing vs non-developing are longitude-stratified response terciles among "
-          "the troughs with an analyzable pre-trough environment sample)")
-    print(f"PRIMARY (per-observation) -- longitude-stratified, {env_name}: non-dev "
+    print("\n(developing vs non-developing are longitude x month stratified response "
+          "terciles among the troughs with an analyzable pre-trough environment sample)")
+    print(f"PRIMARY (per-observation) -- lon x month stratified, {env_name}: non-dev "
           f"{ndw.mean():.1f} {unit} (n={ndw.size} obs, {nwa} waves), developing "
           f"{dvw.mean():.1f} {unit} (n={dvw.size} obs, {nwb} waves), difference "
           f"{diff:+.1f} {unit}. Trajectory cluster-bootstrap 95% CI "
           f"[{lo_ci:+.1f}, {hi_ci:+.1f}] -- {sig}. "
           f"(observation-level t-test p={pw_obs:.1e} is over-optimistic: it ignores that "
           "each wave gives many correlated samples.)")
+
+    # the longitude-only split for comparison: its stronger contrast includes the seasonal
+    # covariation (developing troughs cluster in the moister part of the season), which the
+    # month stratification deliberately removes to isolate the sub-seasonal signal.
+    dL, loL, hiL, _, _ = cluster_bootstrap_diff(
+        tid_k[low_lon], tcwv_k[low_lon], tid_k[high_lon], tcwv_k[high_lon], rng)
+    sigL = "significant" if not (loL <= 0 <= hiL) else "ns"
+    print(f"COMPARISON (lon-only split, includes the seasonal covariation): "
+          f"{dL:+.1f} {unit}, CI [{loL:+.1f}, {hiL:+.1f}] -- {sigL}. The gap between the "
+          "two is the seasonal-scale part of the moisture-development association.")
 
     # wave-level estimand: collapse to per-trajectory means first, so a long-lived wave
     # counts once. This asks a different question (do developing WAVES live in moister air)
@@ -292,7 +266,7 @@ def main():
     ax1.set_xticks([0, 1]); ax1.set_xticklabels(
         [f"non-developing\n(n={ndw.size})", f"developing\n(n={dvw.size})"])
     ax1.set_ylabel(f"pre-trough {env_name}, 24 h before passage ({unit})")
-    ax1.set_title(f"Longitude-stratified: developing {diff:+.1f} {unit}\n"
+    ax1.set_title(f"Lon x month stratified: developing {diff:+.1f} {unit}\n"
                   f"cluster-bootstrap 95% CI [{lo_ci:+.1f}, {hi_ci:+.1f}] ({sig})")
     ax1.grid(alpha=0.3, axis="y")
 
