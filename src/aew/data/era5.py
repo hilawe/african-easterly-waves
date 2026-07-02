@@ -36,6 +36,9 @@ VAR_CDS = {
     "u925": ("u_component_of_wind", "925"),
     "r700": ("relative_humidity", "700"),
     "r600": ("relative_humidity", "600"),
+    "r850": ("relative_humidity", "850"),
+    "t700": ("temperature", "700"),
+    "t850": ("temperature", "850"),
     "tcwv": ("total_column_water_vapour", None),
 }
 # short NetCDF variable names CDS uses for the fields above (for build_* concat helpers)
@@ -242,7 +245,7 @@ def load_region_6h(var_key, path_glob=None):
         ts.append(pd.DatetimeIndex(ds[tname].values))
         lat = np.asarray(ds["latitude"].values, float)
         lon = np.asarray(ds["longitude"].values, float)
-        name = [v for v in ds.data_vars if v in ("r", "tcwv", "q", "u", "v")]
+        name = [v for v in ds.data_vars if v in ("r", "tcwv", "q", "u", "v", "t")]
         da = ds[name[0]] if name else ds[list(ds.data_vars)[0]]
         blocks.append(np.asarray(da.squeeze().values, dtype=np.float32))
         ds.close()

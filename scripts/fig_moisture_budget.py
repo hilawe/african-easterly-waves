@@ -33,6 +33,7 @@ import xarray as xr
 from aew.data.aewc import load_aewc_trajectories
 from aew.data.era5 import load_region_6h
 from aew.environment import cluster_bootstrap_diff, forward_response, stratified_terciles
+from aew.thermo import theta_e
 from aew.trajectory import Gridded, back_trajectories, classify_origin
 
 LEAD_H = 24.0
@@ -45,19 +46,20 @@ SEED_LATS = (7.0, 10.0, 13.0)
 RH_ELAPSED = (0.0, 12.0, 24.0, 36.0, 48.0)
 
 
-def load_winds():
+def load_winds(level):
+    uk, vk = f"u{level}", f"v{level}"
     try:
-        tu, lat, lon, uu = load_region_6h("u700")
-        tv, latv, lonv, vv = load_region_6h("v700")
+        tu, lat, lon, uu = load_region_6h(uk)
+        tv, latv, lonv, vv = load_region_6h(vk)
         src = "regional 0.5 deg"
     except FileNotFoundError:
-        tu, lat, lon, uu = load_region_6h("u700",
-                                          "data/era5/global6h/era5_u700_200*_6h_global.nc")
-        tv, latv, lonv, vv = load_region_6h("v700",
-                                            "data/era5/global6h/era5_v700_200*_6h_global.nc")
+        tu, lat, lon, uu = load_region_6h(
+            uk, f"data/era5/global6h/era5_{uk}_200*_6h_global.nc")
+        tv, latv, lonv, vv = load_region_6h(
+            vk, f"data/era5/global6h/era5_{vk}_200*_6h_global.nc")
         src = "global 1.5 deg fallback"
     if not (tu.equals(tv) and np.array_equal(lat, latv) and np.array_equal(lon, lonv)):
-        raise ValueError("u700 and v700 do not share the same time/lat/lon grid")
+        raise ValueError(f"{uk} and {vk} do not share the same time/lat/lon grid")
     return tu, lat, lon, uu, vv, src
 
 
@@ -74,8 +76,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--aewc-glob", default="data/aewc/ERA-Int_ew_700hPa_*_AFR.nc")
     ap.add_argument("--csct", default="data/original/csct/csct_africa_cs245.nc")
+    ap.add_argument("--level", type=int, default=700, choices=(700, 850),
+                    help="trajectory/sampling pressure level. 700 is the level of the "
+                         "moisture anomaly (Saharan dry-air side); 850 tests the low-level "
+                         "monsoon-inflow channel. At 850 the level intersects elevated "
+                         "terrain in the east (ERA5 extrapolates below ground), so eastern "
+                         "origins are indicative only.")
     ap.add_argument("--out", default="fig_moisture_budget.png")
     a = ap.parse_args()
+    level = a.level
 
     tr = (load_aewc_trajectories(a.aewc_glob)
           .filter_region(min_lat=5, max_lat=20, min_lon=-30, max_lon=40)
@@ -96,12 +105,19 @@ def main():
     print(f"troughs in the split: {sel.sum()} of {len(tr)} "
           f"(non-dev {low.sum()}, developing {high.sum()})")
 
-    tw, wlat, wlon, uu, vv, wsrc = load_winds()
-    print(f"winds: {wsrc}, {tw.size} steps {tw.min().date()}..{tw.max().date()}")
+    tw, wlat, wlon, uu, vv, wsrc = load_winds(level)
+    print(f"winds: {level} hPa, {wsrc}, {tw.size} steps "
+          f"{tw.min().date()}..{tw.max().date()}")
     u = Gridded(tw.values, wlat, wlon, uu)
     v = Gridded(tw.values, wlat, wlon, vv)
-    tr7, rlat, rlon, rfield = load_region_6h("r700")
+    tr7, rlat, rlon, rfield = load_region_6h(f"r{level}")
     rh = Gridded(tr7.values, rlat, rlon, rfield)
+    try:
+        tt7, tlat, tlon, tfield = load_region_6h(f"t{level}")
+        temp = Gridded(tt7.values, tlat, tlon, tfield)
+    except FileNotFoundError:
+        temp = None
+        print(f"(t{level} not on disk; theta-e diagnostic skipped)")
 
     # seeds: 9 parcels per selected trough, in the t-24h box
     sel_idx = np.where(sel)[0]
@@ -114,7 +130,7 @@ def main():
     seeds_lon = (tr.lon[sel_idx][:, None] + grid_dlon.ravel()[None, :]).ravel()
     seeds_lat = np.broadcast_to(grid_lat.ravel()[None, :], (n_case, npar)).ravel().copy()
 
-    print(f"integrating {seeds_t.size} parcels {BACK_H:.0f} h backward at 700 hPa ...")
+    print(f"integrating {seeds_t.size} parcels {BACK_H:.0f} h backward at {level} hPa ...")
     elapsed, plat, plon = back_trajectories(u, v, seeds_t, seeds_lat, seeds_lon,
                                             hours=BACK_H, dt_hours=1.0)
 
@@ -142,12 +158,24 @@ def main():
     group_stats(sec_case["south"], gids, low_s, high_s, rng, "frac", "south-origin fraction")
     group_stats(np.nan_to_num(dlat_case, nan=0.0), gids, low_s, high_s, rng, "deg",
                 "meridional displacement (origin minus seed lat)")
+    if level == 850:
+        # 850 hPa intersects the eastern highlands, where ERA5 extrapolates below ground,
+        # so full-domain 850 origin statistics are terrain-contaminated in the east. The
+        # west-of-25E subset is the safe version of the monsoon-import test.
+        west_ok = tr.lon[sel_idx] < 25.0
+        print(f"  WEST-OF-25E SUBSET (terrain-safe 850 origins, "
+              f"{int((low_s & west_ok).sum())}/{int((high_s & west_ok).sum())} cases):")
+        group_stats(sec_case["south"][west_ok], gids[west_ok], low_s[west_ok],
+                    high_s[west_ok], rng, "frac", "  south-origin fraction")
+        group_stats(np.nan_to_num(dlat_case, nan=0.0)[west_ok], gids[west_ok],
+                    low_s[west_ok], high_s[west_ok], rng, "deg",
+                    "  meridional displacement")
 
     # 2. along-track RH at fixed hours before the seed. The 0 h point is essentially the
     # box contrast itself and the -12/-24 h parcels are still near the box, so only the
     # -48 h point (parcels ~10-12 deg away) is independent evidence of an upstream origin;
     # the mean separation is printed with each row so the reader can see this.
-    print("\nALONG-TRACK 700 hPa RH (per-case parcel mean at hours before the seed; "
+    print(f"\nALONG-TRACK {level} hPa RH (per-case parcel mean at hours before the seed; "
           "lean on -48 h, the earlier points are progressively closer to the box):")
     rh_nd, rh_dv, rh_dd = [], [], []
     for eh in RH_ELAPSED:
@@ -165,6 +193,90 @@ def main():
         rh_dd.append((d, lo, hi))
         print(f"  -{eh:4.0f} h (mean separation {sep:4.1f} deg): non-dev {rh_nd[-1]:5.1f}%  "
               f"developing {rh_dv[-1]:5.1f}%  diff {d:+.2f} [{lo:+.2f}, {hi:+.2f}]  {sig}")
+        if eh == RH_ELAPSED[-1]:
+            # effective-sample-size check: the wave cluster already contains the parcel
+            # autocorrelation (a wave's cases and parcels resample together); the year
+            # block is the strictest exchangeable unit and absorbs regime-scale dependence
+            years = pd.DatetimeIndex(tr.time[sel_idx]).year.values
+            dy, loy, hiy, _, _ = cluster_bootstrap_diff(
+                years[low_s & ok], case[low_s & ok], years[high_s & ok],
+                case[high_s & ok], rng)
+            sigy = "significant" if not (loy <= 0 <= hiy) else "ns"
+            print(f"          year-block stress check of the -{eh:.0f} h contrast "
+                  f"({np.unique(years).size} clusters, not primary inference): "
+                  f"{dy:+.2f} [{loy:+.2f}, {hiy:+.2f}]  {sigy}")
+
+    # theta-e along track: relative humidity is temperature-dependent, so a moisture
+    # contrast alone cannot distinguish a distinct airmass from a temperature fluctuation.
+    # Theta-e is conserved in dry and pseudoadiabatic displacements, and the Saharan Air
+    # Layer carries a mid-level theta-e minimum, so a theta-e deficit along the more
+    # northerly non-developing inflow marks genuine dry-airmass import.
+    if temp is not None:
+        print(f"\nALONG-TRACK theta-e at {level} hPa (K; airmass identity, "
+              "conserved under dry/pseudoadiabatic displacement):")
+        for eh in RH_ELAPSED:
+            k = int(round(eh / (elapsed[1] - elapsed[0])))
+            t_abs = (seeds_t.astype("datetime64[ns]").astype("int64") / 3.6e12) - eh
+            rh_p = rh.sample(t_abs, plat[k], plon[k])
+            tt_p = temp.sample(t_abs, plat[k], plon[k])
+            te = theta_e(tt_p, rh_p, float(level)).reshape(n_case, npar)
+            case_te = np.nanmean(te, axis=1)
+            ok = np.isfinite(case_te)
+            d, lo, hi, _, _ = cluster_bootstrap_diff(
+                gids[low_s & ok], case_te[low_s & ok],
+                gids[high_s & ok], case_te[high_s & ok], rng)
+            sig = "significant" if not (lo <= 0 <= hi) else "ns"
+            print(f"  -{eh:4.0f} h: non-dev {case_te[low_s & ok].mean():6.1f}  developing "
+                  f"{case_te[high_s & ok].mean():6.1f}  diff {d:+.2f} "
+                  f"[{lo:+.2f}, {hi:+.2f}]  {sig}")
+
+        # vapor/temperature decomposition: a relative-humidity contrast can be more vapor,
+        # cooler air, or both, and theta-e NETS the two (vapor raises it, cooling lowers
+        # it). Saharan Air Layer air is warm AND dry (elevated mixed layer), so a moister-
+        # and-cooler developing inflow with a near-zero theta-e contrast is itself the SAL
+        # signature; this table shows the two components separately.
+        from aew.thermo import saturation_vapor_pressure
+        print(f"\nVAPOR/TEMPERATURE DECOMPOSITION at {level} hPa (mixing ratio g/kg, T K):")
+        for eh in (0.0, 24.0, 48.0):
+            k = int(round(eh / (elapsed[1] - elapsed[0])))
+            t_abs = (seeds_t.astype("datetime64[ns]").astype("int64") / 3.6e12) - eh
+            rp = rh.sample(t_abs, plat[k], plon[k])
+            tp = temp.sample(t_abs, plat[k], plon[k])
+            e = (rp / 100.0) * saturation_vapor_pressure(tp)
+            mix = 622.0 * e / (float(level) - e)
+            for name, arr, unit in (("r", mix, "g/kg"), ("T", tp, "K")):
+                case_x = np.nanmean(arr.reshape(n_case, npar), axis=1)
+                ok = np.isfinite(case_x)
+                d, lo, hi, _, _ = cluster_bootstrap_diff(
+                    gids[low_s & ok], case_x[low_s & ok],
+                    gids[high_s & ok], case_x[high_s & ok], rng)
+                sig = "significant" if not (lo <= 0 <= hi) else "ns"
+                print(f"  -{eh:2.0f} h  {name}: non-dev {case_x[low_s & ok].mean():7.2f}  "
+                      f"developing {case_x[high_s & ok].mean():7.2f}  diff {d:+.3f} {unit} "
+                      f"[{lo:+.3f}, {hi:+.3f}]  {sig}")
+
+        # the SAL fingerprint: theta-e of the NORTH-ORIGIN parcels at -48 h. If the
+        # non-developing inflow imports more Saharan air, its northern parcels carry a
+        # deeper theta-e minimum, not just a drier RH.
+        k = int(round(RH_ELAPSED[-1] / (elapsed[1] - elapsed[0])))
+        t_abs = (seeds_t.astype("datetime64[ns]").astype("int64") / 3.6e12) - RH_ELAPSED[-1]
+        te48 = theta_e(temp.sample(t_abs, plat[k], plon[k]),
+                       rh.sample(t_abs, plat[k], plon[k]), float(level))
+        te_n = np.where(sector == "north", te48, np.nan).reshape(n_case, npar)
+        case_n = np.nanmean(te_n, axis=1)
+        okn = np.isfinite(case_n)
+        d, lo, hi, _, _ = cluster_bootstrap_diff(
+            gids[low_s & okn], case_n[low_s & okn],
+            gids[high_s & okn], case_n[high_s & okn], rng)
+        sig = "significant" if not (lo <= 0 <= hi) else "ns"
+        print(f"  NORTH-ORIGIN parcels only, theta-e at -48 h: non-dev "
+              f"{case_n[low_s & okn].mean():6.1f}  developing "
+              f"{case_n[high_s & okn].mean():6.1f}  diff {d:+.2f} "
+              f"[{lo:+.2f}, {hi:+.2f}]  {sig}  "
+              f"(CONDITIONAL on cases with at least one north-origin parcel, retained "
+              f"{int(okn[low_s].sum())}/{int(okn[high_s].sum())} of "
+              f"{int(low_s.sum())}/{int(high_s.sum())}; differential retention means this "
+              "is not a group-wide fingerprint)")
 
     # Eulerian control: a fixed box at the climatological source offset (t-72h, east of the
     # meridian) instead of the tracked parcels. If the trajectory contrast were just the box
@@ -227,7 +339,7 @@ def main():
     ax2.plot(-eh, rh_nd, "o-", color="tab:blue", label="non-developing")
     ax2.plot(-eh, rh_dv, "o-", color="tab:red", label="developing")
     ax2.set_xlabel("hours before the t-24h box sample")
-    ax2.set_ylabel("700 hPa RH along track (%)")
+    ax2.set_ylabel(f"{level} hPa RH along track (%)")
     ax2.set_title("Along-track moisture history")
     ax2.legend(fontsize=8); ax2.grid(alpha=0.3)
 
