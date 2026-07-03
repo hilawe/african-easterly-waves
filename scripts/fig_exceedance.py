@@ -97,7 +97,8 @@ def main():
     print(f"P(exceed): non-developing {100 * p_nd:.1f}%  developing {100 * p_dv:.1f}%  "
           f"(ratio {p_dv / p_nd:.2f})")
 
-    # cluster-bootstrap interval on the exceedance ratio (wave unit, same as elsewhere)
+    # cluster-bootstrap interval on the exceedance-probability DIFFERENCE (wave unit,
+    # same as elsewhere); the ratio is reported as a point value only
     gids = tr.variables["traj_id"][sel_idx]
     rng = np.random.default_rng(0)
     exc_nd = (rh72 > thr).astype(float)
