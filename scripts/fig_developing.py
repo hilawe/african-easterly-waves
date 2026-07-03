@@ -264,22 +264,22 @@ def main():
     for pc, col in zip(parts["bodies"], ("tab:blue", "tab:red")):
         pc.set_facecolor(col); pc.set_alpha(0.5)
     ax1.set_xticks([0, 1]); ax1.set_xticklabels(
-        [f"non-developing\n(n={ndw.size})", f"developing\n(n={dvw.size})"])
+        [f"MCS-quiet\n(n={ndw.size})", f"MCS-active\n(n={dvw.size})"])
     ax1.set_ylabel(f"pre-trough {env_name}, 24 h before passage ({unit})")
-    ax1.set_title(f"Lon x month stratified: developing {diff:+.1f} {unit}\n"
+    ax1.set_title(f"Lon x month stratified: MCS-active {diff:+.1f} {unit}\n"
                   f"cluster-bootstrap 95% CI [{lo_ci:+.1f}, {hi_ci:+.1f}] ({sig})")
     ax1.grid(alpha=0.3, axis="y")
 
     # Panel B: per-bin means; reliable bins solid, under-sampled bins greyed/open
-    for arr, col, lab in ((nd_lon, "tab:blue", "non-developing"),
-                          (dv_lon, "tab:red", "developing")):
+    for arr, col, lab in ((nd_lon, "tab:blue", "MCS-quiet"),
+                          (dv_lon, "tab:red", "MCS-active")):
         ax2.plot(centers[reliable], arr[reliable], "o-", color=col, label=lab)
         if (~reliable).any():
             ax2.plot(centers[~reliable], arr[~reliable], "x", color=col, alpha=0.4)
     ax2.plot([], [], "x", color="grey", label=f"under-sampled (<{MIN_N}/group)")
     ax2.set_xlabel("longitude bin (deg E)")
     ax2.set_ylabel(f"pre-trough {env_name} ({unit})")
-    ax2.set_title("Developing vs non-developing by longitude")
+    ax2.set_title("MCS-active vs MCS-quiet by longitude")
     ax2.legend(fontsize=8); ax2.grid(alpha=0.3)
 
     fig.tight_layout(); fig.savefig(a.out, dpi=150)

@@ -112,9 +112,9 @@ def main():
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(7, 5))
     ax.plot(nd, np.linspace(0, 1, nd.size), color="tab:blue",
-            label=f"non-developing (n={nd.size})")
+            label=f"MCS-quiet (n={nd.size})")
     ax.plot(dv, np.linspace(0, 1, dv.size), color="tab:red",
-            label=f"developing (n={dv.size})")
+            label=f"MCS-active (n={dv.size})")
     ax.axvline(thr, color="k", lw=1, ls="--")
     ax.text(thr - 0.7, 0.42, f"pooled {a.pctl:.0f}th pctl ({thr:.1f}%)", fontsize=8,
             rotation=90, ha="right", va="bottom")
