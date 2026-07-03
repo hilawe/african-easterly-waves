@@ -221,15 +221,20 @@ def cds_from(var_key):
     return VAR_CDS[var_key][0]
 
 
-def load_region_6h(var_key, path_glob=None):
+def load_region_6h(var_key, path_glob=None, years=None):
     """Load and concatenate 6-hourly ERA5 files for one variable into plain arrays.
 
     Defaults to the regional environment files (data/era5/region6h); pass ``path_glob`` to
-    read another set (e.g. the global 1.5-degree wind band). Returns
-    ``(times, lat, lon, field)`` with field shaped (ntime, nlat, nlon) float32, latitude
-    ascending, times sorted with duplicate steps dropped.
+    read another set (e.g. the global 1.5-degree wind band). ``years`` restricts the match
+    to those seasons by the year token in the filename (era5_<var>_<year>_...), so a tier
+    run (development, held-out, pooled) reads exactly its season set rather than whatever
+    is on disk; a requested year with no file raises. Returns ``(times, lat, lon, field)``
+    with field shaped (ntime, nlat, nlon) float32, latitude ascending, times sorted with
+    duplicate steps dropped.
     """
     import glob as _glob
+    import os as _os
+    import re as _re
 
     import pandas as pd
 
@@ -238,6 +243,19 @@ def load_region_6h(var_key, path_glob=None):
     if not paths:
         raise FileNotFoundError(
             f"no ERA5 files match {pg!r}; run scripts/download_era5_env.py first")
+    if years is not None:
+        want = sorted({int(y) for y in years})
+        rx = _re.compile(rf"era5_{_re.escape(var_key)}_(\d{{4}})_")
+        by_year = {}
+        for p in paths:
+            m = rx.search(_os.path.basename(p))
+            if m:
+                by_year.setdefault(int(m.group(1)), p)
+        missing = [y for y in want if y not in by_year]
+        if missing:
+            raise FileNotFoundError(
+                f"no ERA5 {var_key} file for year(s) {missing} under {pg!r}")
+        paths = [by_year[y] for y in want]
     ts, blocks, lat, lon = [], [], None, None
     for p in paths:
         ds = xr.open_dataset(p)

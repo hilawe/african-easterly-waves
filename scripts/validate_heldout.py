@@ -16,8 +16,10 @@ contrast at -72 h relative to trough passage (the headline), the wave-level esti
 a year-block interval (which becomes real inference at 20 clusters rather than the
 5-cluster stress check of the development sample).
 
-Development-sample reference values (2000-2004): Eulerian +0.7 (-0.1..+1.5) ns;
-Lagrangian -72 h +1.82 (+0.40..+3.18); wave-level +0.5 (-0.1..+1.2) ns.
+Development-sample reference values (2000-2004): Eulerian +0.65 (-0.1..+1.5) ns;
+Lagrangian -72 h +1.82 (+0.4..+3.1); wave-level +0.62 (-0.3..+1.6) ns. Interval
+endpoints move in the second decimal between runs (per-script bootstrap streams);
+the canonical intervals are the deposit driver's (scripts/build_deposit.py).
 """
 
 import argparse

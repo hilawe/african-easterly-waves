@@ -46,17 +46,17 @@ SEED_LATS = (7.0, 10.0, 13.0)
 RH_ELAPSED = (0.0, 12.0, 24.0, 36.0, 48.0)
 
 
-def load_winds(level):
+def load_winds(level, years=None):
     uk, vk = f"u{level}", f"v{level}"
     try:
-        tu, lat, lon, uu = load_region_6h(uk)
-        tv, latv, lonv, vv = load_region_6h(vk)
+        tu, lat, lon, uu = load_region_6h(uk, years=years)
+        tv, latv, lonv, vv = load_region_6h(vk, years=years)
         src = "regional 0.5 deg"
     except FileNotFoundError:
         tu, lat, lon, uu = load_region_6h(
-            uk, f"data/era5/global6h/era5_{uk}_200*_6h_global.nc")
+            uk, f"data/era5/global6h/era5_{uk}_200*_6h_global.nc", years=years)
         tv, latv, lonv, vv = load_region_6h(
-            vk, f"data/era5/global6h/era5_{vk}_200*_6h_global.nc")
+            vk, f"data/era5/global6h/era5_{vk}_200*_6h_global.nc", years=years)
         src = "global 1.5 deg fallback"
     if not (tu.equals(tv) and np.array_equal(lat, latv) and np.array_equal(lon, lonv)):
         raise ValueError(f"{uk} and {vk} do not share the same time/lat/lon grid")
@@ -82,11 +82,24 @@ def main():
                          "monsoon-inflow channel. At 850 the level intersects elevated "
                          "terrain in the east (ERA5 extrapolates below ground), so eastern "
                          "origins are indicative only.")
+    ap.add_argument("--years", default=None,
+                    help="season set, e.g. 2000-2004 (the development tier) or "
+                         "1983-2007. Default: every AEWC/ERA5 year on disk, which is "
+                         "the pooled record once all files are present. Passing the "
+                         "set explicitly makes each tier's numbers regenerable.")
     ap.add_argument("--out", default="fig_moisture_budget.png")
     a = ap.parse_args()
     level = a.level
+    years = None
+    if a.years:
+        from validate_heldout import parse_years
+        years = parse_years(a.years)
+        print(f"season set: {len(years)} seasons {years[0]}..{years[-1]}")
+        aewc_source = [f"data/aewc/ERA-Int_ew_700hPa_{y}_AFR.nc" for y in years]
+    else:
+        aewc_source = a.aewc_glob
 
-    tr = (load_aewc_trajectories(a.aewc_glob)
+    tr = (load_aewc_trajectories(aewc_source)
           .filter_region(min_lat=5, max_lat=20, min_lon=-30, max_lon=40)
           .filter_months([7, 8, 9]))
     cs = xr.open_dataset(a.csct)
@@ -94,6 +107,9 @@ def main():
     csx = np.asarray(cs["lon"].values, float)
     csy = np.asarray(cs["lat"].values, float)
     cs.close()
+    if years is not None:
+        inyr = np.isin(pd.DatetimeIndex(cst).year, years)
+        cst, csx, csy = cst[inyr], csx[inyr], csy[inyr]
 
     # the same stratified split as fig_developing (longitude x month, same response, bins,
     # minimum), so the two groups are matched in geography AND season
@@ -105,15 +121,15 @@ def main():
     print(f"troughs in the split: {sel.sum()} of {len(tr)} "
           f"(non-dev {low.sum()}, developing {high.sum()})")
 
-    tw, wlat, wlon, uu, vv, wsrc = load_winds(level)
+    tw, wlat, wlon, uu, vv, wsrc = load_winds(level, years)
     print(f"winds: {level} hPa, {wsrc}, {tw.size} steps "
           f"{tw.min().date()}..{tw.max().date()}")
     u = Gridded(tw.values, wlat, wlon, uu)
     v = Gridded(tw.values, wlat, wlon, vv)
-    tr7, rlat, rlon, rfield = load_region_6h(f"r{level}")
+    tr7, rlat, rlon, rfield = load_region_6h(f"r{level}", years=years)
     rh = Gridded(tr7.values, rlat, rlon, rfield)
     try:
-        tt7, tlat, tlon, tfield = load_region_6h(f"t{level}")
+        tt7, tlat, tlon, tfield = load_region_6h(f"t{level}", years=years)
         temp = Gridded(tt7.values, tlat, tlon, tfield)
     except FileNotFoundError:
         temp = None
@@ -321,8 +337,8 @@ def main():
     # panel A: origin-point density (2D histogram difference, developing minus non-dev)
     ok = np.isfinite(plat[-1]) & np.isfinite(plon[-1])
     case_of_parcel = np.repeat(np.arange(n_case), npar)
-    for msk, col, lab in ((low_s, "tab:blue", "non-developing"),
-                          (high_s, "tab:red", "developing")):
+    for msk, col, lab in ((low_s, "tab:blue", "MCS-quiet"),
+                          (high_s, "tab:red", "MCS-active")):
         pm = msk[case_of_parcel] & ok
         ax1.scatter(plon[-1][pm], plat[-1][pm], s=1.5, alpha=0.12, color=col, label=lab)
     ax1.axhline(LAT_LO, color="k", lw=0.5); ax1.axhline(LAT_HI, color="k", lw=0.5)
@@ -336,8 +352,8 @@ def main():
 
     # panel B: along-track RH
     eh = np.array(RH_ELAPSED)
-    ax2.plot(-eh, rh_nd, "o-", color="tab:blue", label="non-developing")
-    ax2.plot(-eh, rh_dv, "o-", color="tab:red", label="developing")
+    ax2.plot(-eh, rh_nd, "o-", color="tab:blue", label="MCS-quiet")
+    ax2.plot(-eh, rh_dv, "o-", color="tab:red", label="MCS-active")
     ax2.set_xlabel("hours before the t-24h box sample")
     ax2.set_ylabel(f"{level} hPa RH along track (%)")
     ax2.set_title("Along-track moisture history")
@@ -351,7 +367,7 @@ def main():
     ax3.fill_between(-eh, lo_, hi_, color="grey", alpha=0.3, label="cluster-bootstrap 95% CI")
     ax3.plot(-eh, dd, "o-", color="tab:purple")
     ax3.set_xlabel("hours before the t-24h box sample")
-    ax3.set_ylabel("developing minus non-developing RH (%)")
+    ax3.set_ylabel("MCS-active minus MCS-quiet RH (%)")
     ax3.set_title("When does the moisture contrast open?")
     ax3.legend(fontsize=8); ax3.grid(alpha=0.3)
 
