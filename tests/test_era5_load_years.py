@@ -43,3 +43,21 @@ def test_missing_year_raises(tmp_path):
     glob = str(tmp_path / "era5_r700_*_6h_region.nc")
     with pytest.raises(FileNotFoundError, match="1999"):
         load_region_6h("r700", glob, years=[1999, 2000])
+
+
+def test_truncated_year_raises(tmp_path):
+    # a file whose name claims a year it barely covers must fail loudly, not
+    # silently feed one short season into a canonical run
+    _write_year(tmp_path, "r700", 2000, 1.0)
+    _write_year(tmp_path, "r700", 2001, 2.0)
+    time = pd.date_range("2002-07-01", periods=1, freq="6h")
+    ds = xr.Dataset(
+        {"r": (("time", "latitude", "longitude"),
+               np.full((1, 2, 3), 3.0, dtype=np.float32))},
+        coords={"time": time, "latitude": np.array([5.0, 5.5]),
+                "longitude": np.array([0.0, 0.5, 1.0])},
+    )
+    ds.to_netcdf(tmp_path / "era5_r700_2002_6h_region.nc")
+    glob = str(tmp_path / "era5_r700_*_6h_region.nc")
+    with pytest.raises(ValueError, match="incomplete year"):
+        load_region_6h("r700", glob, years=[2000, 2001, 2002])

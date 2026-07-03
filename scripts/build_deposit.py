@@ -17,6 +17,15 @@ constant is the frozen baseline: forward response in a trough-relative box (half
 level through 0.5-degree ERA5 winds, and the wave-cluster bootstrap. Class labels follow
 the manuscript terminology: MCS-active (upper tercile) and MCS-quiet (lower tercile).
 
+Split convention: the tercile split is computed over ALL corridor troughs, and finite
+field values are filtered per statistic afterwards, matching the frozen harness
+(validate_heldout.py) and the budget script (fig_moisture_budget.py), which the numbers
+policy designates canonical. fig_developing.py restricts to environment-analyzable
+troughs BEFORE splitting; the two conventions coincide only when field coverage is
+complete, so this driver enforces that condition with a hard coverage guard (a run on a
+degraded ERA5 record fails loudly instead of shifting class labels silently). The
+loader additionally rejects any requested year whose file is missing or truncated.
+
 Clock convention: the environment sample sits 24 h before trough passage and the
 trajectories extend 48 h back from it, so trajectory-elapsed hours 0..48 are
 passage-relative -24..-72 h. The table's time_rel_h column is passage-relative.
@@ -168,14 +177,28 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, low_s, high_s
     rt, rlat, rlon, rfield = load_region_6h(f"r{level}", years=years)
     rt_vals = rt.values
 
-    def box(lon_shift, lead_h):
-        lv = lead_field_box(tr.time, tr.lon + lon_shift, rt_vals, rlat, rlon, rfield,
-                            lead_h, tol_h=TOL_H, dlon=BOX_DLON,
-                            lat_lo=LAT_LO, lat_hi=LAT_HI)[sel_idx]
-        ok = np.isfinite(lv)
-        return lv, ok
+    def box_full(lon_shift, lead_h):
+        return lead_field_box(tr.time, tr.lon + lon_shift, rt_vals, rlat, rlon, rfield,
+                              lead_h, tol_h=TOL_H, dlon=BOX_DLON,
+                              lat_lo=LAT_LO, lat_hi=LAT_HI)
 
-    box0, ok0 = box(0.0, LEAD_H)
+    def box(lon_shift, lead_h):
+        lv = box_full(lon_shift, lead_h)[sel_idx]
+        return lv, np.isfinite(lv)
+
+    # coverage guard (see the split-convention note in the module docstring): the
+    # split-then-filter convention equals fig_developing's filter-then-split one only
+    # at complete coverage over ALL corridor troughs, not just the selected terciles
+    # (a missing value on a mid-tercile trough would still shift the filter-first
+    # split), so the guard runs on the full corridor before any subsetting
+    lv_full = box_full(0.0, LEAD_H)
+    cov = float(np.isfinite(lv_full).mean())
+    if cov < 0.999:
+        raise RuntimeError(f"{tier}/{level}: meridian box coverage {cov:.4f} < 0.999 "
+                           "over the full corridor; the ERA5 record is degraded, "
+                           "refusing a canonical run")
+    box0 = lv_full[sel_idx]
+    ok0 = np.isfinite(box0)
     r_eul = dep.contrast(tier, level, "eulerian_box", -24, "%",
                          gids[low_s & ok0], box0[low_s & ok0],
                          gids[high_s & ok0], box0[high_s & ok0], rng,
@@ -194,7 +217,13 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, low_s, high_s
                      gids[low_s & ok], lv[low_s & ok],
                      gids[high_s & ok], lv[high_s & ok], rng)
 
-    # ---- trajectories (loads freed aggressively; 25-season fields are large) ----
+    # ---- trajectories ----
+    # Gridded stores float64 copies (changing its dtype would perturb the canonical
+    # interpolation arithmetic), so the pooled-tier peak is u and v at float64
+    # (~2.8 GB each) plus the float32 humidity field held for later sampling
+    # (~1.4 GB), about 7 GB live during integration; measured fine on the 16 GB
+    # machine (the full three-tier run takes ~9 min). Each float32 source array is
+    # freed the moment its Gridded copy exists.
     seed_time = (tr.time[sel_idx].astype("datetime64[ns]")
                  - np.timedelta64(int(LEAD_H * 3600), "s"))
     gd, gl = np.meshgrid(SEED_DLON, SEED_LATS)

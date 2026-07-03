@@ -54,9 +54,9 @@ def load_winds(level, years=None):
         src = "regional 0.5 deg"
     except FileNotFoundError:
         tu, lat, lon, uu = load_region_6h(
-            uk, f"data/era5/global6h/era5_{uk}_200*_6h_global.nc", years=years)
+            uk, f"data/era5/global6h/era5_{uk}_*_6h_global.nc", years=years)
         tv, latv, lonv, vv = load_region_6h(
-            vk, f"data/era5/global6h/era5_{vk}_200*_6h_global.nc", years=years)
+            vk, f"data/era5/global6h/era5_{vk}_*_6h_global.nc", years=years)
         src = "global 1.5 deg fallback"
     if not (tu.equals(tv) and np.array_equal(lat, latv) and np.array_equal(lon, lonv)):
         raise ValueError(f"{uk} and {vk} do not share the same time/lat/lon grid")

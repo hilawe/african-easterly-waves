@@ -265,7 +265,13 @@ def load_region_6h(var_key, path_glob=None, years=None):
         lon = np.asarray(ds["longitude"].values, float)
         name = [v for v in ds.data_vars if v in ("r", "tcwv", "q", "u", "v", "t")]
         da = ds[name[0]] if name else ds[list(ds.data_vars)[0]]
-        blocks.append(np.asarray(da.squeeze().values, dtype=np.float32))
+        # squeeze only the singleton level dimension; a blind squeeze() would also
+        # drop the time axis of a single-step file and corrupt the concatenation
+        extra = [d for d in da.dims
+                 if d not in (tname, "time", "latitude", "longitude")]
+        if extra:
+            da = da.squeeze(extra, drop=True)
+        blocks.append(np.asarray(da.values, dtype=np.float32))
         ds.close()
     t = pd.DatetimeIndex(np.concatenate([x.values for x in ts]))
     field = np.concatenate(blocks, axis=0)
@@ -276,4 +282,21 @@ def load_region_6h(var_key, path_glob=None, years=None):
     if lat[0] > lat[-1]:
         lat = lat[::-1]
         field = field[:, ::-1, :]
+    if years is not None:
+        # the filename token proves nothing about the record inside; a truncated file
+        # would otherwise pass silently and turn one season into NaN downstream, so
+        # verify every requested year actually contributes steps and that no year is
+        # anomalously short against the modal year
+        counts = pd.Series(t.year).value_counts()
+        empty = [y for y in years if counts.get(int(y), 0) == 0]
+        if empty:
+            raise ValueError(f"ERA5 {var_key}: file matched but no timestamps for "
+                             f"year(s) {sorted(int(y) for y in empty)}")
+        modal = int(counts.mode().iloc[0])
+        short = {int(y): int(counts[int(y)]) for y in years
+                 if counts[int(y)] < 0.95 * modal}
+        if short:
+            raise ValueError(f"ERA5 {var_key}: incomplete year(s) {short} against a "
+                             f"modal {modal} steps per year; re-download before a "
+                             "canonical run")
     return t, lat, lon, field
