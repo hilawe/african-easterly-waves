@@ -157,8 +157,8 @@ def effective_dof_p(w_core, c_core, r):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--u-glob", default="data/era5/global6h/era5_u700_200*_6h_global.nc")
-    ap.add_argument("--v-glob", default="data/era5/global6h/era5_v700_200*_6h_global.nc")
+    ap.add_argument("--u-glob", default="data/era5/global6h/era5_u700_*_6h_global.nc")
+    ap.add_argument("--v-glob", default="data/era5/global6h/era5_v700_*_6h_global.nc")
     ap.add_argument("--csct", default="data/original/csct/csct_africa_cs245.nc")
     ap.add_argument("--lon-lo", type=float, default=-15.0)
     ap.add_argument("--lon-hi", type=float, default=35.0)

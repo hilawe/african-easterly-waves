@@ -43,8 +43,10 @@ def main():
           .filter_months([7, 8, 9]))
     allg = from_ct_genesis(a.ct)
     deep = from_ct_genesis(a.ct, deep_core_K=200.0)
-    # restrict genesis to the AEWC window (troughs span the file years) for a fair match
-    ylo, yhi = 1984, 2001
+    # the full overlap of the CT record (1984-2007) with the AEWC troughs; an earlier
+    # 1984-2001 cutoff was a stale development-era restriction the full-record review
+    # caught (its counts, 59,929/17,966, were what the draft mistakenly dated 1984-2007)
+    ylo, yhi = 1984, 2007
     def win(ev):
         import pandas as pd
         yr = pd.DatetimeIndex(ev.time).year
