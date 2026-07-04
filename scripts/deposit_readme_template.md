@@ -45,6 +45,13 @@ One row per trough observation in the stratified split. Identifiers as above, pl
 - `exceed_p70`: the -72 h inflow sample exceeds the tier's pooled 70th percentile
 - `antecedent`: prior-day CS-245 count (700 hPa table only)
 
+## paths_<tier>_<level>.csv
+
+Group-mean inflow path in trough-relative coordinates, one row per trajectory hour per
+class: `elapsed_h` (hours before the seed), `time_rel_h` (passage-relative), `group`,
+`mean_rel_lon` (mean parcel longitude minus trough longitude), `mean_lat`,
+`n_parcels`. Drawn as the mean inflow paths in the supply-contrast figure.
+
 ## parcels_<tier>_<level>.csv
 
 One row per back-trajectory parcel (9 per case): `case`, `parcel`, `traj_id`,

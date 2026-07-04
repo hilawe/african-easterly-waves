@@ -9,7 +9,9 @@ latitude row and time). If the two reanalyses agree, the composite peaks at zero
 a systematic displacement would bias every ERA5 box mean sampled at AEWC centers.
 
 Inputs: AEWC trajectories (data/aewc), ERA5 u/v 700 6-hourly global (data/era5/global6h).
-Prints the offset profile, the peak offset, and the profile centroid near the peak.
+Prints the offset profile, the peak offset, and the profile centroid near the peak, and
+writes the supplement figure (the alignment profile with the centroid annotated). The
+default globs take every year on disk, which is the pooled record.
 """
 
 import argparse
@@ -52,8 +54,9 @@ def load_era5_curv(u_glob, v_glob):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--aewc-glob", default="data/aewc/ERA-Int_ew_700hPa_*_AFR.nc")
-    ap.add_argument("--u-glob", default="data/era5/global6h/era5_u700_200*_6h_global.nc")
-    ap.add_argument("--v-glob", default="data/era5/global6h/era5_v700_200*_6h_global.nc")
+    ap.add_argument("--u-glob", default="data/era5/global6h/era5_u700_*_6h_global.nc")
+    ap.add_argument("--v-glob", default="data/era5/global6h/era5_v700_*_6h_global.nc")
+    ap.add_argument("--out", default="fig_track_alignment.png")
     a = ap.parse_args()
 
     tr = (load_aewc_troughs(a.aewc_glob)
@@ -105,6 +108,26 @@ def main():
           "ERA-Interim-based AEWC centers coincide with the ERA5 curvature-vorticity trough, "
           "so ERA5 box means sampled at AEWC centers carry no systematic cross-reanalysis "
           "displacement at this resolution.")
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(7, 4.6))
+    ax.axvline(0, color="k", lw=0.8, ls="--")
+    ax.plot(off_deg, prof * 1e6, "o-", color="#5e3c99")
+    ax.axvline(centroid, color="#e08214", lw=1.2)
+    ax.text(0.02, 0.97,
+            f"peak {off_deg[ipk]:+.1f} deg\n"
+            f"positive-lobe centroid {centroid:+.2f} deg\n"
+            f"median per-trough argmax {med_argmax:+.1f} deg",
+            transform=ax.transAxes, fontsize=8.5, va="top", color="#333333")
+    ax.set_xlabel("longitude offset from the AEWC trough center (deg)")
+    ax.set_ylabel("mean ERA5 700 hPa curvature vorticity (1e-6 s$^{-1}$)")
+    ax.set_title(f"Cross-reanalysis alignment ({n_matched} trough observations)")
+    ax.grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(a.out, dpi=300)
+    print("wrote", a.out)
 
 
 if __name__ == "__main__":

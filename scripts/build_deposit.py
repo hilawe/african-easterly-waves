@@ -418,6 +418,26 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, low_s, high_s
                   lag72["diff"] / r_eul["diff"],
                   note="lagrangian -72 h contrast over the meridian Eulerian box")
 
+    # ---- group-mean inflow paths (figure F6a input; consumes no random numbers,
+    # computed after every statistic so the streams above are untouched) ----
+    trough_lon_par = np.repeat(tr.lon[sel_idx], npar)
+    path_rows = []
+    for k in range(plat.shape[0]):
+        rel_lon = plon[k] - trough_lon_par
+        for gname, gmask in (("MCS-quiet", low_s), ("MCS-active", high_s)):
+            pm = gmask[np.repeat(np.arange(n_case), npar)]
+            ok_p = pm & np.isfinite(rel_lon) & np.isfinite(plat[k])
+            path_rows.append(dict(
+                elapsed_h=float(elapsed[k]),
+                time_rel_h=-(LEAD_H + float(elapsed[k])),
+                group=gname,
+                mean_rel_lon=float(np.mean(rel_lon[ok_p])),
+                mean_lat=float(np.mean(plat[k][ok_p])),
+                n_parcels=int(ok_p.sum()),
+            ))
+    paths_path = os.path.join(outdir, f"paths_{tier}_{level}.csv")
+    pd.DataFrame(path_rows).to_csv(paths_path, index=False, float_format="%.4f")
+
     # ---- per-case and per-parcel tables ----
     case = pd.DataFrame({
         "case": np.arange(n_case),
