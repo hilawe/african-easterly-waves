@@ -28,6 +28,9 @@ def main():
     ap.add_argument("--base-lon", type=float, default=0.0)
     ap.add_argument("--sigma", type=float, default=2.0)
     ap.add_argument("--out", default="wk_independence.png")
+    ap.add_argument("--save-npz", default=None,
+                    help="also write the aligned series and summary numbers for the "
+                         "composed validation figure")
     a = ap.parse_args()
 
     ds = xr.open_dataset(a.era5).squeeze(drop=True)
@@ -76,6 +79,12 @@ def main():
           f"n_dates={len(cd_e)}")
     print(f"original td     : std={np.nanstd(tv, ddof=1):.3f}  thr={thr_t:.3f}  "
           f"n_dates={len(cd_t)}")
+
+    if a.save_npz:
+        np.savez(a.save_npz, common=common.values.astype("datetime64[ns]"),
+                 era5=ea, td=ta, r=r, n=int(ok.sum()),
+                 n_dates_era5=len(cd_e), n_dates_td=len(cd_t))
+        print("cached panel arrays at", a.save_npz)
 
     import matplotlib
     matplotlib.use("Agg")

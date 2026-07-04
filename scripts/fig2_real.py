@@ -31,6 +31,9 @@ def main():
     ap.add_argument("--panel", default="a) MCS", help="panel label, e.g. 'a) MCS' or 'b) WDCS'")
     ap.add_argument("--shaded-label", default="MCS count anomaly (count - lag mean)")
     ap.add_argument("--out", default="fig2_real.png")
+    ap.add_argument("--save-npz", default=None,
+                    help="also write the panel arrays (shaded, contour, coordinates, "
+                         "provenance numbers) for the composed validation figure")
     a = ap.parse_args()
     minLat, maxLat, minLon, maxLon, lon_scale = 5.0, 15.0, -40.0, 80.0, 4.0
 
@@ -66,6 +69,13 @@ def main():
     counts = hovmoller_event_counts(cd.time, cs_time.values, cs_lon, lon_centers, lag,
                                     cs_lat=cs_lat, min_lat=minLat, max_lat=maxLat)
     shaded = anomaly(counts, "anomaly")
+
+    if a.save_npz:
+        np.savez(a.save_npz, shaded=shaded, lon_centers=lon_centers, lag=lag,
+                 contour=comp.values, contour_lon=clon, contour_lag=comp.lag,
+                 base_lon=a.base_lon, n_dates=len(cd), thr=thr, sigma=a.sigma,
+                 lon_scale=lon_scale)
+        print("cached panel arrays at", a.save_npz)
 
     # 4) plot
     prov = (f"Number of dates: {len(cd)}\nStd. Dev. threshold: {a.sigma:g}\n"
