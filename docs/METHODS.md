@@ -136,8 +136,8 @@ The analysis is a single tested Python package (numpy, scipy, xarray, pandas, ma
 cartopy). Each numerical operator has unit tests on synthetic inputs with known answers,
 and the full suite covers the filter, the composite-date selection, both composite
 operators, the binning routines, the tracker, and the readers. Every non-trivial numerical
-component was checked line by line against the surviving original code by an
-independent code review. Input datasets and their access paths are recorded so that each
+component was checked line by line against the surviving original code by an independent
+code review. Input datasets and their access paths are recorded so that each
 figure can be regenerated from public sources, with the exception of the ISCCP CS/CT
 records, which are the original derived product.
 
