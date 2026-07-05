@@ -21,6 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 plot = ["matplotlib>=3.7", "cartopy>=0.22"]
 data = ["cdsapi>=0.6"]
+stats = ["statsmodels>=0.14"]  # control_model.py (Poisson GLM, cluster-robust SE)
 dev = ["pytest>=7", "pytest-cov>=4"]
 
 [tool.setuptools.packages.find]
