@@ -72,7 +72,7 @@ def main():
     panel(ax2, moist, ["meridian\nbox (-24 h)", "inflow\nat -48 h", "inflow\nat -72 h",
                        "wave\nlevel"],
           C_MOIST, "%", "(b) 700 hPa moisture: grows along the inflow, survives")
-    fig.suptitle("The organization axis against the moisture axis, 1983-2007",
+    fig.suptitle("The shear control against the moisture contrast, 1983-2007",
                  fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     fig.savefig(a.out, dpi=300)

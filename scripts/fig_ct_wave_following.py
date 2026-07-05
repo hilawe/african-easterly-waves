@@ -64,12 +64,14 @@ def main():
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(9, 5))
     ax.fill_between(REL_C, -na, na, color="grey", alpha=0.2, label="shifted-trough null +/-2 sigma")
-    ax.plot(REL_C, ea, color="tab:red", label=f"all CT genesis (n={len(allg)})")
-    ax.plot(REL_C, ed, color="tab:purple", label=f"deep genesis <200 K (n={len(deep)})")
+    ax.plot(REL_C, ea, color="tab:red",
+            label=f"all first cold-cloud detections (n={len(allg)})")
+    ax.plot(REL_C, ed, color="tab:purple",
+            label=f"deep systems <200 K (n={len(deep)})")
     ax.axvline(0, color="green", lw=2); ax.axhline(0, color="k", lw=0.6)
     ax.set_xlabel("Longitude relative to trough (deg; east positive)")
-    ax.set_ylabel("CT genesis excess over null, 5-15N mean")
-    ax.set_title("Where CT families INITIATE relative to the moving AEW trough (JAS)")
+    ax.set_ylabel("first-detection excess over null, 5-15N mean")
+    ax.set_title("First cold-cloud detection relative to the moving trough (JAS)")
     ax.legend(); ax.grid(alpha=0.3)
     fig.tight_layout(); fig.savefig(a.out, dpi=150)
     print("wrote", a.out)
