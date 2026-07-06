@@ -7,3 +7,5 @@ logs/
 *.nc
 *.png
 *.eps
+# the summary schematic is a tracked repo asset, not a generated figure
+!docs/schematic.png

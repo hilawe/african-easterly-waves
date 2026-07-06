@@ -11,6 +11,15 @@ wave and the large thunderstorm clusters that travel with it: where the storms s
 to the wave, how that depends on wave amplitude and wavelength, and how the location of
 storm initiation differs from the location of mature storms.
 
+![Two-layer thermodynamic gating of convective development in African easterly waves](docs/schematic.png)
+
+Summary schematic. An MCS-active trough (left) draws less dry Saharan air at the jet level
+(700 hPa) over a moister, cooler monsoon layer (850 hPa), and deep convection develops. An
+MCS-quiet trough (right) shares the same southwesterly monsoon inflow but takes drier,
+warmer air aloft, and convection stays shallow. Transport differences are drawn in the
+700 hPa arrows and state differences in the 850 hPa fill. All flow arrows are
+ground-relative.
+
 ## What it does
 
 - Space-time (wavenumber-frequency) wave filtering of 700 hPa meridional wind, isolating
