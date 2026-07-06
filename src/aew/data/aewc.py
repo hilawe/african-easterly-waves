@@ -57,7 +57,7 @@ class Troughs:
         return self._subset(np.asarray(mask, dtype=bool))
 
 
-def load_aewc_trajectories(paths_or_glob, lead_hours=(24.0, 48.0)):
+def load_aewc_trajectories(paths_or_glob, lead_hours=(24.0, 48.0), dedup=True):
     """Load AEWC troughs WITH trajectory linkage and lead (preconditioning) amplitude.
 
     The file is a contiguous ragged array: count(trajectory) gives each wave's sample
@@ -140,10 +140,11 @@ def load_aewc_trajectories(paths_or_glob, lead_hours=(24.0, 48.0)):
                  lon=np.concatenate(lons), variables=variables)
     # drop only rows with no valid location (keep NaN lead amplitudes; caller filters)
     good = np.isfinite(tr.lat) & np.isfinite(tr.lon)
-    return tr._subset(good)
+    tr = tr._subset(good)
+    return deduplicate(tr) if dedup else tr
 
 
-def load_aewc_troughs(paths_or_glob):
+def load_aewc_troughs(paths_or_glob, dedup=True):
     """Load one or more AEWC yearly files into a Troughs container."""
     import xarray as xr
 
@@ -154,7 +155,8 @@ def load_aewc_troughs(paths_or_glob):
     if not paths:
         raise FileNotFoundError(f"no AEWC files matched {paths_or_glob!r}")
 
-    times, lats, lons, wls, crvs, rvs = [], [], [], [], [], []
+    times, lats, lons, wls, crvs, rvs, tids = [], [], [], [], [], [], []
+    tid_offset = 0
     for p in paths:
         ds = xr.open_dataset(p)
         # ragged-array sanity: time/lat/lon are per-sample and count sums to nsample
@@ -175,14 +177,98 @@ def load_aewc_troughs(paths_or_glob):
         wl = _v("wavelength")
         crv = _v("meancrv")   # mean trough curvature vorticity (wave amplitude proxy)
         rv = _v("meanrv")     # mean trough relative vorticity
+        # per-sample trajectory id from the ragged count, globally unique across files;
+        # needed to merge the tracker's duplicate trajectories in deduplicate()
+        if "count" in ds:
+            count = np.asarray(ds["count"].values, int)
+            traj_id = np.repeat(np.arange(count.size) + tid_offset, count)
+            tid_offset += count.size
+        else:
+            traj_id = np.full(lat.shape, -1, dtype=np.int64)
         ds.close()
         good = np.isfinite(lat) & np.isfinite(lon)
         times.append(t[good]); lats.append(lat[good]); lons.append(lon[good])
         wls.append(wl[good]); crvs.append(crv[good]); rvs.append(rv[good])
+        tids.append(traj_id[good])
 
-    return Troughs(
+    tr = Troughs(
         time=pd.DatetimeIndex(np.concatenate([x.values for x in times])).values,
         lat=np.concatenate(lats), lon=np.concatenate(lons),
         variables={"wavelength": np.concatenate(wls), "crv": np.concatenate(crvs),
-                   "rv": np.concatenate(rvs)},
+                   "rv": np.concatenate(rvs), "traj_id": np.concatenate(tids)},
     )
+    return deduplicate(tr) if dedup else tr
+
+
+def deduplicate(tr, min_shared=3):
+    """Remove the AEWC's duplicate trough observations and merge fragment trajectories.
+
+    The Belanger tracker assigns some physical waves several overlapping trajectory IDs
+    whose (time, lat, lon) samples are largely identical, so ~40 percent of the raw trough
+    observations in the West African JAS domain are exact duplicates of another
+    trajectory's. This collapses that double-counting in two steps:
+
+    1. Keep one observation per unique (time, lat, lon), dropping the duplicates.
+    2. Union trajectories that share at least ``min_shared`` common (time, lat, lon) points
+       into one physical wave, recorded in a new ``wave_id`` variable, so wave-level
+       clustering (e.g. the cluster bootstrap) counts a fragmented wave once.
+
+    Positions are matched at the record's stored 3-decimal precision (the AEWC lat/lon are
+    given to that precision), which is exact for this data and robust to float round-trip.
+
+    Requires a ``traj_id`` variable (both AEWC loaders provide it). Returns a new Troughs.
+    """
+    from collections import defaultdict
+
+    if "traj_id" not in tr.variables:
+        raise ValueError("deduplicate requires a traj_id variable")
+    tid = np.asarray(tr.variables["traj_id"], dtype=np.int64)
+    if (tid < 0).any():
+        raise ValueError("traj_id has sentinel -1 (source file lacked the ragged 'count'); "
+                         "cannot identify waves to deduplicate")
+    t = pd.DatetimeIndex(tr.time).asi8
+    keys = list(zip(t.tolist(), np.round(tr.lat, 3).tolist(), np.round(tr.lon, 3).tolist()))
+
+    groups = defaultdict(list)          # (time,lat,lon) -> observation indices
+    for i, k in enumerate(keys):
+        groups[k].append(i)
+
+    # count exact points shared by each trajectory pair
+    pair = defaultdict(int)
+    for idxs in groups.values():
+        tset = sorted(set(int(tid[i]) for i in idxs))
+        for a in range(len(tset)):
+            for b in range(a + 1, len(tset)):
+                pair[(tset[a], tset[b])] += 1
+
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        root = x
+        while parent[root] != root:
+            root = parent[root]
+        while parent[x] != root:            # path compression
+            parent[x], x = root, parent[x]
+        return root
+
+    for u in np.unique(tid):
+        find(int(u))
+    for (a, b), n in pair.items():
+        if n >= min_shared:
+            ra, rb = find(a), find(b)
+            if ra != rb:
+                parent[rb] = ra
+    wave_id = np.array([find(int(x)) for x in tid], dtype=np.int64)
+
+    keep = np.zeros(len(tr), dtype=bool)    # first observation per unique (time,lat,lon)
+    for idxs in groups.values():
+        keep[idxs[0]] = True
+
+    out = tr._subset(keep)
+    out.variables["wave_id"] = wave_id[keep]
+    # also expose the merged identity as traj_id so downstream wave clustering (which keys
+    # on traj_id) counts a fragmented wave once; the pre-merge id is kept as orig_traj_id
+    out.variables["orig_traj_id"] = np.asarray(tr.variables["traj_id"])[keep]
+    out.variables["traj_id"] = wave_id[keep]
+    return out

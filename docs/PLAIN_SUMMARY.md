@@ -29,7 +29,7 @@ To check that this is real and not just the fact that the Sahel is stormy anyway
 excess near the trough is compared against a scrambled control in which the trough longitudes
 are randomized. The excess near the trough is about 1.6 times the size of the excess in the
 scrambled control, and that difference is far outside what the control's own spread would
-produce by chance (about eleven times its scatter). The clustering is tied to the trough, not
+produce by chance (about nine times its scatter). The clustering is tied to the trough, not
 to geography. Two refinements sharpen the picture. Stronger waves organize storms more
 tightly, with the strongest third of waves producing a higher, narrower storm peak than the
 weakest third. And where storm systems first appear is spread broadly around the wave, while
@@ -43,14 +43,14 @@ the moisture of the air that feeds each trough, and it does so in two ways that 
 matter a great deal.
 
 The simple way is to sit in a fixed box near the trough and read the humidity. Done that way,
-the storm-growing troughs sit in air that is only slightly moister, about +0.9 percent
+the storm-growing troughs sit in air that is only slightly moister, about +1.1 percent
 relative humidity. The signal is there but faint.
 
 The flow-following way is different. Instead of a fixed box, the analysis traces the actual
 ribbon of air flowing into each trough, back three days upstream, and reads the humidity of
-that inflow. Along the real inflow, the storm-growing troughs are fed by air about +3.1
-percent moister (a range of +2.4 to +3.7 covers the uncertainty), and the contrast grows the
-farther back the air is traced. The fixed box sees only a diluted shadow of this, about a
+that inflow. Along the real inflow, the storm-growing troughs are fed by air about +3.0
+percent moister (a range of +2.0 to +4.0 covers the uncertainty), and the contrast grows the
+farther back the air is traced. The fixed box sees only a diluted shadow of this, just over a
 third of the flow-following contrast, because a fixed box mixes the moist inflow ribbon with
 drier surrounding air. The moisture difference is real, but it lives in the moving inflow, not
 in a stationary snapshot. In blunt terms, the storm-growing troughs are the ones drinking from
