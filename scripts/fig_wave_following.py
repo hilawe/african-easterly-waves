@@ -65,6 +65,7 @@ def main():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from mpl_toolkits.axes_grid1 import make_axes_locatable
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
     amax = np.nanmax(np.abs(anom))
     pc = ax1.contourf(rel_c, lat_c, anom, levels=np.linspace(-amax, amax, 21),
@@ -72,7 +73,12 @@ def main():
     ax1.axvline(0, color="green", lw=2)
     ax1.set_ylabel("Latitude (N)")
     ax1.set_title("MCS excess over shifted-trough null, relative to the moving AEW trough")
-    fig.colorbar(pc, ax=ax1, label="MCS count minus shifted-trough null")
+    # give the colorbar its own axis appended to ax1, and append a matching invisible
+    # spacer to ax2, so both panels keep the same width and the shared longitude axis
+    # lines up vertically (the trough axis at 0 sits at the same position in both)
+    cax = make_axes_locatable(ax1).append_axes("right", size="3%", pad=0.15)
+    fig.colorbar(pc, cax=cax, label="MCS count minus shifted-trough null")
+    make_axes_locatable(ax2).append_axes("right", size="3%", pad=0.15).set_axis_off()
     # latitude-averaged (5-15N) profile with the null +/-2 sigma band
     ax2.fill_between(rel_c, -prof_null2s, prof_null2s, color="grey", alpha=0.25,
                      label="shifted-trough null +/-2 sigma")
