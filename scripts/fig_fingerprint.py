@@ -16,6 +16,8 @@ import argparse
 import numpy as np
 import pandas as pd
 
+from aew.plotting import panel_label
+
 
 def rows(df, tier, level, stat):
     m = df[(df.tier == tier) & (df.level == level) & (df.statistic == stat)]
@@ -74,7 +76,8 @@ def main():
     ax1.set_xticklabels([f"{int(t)} h" for t in times])
     ax1.set_xlabel("time relative to trough passage")
     ax1.set_ylabel("MCS-active minus MCS-quiet")
-    ax1.set_title("(a) Vapor and temperature along the inflow")
+    ax1.set_title("Vapor and temperature along the inflow")
+    panel_label(ax1, "a", 20)
     ax1.legend(fontsize=7.5, loc="lower left", frameon=False)
     ax1.grid(alpha=0.25, axis="y")
 
@@ -100,7 +103,8 @@ def main():
     ax2.set_xticks(xb)
     ax2.set_xticklabels(labels, fontsize=8.5)
     ax2.set_ylabel("theta-e contribution (K)")
-    ax2.set_title("(b) The theta-e budget at -72 h")
+    ax2.set_title("The theta-e budget at -72 h")
+    panel_label(ax2, "b", 20)
     ax2.grid(alpha=0.25, axis="y")
     ax2.set_ylim(bottom=ax2.get_ylim()[0] - 0.14)
     n7 = one(df, a.tier, 700, "thetae_north_origin")

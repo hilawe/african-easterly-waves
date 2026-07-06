@@ -14,7 +14,20 @@ from __future__ import annotations
 
 import numpy as np
 
-__all__ = ["hovmoller", "basepoint_map", "save"]
+__all__ = ["hovmoller", "basepoint_map", "save", "panel_label"]
+
+
+def panel_label(ax, letter, size=13):
+    """Bold (a)/(b)/(c) marker in the panel's upper-left corner, on a semi-transparent
+    white rounded box, the AMS published-journal convention. The label sits just inside
+    the axes (1.5 percent from the left, 4 percent down) so it reads as a boundary marker
+    rather than title text; put the panel's descriptive title separately, without an
+    (a)/(b) prefix. ``size`` is the matplotlib point size; scale it up for wide figures
+    that render reduced on the page (about target_rendered * figure_width_in / 6.5)."""
+    ax.text(0.015, 0.96, f"({letter})", transform=ax.transAxes, fontsize=size,
+            fontweight="bold", va="top", ha="left",
+            bbox=dict(boxstyle="round,pad=0.15", facecolor="white", alpha=0.75,
+                      edgecolor="none"))
 
 
 def hovmoller(

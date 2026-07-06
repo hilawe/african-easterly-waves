@@ -23,7 +23,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from aew.plotting import hovmoller
+from aew.plotting import hovmoller, panel_label
 
 CHAR = "#333333"
 
@@ -52,9 +52,10 @@ def main():
               contour_lon=pa["contour_lon"], contour_lag=pa["contour_lag"],
               base_lon=float(pa["base_lon"]), lon_range=(-40, 80),
               title=None, shaded_label="MCS count anomaly", ax=axa)
-    axa.set_title("(a) Published composite reproduced\n"
+    axa.set_title("Published composite reproduced\n"
                   f"{int(pa['n_dates'])} base dates, threshold "
                   f"{float(pa['thr']):.5f} m/s", fontsize=10)
+    panel_label(axa, "a", 20)
 
     # ---- (b) the wave series rebuilt from public ERA5 ----
     # display window: the first JAS season (the r value is over the full record)
@@ -71,9 +72,10 @@ def main():
     axb.xaxis.set_major_locator(mdates.MonthLocator())
     axb.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
     axb.tick_params(axis="x", labelsize=7.5)
-    axb.set_title(f"(b) Wave series from public data, full-record "
+    axb.set_title(f"Wave series from public data, full-record "
                   f"r = {float(pb['r']):.2f} (n = {int(pb['n'])}; JAS 2000 shown)",
                   fontsize=10)
+    panel_label(axb, "b", 20)
 
     # ---- (c) the open tracker against the legacy record, 12 JAS months ----
     x = np.arange(len(pc))
@@ -91,7 +93,8 @@ def main():
     axc.set_ylim(0.55, 1.0)
     axc.legend(fontsize=7.5, loc="lower left")
     axc.grid(alpha=0.3)
-    axc.set_title("(c) Open GridSat-B1 tracker vs legacy ISCCP record", fontsize=10)
+    axc.set_title("Open GridSat-B1 tracker vs legacy ISCCP record", fontsize=10)
+    panel_label(axc, "c", 20)
 
     fig.suptitle("Pipeline validation", fontsize=12, color=CHAR)
     fig.savefig(a.out, dpi=300, bbox_inches="tight")

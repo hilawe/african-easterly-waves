@@ -17,6 +17,8 @@ import os
 import numpy as np
 import pandas as pd
 
+from aew.plotting import panel_label
+
 LABELS = {"inflow_rh": "inflow moisture", "antecedent": "antecedent convection",
           "amplitude": "wave amplitude", "shear": "shear", "tcwv": "column vapour"}
 
@@ -48,7 +50,8 @@ def main():
     ax1.set_yticks(y)
     ax1.set_yticklabels(lad.step, fontsize=9)
     ax1.set_xlabel("inflow-moisture incidence-rate ratio per standard deviation")
-    ax1.set_title("(a) Moisture effect as controls are added", fontsize=10)
+    ax1.set_title("Moisture effect as controls are added", fontsize=10)
+    panel_label(ax1, "a", 21)
     ax1.grid(alpha=0.25, axis="x")
 
     # panel b: the full standardized panel
@@ -65,7 +68,8 @@ def main():
     ax2.set_yticks(yb)
     ax2.set_yticklabels([LABELS[p] for p in pan.predictor], fontsize=9)
     ax2.set_xlabel("incidence-rate ratio per standard deviation")
-    ax2.set_title("(b) Full standardized panel (pooled)", fontsize=10)
+    ax2.set_title("Full standardized panel (pooled)", fontsize=10)
+    panel_label(ax2, "b", 21)
     ax2.grid(alpha=0.25, axis="x")
 
     fig.suptitle("Regime control model for the moisture-gating claim, 1983-2007",

@@ -20,6 +20,8 @@ import os
 import numpy as np
 import pandas as pd
 
+from aew.plotting import panel_label
+
 C_QUIET = "tab:blue"
 C_ACTIVE = "tab:red"
 C_LAGR = "#5e3c99"
@@ -99,7 +101,8 @@ def main():
     ax1.set_ylim(-3, 29)
     ax1.set_xlabel("longitude relative to the trough (deg)")
     ax1.set_ylabel("latitude (deg N)")
-    ax1.set_title("(a) Parcel origins and mean inflow paths")
+    ax1.set_title("Parcel origins and mean inflow paths")
+    panel_label(ax1, "a", 23)
     ax1.grid(alpha=0.25)
 
     # ---- panel b: the supply contrast against the fixed frame ----
@@ -140,7 +143,8 @@ def main():
     ax2.set_xlim(-76, -20)
     ax2.set_xlabel("time relative to trough passage (h)")
     ax2.set_ylabel(f"MCS-active minus MCS-quiet {a.level} hPa RH (%)")
-    ax2.set_title("(b) The supply contrast in two frames")
+    ax2.set_title("The supply contrast in two frames")
+    panel_label(ax2, "b", 23)
     ax2.legend(fontsize=8, loc="upper right")
     ax2.grid(alpha=0.25)
 

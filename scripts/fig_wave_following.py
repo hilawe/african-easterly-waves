@@ -17,6 +17,7 @@ import xarray as xr
 
 from aew.composites import anomaly, wave_relative_counts
 from aew.data.aewc import load_aewc_troughs
+from aew.plotting import panel_label
 
 
 def main():
@@ -73,6 +74,7 @@ def main():
     ax1.axvline(0, color="green", lw=2)
     ax1.set_ylabel("Latitude (N)")
     ax1.set_title("MCS excess over shifted-trough null, relative to the moving AEW trough")
+    panel_label(ax1, "a", 15)
     # give the colorbar its own axis appended to ax1, and append a matching invisible
     # spacer to ax2, so both panels keep the same width and the shared longitude axis
     # lines up vertically (the trough axis at 0 sits at the same position in both)
@@ -87,6 +89,7 @@ def main():
     ax2.axhline(0, color="k", lw=0.6)
     ax2.set_xlabel("Longitude relative to trough (deg; east positive)")
     ax2.set_ylabel("MCS excess, 5-15N mean")
+    panel_label(ax2, "b", 15)
     ax2.legend(fontsize=8)
     ax2.grid(alpha=0.3)
     fig.suptitle(f"Wave-following composite  ({n} trough obs, JAS)", fontsize=12)

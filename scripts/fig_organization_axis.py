@@ -17,6 +17,8 @@ import argparse
 import numpy as np
 import pandas as pd
 
+from aew.plotting import panel_label
+
 C_SHEAR = "#b35806"
 C_MOIST = "#5e3c99"
 
@@ -64,14 +66,16 @@ def main():
              get(df, a.tier, None, "shear_box_L-8"),
              get(df, a.tier, None, "shear_wave_level")]
     panel(ax1, shear, ["meridian\nbox", "box at\nL-5", "box at\nL-8", "wave\nlevel"],
-          C_SHEAR, "m/s", "(a) 600-925 hPa shear: shrinks upstream, zero at wave level")
+          C_SHEAR, "m/s", "600-925 hPa shear, shrinks upstream and is zero at wave level")
+    panel_label(ax1, "a", 20)
     moist = [get(df, a.tier, 700, "eulerian_box", -24),
              get(df, a.tier, 700, "lagrangian_rh", -48),
              get(df, a.tier, 700, "lagrangian_rh", -72),
              get(df, a.tier, 700, "lagrangian_rh_wave_level", -72)]
     panel(ax2, moist, ["meridian\nbox (-24 h)", "inflow\nat -48 h", "inflow\nat -72 h",
                        "wave\nlevel"],
-          C_MOIST, "%", "(b) 700 hPa moisture: grows along the inflow, survives")
+          C_MOIST, "%", "700 hPa moisture, grows along the inflow and survives")
+    panel_label(ax2, "b", 20)
     fig.suptitle("The shear control against the moisture contrast, 1983-2007",
                  fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.94))

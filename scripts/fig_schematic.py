@@ -54,6 +54,8 @@ def panel(ax, active):
     title = "MCS-ACTIVE trough" if active else "MCS-QUIET trough"
     ax.text(5.0, 10.25, title, fontsize=11.5, fontweight="bold", ha="center",
             color=CHAR)
+    from aew.plotting import panel_label
+    panel_label(ax, "a" if active else "b", 15)
 
     # the two layers: state differences appear only in the 850 hPa fill
     ax.add_patch(Rectangle((0.3, 5.6), 9.4, 3.6, fc=FILL700, ec="#c5ccd3", lw=0.8))

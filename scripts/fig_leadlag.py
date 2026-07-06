@@ -26,6 +26,7 @@ import glob
 
 import numpy as np
 import pandas as pd
+from aew.plotting import panel_label
 import xarray as xr
 
 from aew.filtering import lanczos_bandpass
@@ -286,6 +287,7 @@ def main():
     ax1.set_xlabel("lag of convection relative to trough (h; + = convection later)")
     ax1.set_ylabel("band-passed cross-correlation")
     ax1.set_title("AEW trough vs convection lead-lag (2-6 day band)")
+    panel_label(ax1, "a", 24)
     ax1.legend(fontsize=8); ax1.grid(alpha=0.3)
 
     ax2.axhline(0, color="k", lw=0.8)
@@ -301,6 +303,7 @@ def main():
     ax2.set_xlabel("longitude (deg E)")
     ax2.set_ylabel("peak lag (h); + = wave leads, - = convection leads")
     ax2.set_title("Lead-lag along the corridor")
+    panel_label(ax2, "b", 24)
     ax2.text(0.02, 0.04, "above 0: wave leads convection\nbelow 0: convection leads wave",
              transform=ax2.transAxes, fontsize=8, va="bottom")
     ax2.legend(fontsize=8); ax2.grid(alpha=0.3)

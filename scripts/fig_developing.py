@@ -39,6 +39,7 @@ import pandas as pd
 import xarray as xr
 
 from aew.data.aewc import load_aewc_trajectories
+from aew.plotting import panel_label
 from aew.environment import (
     cluster_bootstrap_diff,
     forward_response,
@@ -280,6 +281,8 @@ def main():
     ax2.set_xlabel("longitude bin (deg E)")
     ax2.set_ylabel(f"pre-trough {env_name} ({unit})")
     ax2.set_title("MCS-active vs MCS-quiet by longitude")
+    panel_label(ax1, "a", 24)
+    panel_label(ax2, "b", 24)
     ax2.legend(fontsize=8); ax2.grid(alpha=0.3)
 
     fig.tight_layout(); fig.savefig(a.out, dpi=150)
