@@ -105,7 +105,22 @@ def main():
     d, lo_ci, hi_ci, _, _ = cluster_bootstrap_diff(
         gids[low_s & ok], exc_nd[low_s & ok], gids[high_s & ok], exc_nd[high_s & ok], rng)
     print(f"exceedance-probability difference: {100 * d:+.1f} points "
-          f"[{100 * lo_ci:+.1f}, {100 * hi_ci:+.1f}]")
+          f"[{100 * lo_ci:+.1f}, {100 * hi_ci:+.1f}]  (this script's bootstrap stream)")
+
+    # one-number-one-source: annotate the CANONICAL interval from the deposit table when
+    # it is available, so the in-figure numbers match the caption and the text (this
+    # script's own bootstrap stream differs from the driver's in the 2nd decimal)
+    try:
+        import pandas as _pd
+        _row = _pd.read_csv("deposit/canonical_numbers.csv").query(
+            "tier == 'pooled' and statistic == 'exceedance_p70' and level == 700 "
+            "and time_rel_h == -72").iloc[0]
+        d, lo_ci, hi_ci = _row["diff"] / 100, _row["ci_lo"] / 100, _row["ci_hi"] / 100
+        print(f"annotating the canonical interval: {100 * d:+.1f} points "
+              f"[{100 * lo_ci:+.1f}, {100 * hi_ci:+.1f}] (deposit/canonical_numbers.csv)")
+    except Exception:
+        print("deposit/canonical_numbers.csv not available; annotating this script's "
+              "bootstrap interval")
 
     import matplotlib
     matplotlib.use("Agg")
