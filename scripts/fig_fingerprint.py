@@ -106,7 +106,9 @@ def main():
     ax2.set_title("The theta-e budget at -72 h")
     panel_label(ax2, "b", 20)
     ax2.grid(alpha=0.25, axis="y")
-    ax2.set_ylim(bottom=ax2.get_ylim()[0] - 0.14)
+    # headroom above the tallest bar so the corner label does not sit on the 700 hPa
+    # vapor bar (the label is the anchor; give it clear space instead of moving it)
+    ax2.set_ylim(bottom=ax2.get_ylim()[0] - 0.14, top=ax2.get_ylim()[1] + 0.22)
     n7 = one(df, a.tier, 700, "thetae_north_origin")
     n8 = one(df, a.tier, 850, "thetae_north_origin")
     ax2.text(0.98, 0.03,
