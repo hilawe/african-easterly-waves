@@ -276,6 +276,19 @@ def main():
         os.path.join(a.outdir, "control_model_panel.csv"), index=False,
         float_format="%.6f")
 
+    # multicollinearity check: pairwise correlations among the standardized predictors
+    # (pooled). Written alongside the panel so the supplement can state the maximum.
+    corr = d[[f"z_{c}" for c in panel_terms]].corr()
+    corr.index = panel_terms
+    corr.columns = panel_terms
+    corr.to_csv(os.path.join(a.outdir, "control_model_predictor_corr.csv"),
+                float_format="%.3f")
+    tri = corr.where(np.triu(np.ones(corr.shape, dtype=bool), k=1))
+    imax = tri.abs().stack().idxmax()
+    print(f"\npredictor correlations (pooled, standardized): max |r| = "
+          f"{abs(tri.loc[imax]):.2f} ({imax[0]} vs {imax[1]})")
+    print(corr.round(2).to_string())
+
     ladder_specs = [
         ("fixed effects only", []),
         ("+ amplitude", ["amplitude"]),
