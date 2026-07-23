@@ -11,7 +11,7 @@ wave and the large thunderstorm clusters that travel with it: where the storms s
 to the wave, how that depends on wave amplitude and wavelength, and how the location of
 storm initiation differs from the location of mature storms.
 
-![Two-layer thermodynamic gating of convective development in African easterly waves](docs/schematic.png)
+![Two-layer thermodynamic signatures of convective development in African easterly waves](docs/schematic.png)
 
 Summary schematic. An MCS-active trough (left) draws less dry Saharan air at the jet level
 (700 hPa) over a moister, cooler monsoon layer (850 hPa), and deep convection develops. An
@@ -44,9 +44,9 @@ ground-relative.
   pattern at a correlation of 0.90 (full grid) and 0.84 (occupied cells) over twelve July to
   September months, matching the ISCCP baseline at least as well as an existing published
   product.
-- In the wave-following composite, MCS counts peak in and just west of the moving trough at
-  about six times the spread of a shifted-trough null, and stronger troughs organize
-  convection more sharply.
+- In the wave-following composite, MCS counts peak in and just west of the moving trough,
+  a maximum that survives geographically matched shifted-trough nulls, and stronger troughs
+  organize convection more sharply.
 
 ## Install and test
 

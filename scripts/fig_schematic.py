@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Compose figure F9, the two-layer gating schematic (rebuild of the approved design).
+"""Compose figure F9, the two-layer signature schematic (rebuild of the approved design).
 
 Design grammar, per the review rulings: transport differences are drawn ONLY in the
 700 hPa arrows (widths and routes), state differences ONLY in the 850 hPa fill; the
@@ -138,7 +138,7 @@ def main():
     fig, (axa, axq) = plt.subplots(1, 2, figsize=(12.0, 6.0))
     panel(axa, active=True)
     panel(axq, active=False)
-    fig.suptitle("Two-layer thermodynamic gating of convective development",
+    fig.suptitle("The two-layer thermodynamic signature of convective development",
                  fontsize=12.5, color=CHAR)
     fig.text(0.5, 0.015,
              "All flow arrows are ground-relative (the frame of the trajectory "

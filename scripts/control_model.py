@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Continuous-response control model for the moisture-gating claim.
+"""Continuous-response control model for the moisture-conditioning claim.
 
 The trough-relative composite and the developing/non-developing split are outcome-
 conditioned, which a referee can read as a bare precursor association. This asks the
@@ -315,7 +315,7 @@ def main():
     summary = "\n".join(lines)
     print(summary)
     with open(os.path.join(a.outdir, "control_model_summary.txt"), "w") as f:
-        f.write("Continuous-response control model for the moisture-gating claim.\n")
+        f.write("Continuous-response control model for the moisture-conditioning claim.\n")
         f.write("Poisson GLM, cluster-robust SE on the wave; predictors standardized "
                 "to pooled unit variance; longitude-month and year fixed effects.\n")
         f.write(summary + "\n")

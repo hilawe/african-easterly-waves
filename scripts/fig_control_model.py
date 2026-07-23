@@ -72,7 +72,7 @@ def main():
     panel_label(ax2, "b", 21)
     ax2.grid(alpha=0.25, axis="x")
 
-    fig.suptitle("Regime control model for the moisture-gating claim, 1983-2007",
+    fig.suptitle("Regime control model for the moisture-conditioning claim, 1983-2007",
                  fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(a.out, dpi=300)
