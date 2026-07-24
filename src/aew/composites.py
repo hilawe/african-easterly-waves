@@ -537,6 +537,33 @@ def randomization_test(obs_prof, null_profs, rel_c, search=(-10.0, 10.0)):
                 point_lo=lo, point_hi=hi, simult_half_width=simult)
 
 
+def amplitude_difference_test(obs_a, null_a, obs_b, null_b, rel_c,
+                              search=(-10.0, 10.0)):
+    """Selection-aware test that subset A's band excess exceeds subset B's (R1 null).
+
+    ``obs_a``/``obs_b`` are the two subsets' plotted band profiles and ``null_a``/
+    ``null_b`` their (n_draws, nbin) null profiles under the SAME anchor permutation
+    (both subsets relabeled together each draw), so the difference profile has an exact
+    paired null. The statistic is the maximum of (excess_a - excess_b) over ``search``,
+    with each draw contributing its own maximum, pricing in the peak selection exactly
+    as ``randomization_test`` does for a single curve. One-sided (does A exceed B).
+    Returns the p-value, the peak difference and its location, and the draw count.
+    """
+    obs_a = np.asarray(obs_a, float); obs_b = np.asarray(obs_b, float)
+    null_a = np.asarray(null_a, float); null_b = np.asarray(null_b, float)
+    rel_c = np.asarray(rel_c, float)
+    d_obs = (obs_a - null_a.mean(axis=0)) - (obs_b - null_b.mean(axis=0))
+    d_null = ((null_a - null_a.mean(axis=0, keepdims=True))
+              - (null_b - null_b.mean(axis=0, keepdims=True)))
+    sel = (rel_c >= search[0]) & (rel_c <= search[1])
+    t_obs = float(d_obs[sel].max())
+    t_null = d_null[:, sel].max(axis=1)
+    n = null_a.shape[0]
+    p = float((1 + int((t_null >= t_obs).sum())) / (n + 1))
+    k = int(np.where(sel)[0][np.argmax(d_obs[sel])])
+    return dict(p_value=p, n_draws=n, peak_excess=t_obs, peak_rel_lon=float(rel_c[k]))
+
+
 def _digest(*arrays):
     """Stable content hash of defining inputs (cache manifests, R1)."""
     import hashlib

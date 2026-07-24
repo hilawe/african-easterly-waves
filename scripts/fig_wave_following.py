@@ -29,8 +29,9 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from aew.composites import (_digest, assignment_artifact, catalog_support_check,
-                            randomization_test, wave_relative_counts)
+from aew.composites import (_digest, amplitude_difference_test, assignment_artifact,
+                            catalog_support_check, randomization_test,
+                            wave_relative_counts)
 from aew.data.aewc import load_aewc_troughs
 from aew.plotting import panel_label
 
@@ -151,6 +152,18 @@ def main():
                        simult_half_width=r["simult_half_width"],
                        n_troughs=len(tr), n_matched=n, n_binned=int(counts.sum()))
                   for name, r in tests.items()]
+    # selection-aware test that the strong tercile's peak exceeds the weak tercile's
+    # (the amplitude-scaling claim; shared null draws give an exact paired difference)
+    amp = amplitude_difference_test(obs_prof["strong"], profs["strong"],
+                                    obs_prof["weak"], profs["weak"], rel_c, SEARCH)
+    stats_rows.append(dict(figure="F2", subset="strong_minus_weak",
+                           peak_excess=amp["peak_excess"],
+                           peak_rel_lon=amp["peak_rel_lon"], peak_ratio=np.nan,
+                           p_value=amp["p_value"], n_draws=amp["n_draws"],
+                           simult_half_width=np.nan))
+    print(f"R1 strong>weak: peak difference {amp['peak_excess']:.0f} at "
+          f"{amp['peak_rel_lon']:+.0f} deg, p = {amp['p_value']:.4g} "
+          f"({amp['n_draws']} draws)")
     pd.DataFrame(stats_rows).to_csv("deposit/null_r1_fig2_stats.csv", index=False,
                                     float_format="%.6f")
     for name, r in tests.items():

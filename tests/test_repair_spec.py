@@ -154,6 +154,24 @@ def test_randomization_test_selection_aware():
     assert r2["simult_half_width"] > 2.0 * 5.0  # simultaneous wider than pointwise
 
 
+def test_amplitude_difference_test_paired():
+    from aew.composites import amplitude_difference_test
+    rng = np.random.default_rng(4)
+    rel_c = np.arange(-30.0, 30.1, 2.0)
+    # shared-draw nulls (both subsets relabeled together): same generator stream
+    null_a = rng.normal(100.0, 5.0, size=(999, rel_c.size))
+    null_b = rng.normal(60.0, 5.0, size=(999, rel_c.size))
+    obs_a = null_a.mean(axis=0).copy(); obs_a[rel_c == -2.0] += 40.0   # strong peak
+    obs_b = null_b.mean(axis=0).copy(); obs_b[rel_c == 0.0] += 15.0    # weaker peak
+    r = amplitude_difference_test(obs_a, null_a, obs_b, null_b, rel_c)
+    assert r["p_value"] == 1.0 / 1000.0         # A's excess clearly exceeds B's
+    assert 20.0 < r["peak_excess"] < 45.0
+    # equal excesses give no resolved difference
+    obs_c = null_b.mean(axis=0).copy(); obs_c[rel_c == -2.0] += 40.0
+    r2 = amplitude_difference_test(obs_a, null_a, obs_c, null_b, rel_c)
+    assert r2["p_value"] > 0.05
+
+
 def _synthetic_cases(n_waves=60, obs_per_wave=6, seed=3):
     rng = np.random.default_rng(seed)
     rows = []
