@@ -51,6 +51,7 @@ def main():
     run("control_model", [PY_, "scripts/control_model.py",
                           "--cache", "deposit/control_model_design.csv"])
     run("wave_estimands", [PY_, "scripts/wave_estimands.py"])
+    run("response_sens", [PY_, "scripts/sensitivity_response.py"])
     run("fig2_null", [PY_, "scripts/fig_wave_following.py",
                       "--out", f"{DL}/aew_wave_following_pooled.png"])
     run("fig3_null", [PY_, "scripts/fig_ct_wave_following.py",
