@@ -161,3 +161,19 @@ def classify_origin(seed_lat, seed_lon, origin_lat, origin_lon,
     out[zonal & (dlon <= -dlon_thresh)] = "west"
     out[~np.isfinite(dlat) | ~np.isfinite(dlon)] = "lost"
     return out
+
+
+def aggregate_parcels(values, n_case, npar, min_valid=5):
+    """Per-trough mean over parcels with the REPAIR_SPEC R2 validity rule.
+
+    Returns ``(mean, n_valid)``: the mean over finite parcel values, NaN where fewer
+    than ``min_valid`` parcels are finite. One implementation serves every trajectory
+    consumer (environment samples, route statistics, the control model), so the
+    missing-data policy cannot diverge between drivers.
+    """
+    arr = np.asarray(values, dtype=float).reshape(n_case, npar)
+    finite = np.isfinite(arr)
+    n_valid = finite.sum(axis=1)
+    with np.errstate(invalid="ignore"):
+        mean = np.nanmean(np.where(finite, arr, np.nan), axis=1)
+    return np.where(n_valid >= min_valid, mean, np.nan), n_valid

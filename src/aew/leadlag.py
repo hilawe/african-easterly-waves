@@ -142,18 +142,22 @@ def lag_cross_correlation(w, c, max_lag):
     return lags, R
 
 
-def peak_lag(lags, R):
-    """Lag of the maximum of ``R`` with parabolic sub-sample refinement.
+def peak_lag(lags, R, refine=True):
+    """Lag of the maximum of ``R``.
 
-    Returns ``(lag_at_peak, R_at_peak)``. The refinement fits a parabola to the peak sample
-    and its two neighbors; at the array ends it returns the discrete peak. NaN samples are
-    ignored for locating the discrete maximum.
+    ``refine=True`` fits a parabola to the peak sample and its two neighbors for a
+    sub-sample estimate (at the array ends it returns the discrete peak).
+    ``refine=False`` is the REPAIR_SPEC R6 frozen estimator: the discrete lag of the
+    maximum on the stated grid, no refinement. NaN samples are ignored for locating
+    the discrete maximum.
     """
     lags = np.asarray(lags, dtype=float)
     R = np.asarray(R, dtype=float)
     if not np.isfinite(R).any():
         return np.nan, np.nan
     i = int(np.nanargmax(R))
+    if not refine:
+        return float(lags[i]), float(R[i])
     if 0 < i < R.size - 1 and np.isfinite(R[i - 1]) and np.isfinite(R[i + 1]):
         y0, y1, y2 = R[i - 1], R[i], R[i + 1]
         denom = y0 - 2 * y1 + y2

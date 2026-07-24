@@ -38,8 +38,8 @@ STEP_HOURS = 6.0
 PERIOD_LOW, PERIOD_HIGH = 2.0, 6.0
 LAT_LO, LAT_HI = 5.0, 15.0
 DLON = 5.0               # convection box half-width in longitude
-MAX_LAG = 12             # +/- 12 samples = +/- 3 days (full curve for the plot)
-PEAK_WIN = 30.0          # search the peak within +/- 30 h (the near-zero-lag lobe)
+MAX_LAG = 8              # +/- 8 samples = +/- 48 h (the R6 frozen lag grid)
+PEAK_WIN = 48.0          # the R6 frozen estimator searches the FULL +/-48 h grid
 JAS = (7, 8, 9)
 
 
@@ -136,7 +136,7 @@ def bootstrap_peak_ci(lags, R_years, peak_win, rng, n_boot=500):
     for b in range(n_boot):
         idx = rng.integers(0, n, n)
         Rb = np.nanmean(R_years[idx], axis=0)
-        peaks[b] = peak_lag(lags[win], Rb[win])[0] * STEP_HOURS
+        peaks[b] = peak_lag(lags[win], Rb[win], refine=False)[0] * STEP_HOURS
     return float(np.nanstd(peaks)), np.nanpercentile(peaks, [16, 84])
 
 
@@ -162,8 +162,8 @@ def main():
     ap.add_argument("--v-glob", default="data/era5/global6h/era5_v700_*_6h_global.nc")
     ap.add_argument("--csct", default="data/original/csct/csct_africa_cs245.nc")
     ap.add_argument("--lon-lo", type=float, default=-15.0)
-    ap.add_argument("--lon-hi", type=float, default=35.0)
-    ap.add_argument("--lon-step", type=float, default=2.5)
+    ap.add_argument("--lon-hi", type=float, default=15.0)
+    ap.add_argument("--lon-step", type=float, default=1.0)
     ap.add_argument("--out", default="fig_leadlag.png")
     a = ap.parse_args()
 
@@ -207,7 +207,7 @@ def main():
         # locate the peak within the near-zero-lag lobe (+/- PEAK_WIN h): with a 2-6 day
         # band the correlation has side lobes near +/- one wave period, which are the wave's
         # own periodicity, not the trough-convection phase offset we want.
-        lag_star, r_star = peak_lag(lags[win], Rbar[win])
+        lag_star, r_star = peak_lag(lags[win], Rbar[win], refine=False)
         sd, _ = bootstrap_peak_ci(lags, R_years, PEAK_WIN, rng)
         _, pval = effective_dof_p(w_core, c_core, r_star)
         peak_h.append(lag_star * STEP_HOURS)
@@ -242,21 +242,38 @@ def main():
     # vorticity perturbation upstream, tightening toward the coupled quarter-wavelength phase
     # downstream). Bootstrap resamples YEARS jointly across meridians (the shared sampling
     # unit), rebuilds each meridian's mean curve and peak, and refits the slope.
-    ridx = np.where(reliable)[0]
+    # R6 frozen estimator (implementation-review fold): the slope runs over the FIXED
+    # corridor's every meridian; the R>=R_MIN flag remains a reported diagnostic only.
+    ridx = np.arange(meridians.size)
     nyrs = {R_years_all[j].shape[0] for j in ridx}
     if ridx.size >= 4 and len(nyrs) == 1:
         nyr = nyrs.pop()
-        slope = np.polyfit(meridians[reliable], peak_h[reliable], 1)[0]
+        slope = np.polyfit(meridians, peak_h, 1)[0]
         boots = np.empty(500)
         for b in range(500):
             yidx = rng.integers(0, nyr, nyr)
-            ph_b = [peak_lag(lags[win], np.nanmean(R_years_all[j][yidx], axis=0)[win])[0]
+            ph_b = [peak_lag(lags[win], np.nanmean(R_years_all[j][yidx], axis=0)[win],
+                             refine=False)[0]
                     * STEP_HOURS for j in ridx]
-            boots[b] = np.polyfit(meridians[reliable], ph_b, 1)[0]
+            boots[b] = np.polyfit(meridians, ph_b, 1)[0]
         g_lo, g_hi = np.percentile(boots, [2.5, 97.5])
-        east = peak_h[reliable & (meridians >= 5)]
-        west = peak_h[reliable & (meridians <= -5)]
+        east = peak_h[meridians >= 5]
+        west = peak_h[meridians <= -5]
         gsig = "significant" if not (g_lo <= 0 <= g_hi) else "not significant"
+        import pandas as _pd
+        _pd.DataFrame([dict(statistic="leadlag_slope", value=slope, ci_lo=g_lo,
+                            ci_hi=g_hi),
+                       dict(statistic="leadlag_mean_lead_east5", 
+                            value=float(np.nanmean(east)), ci_lo=np.nan, ci_hi=np.nan),
+                       dict(statistic="leadlag_mean_lead_west5",
+                            value=float(np.nanmean(west)), ci_lo=np.nan, ci_hi=np.nan),
+                       dict(statistic="leadlag_mean_lead_corridor",
+                            value=float(np.nanmean(peak_h)), ci_lo=np.nan,
+                            ci_hi=np.nan),
+                       dict(statistic="leadlag_mean_r",
+                            value=float(np.nanmean(r_at_peak)), ci_lo=np.nan,
+                            ci_hi=np.nan)]).to_csv(
+            "deposit/leadlag_stats.csv", index=False, float_format="%.6f")
         print(f"\nLAG GRADIENT along the corridor: slope {slope:+.2f} h/deg "
               f"(year bootstrap 95% CI [{g_lo:+.2f}, {g_hi:+.2f}], {gsig}); "
               f"mean convective lead east of 5E {np.nanmean(east):+.1f} h vs "

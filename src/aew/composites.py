@@ -465,3 +465,133 @@ def anomaly(counts, kind="anomaly", lag_centers=None, min_lag=None, max_lag=None
         with np.errstate(divide="ignore", invalid="ignore"):
             return 100.0 * (counts - lag_mean) / lag_mean
     raise ValueError("kind must be 'total', 'anomaly', or 'pct'")
+
+
+def anchor_permutation(traj_id, times, lons, n_draws, rng):
+    """REPAIR_SPEC.md R1: the whole-wave anchor-permutation null.
+
+    Each wave keeps its internal track shape and takes another same-year-month wave's
+    anchor (the arithmetic mean of its observed longitudes; the stratum is the
+    year-month of the wave's median observation time). The null's longitude
+    distribution is therefore the observed one by construction, with no wrap and no
+    seam.
+
+    Returns ``(perm, apply_draw)``: ``perm`` is the stored (n_draws, n_waves)
+    assignment matrix (wave w takes the anchor of wave ``perm[b, w]`` in draw b;
+    identity within each stratum under permutation), and ``apply_draw(b)`` gives the
+    per-observation longitudes of draw b.
+    """
+    tid = np.asarray(traj_id)
+    lons = np.asarray(lons, dtype=float)
+    waves, inv = np.unique(tid, return_inverse=True)
+    anchors = np.array([lons[inv == w].mean() for w in range(waves.size)])
+    # median observation time per wave, kept in datetime space (an int64 round-trip
+    # is unit-dependent across pandas versions and silently lands in 1970 on a
+    # microsecond build)
+    med = pd.Series(pd.DatetimeIndex(times)).groupby(inv).median()
+    ym = med.dt.strftime("%Y-%m").values
+    strata = [np.where(ym == key)[0] for key in np.unique(ym)]
+
+    perm = np.tile(np.arange(waves.size), (n_draws, 1))
+    for b in range(n_draws):
+        for idx in strata:
+            perm[b, idx] = idx[rng.permutation(idx.size)]
+
+    def apply_draw(b):
+        return lons - anchors[inv] + anchors[perm[b][inv]]
+
+    return perm, apply_draw
+
+
+def randomization_test(obs_prof, null_profs, rel_c, search=(-10.0, 10.0)):
+    """REPAIR_SPEC.md R1: selection-aware Monte Carlo inference on the band profile.
+
+    ``obs_prof`` is the plotted band statistic per relative-longitude bin;
+    ``null_profs`` is (n_draws, nbin) of the same statistic under the null. The test
+    statistic is the maximum excess over the prespecified ``search`` interval, and
+    each draw contributes its OWN maximum over the same interval, so the p-value
+    prices in the peak selection. Ties in the peak location resolve to the westernmost
+    bin (``argmax`` on an ascending axis). Returns a dict with the finite-draw
+    p-value, the descriptive peak (location, excess, observed-to-null ratio), the
+    pointwise 2.5-97.5 percent excess envelope, and the simultaneous 95 percent
+    half-width from the per-draw maximum absolute deviation.
+    """
+    obs_prof = np.asarray(obs_prof, dtype=float)
+    null_profs = np.asarray(null_profs, dtype=float)
+    rel_c = np.asarray(rel_c, dtype=float)
+    null_mean = null_profs.mean(axis=0)
+    exc_obs = obs_prof - null_mean
+    exc_null = null_profs - null_mean
+    sel = (rel_c >= search[0]) & (rel_c <= search[1])
+    t_obs = float(exc_obs[sel].max())
+    t_null = exc_null[:, sel].max(axis=1)
+    n = null_profs.shape[0]
+    p = float((1 + int((t_null >= t_obs).sum())) / (n + 1))
+    k = int(np.where(sel)[0][np.argmax(exc_obs[sel])])
+    lo, hi = np.percentile(exc_null, [2.5, 97.5], axis=0)
+    simult = float(np.percentile(np.abs(exc_null).max(axis=1), 95.0))
+    return dict(p_value=p, n_draws=n, t_obs=t_obs,
+                peak_rel_lon=float(rel_c[k]), peak_excess=float(exc_obs[k]),
+                peak_ratio=float(obs_prof[k] / null_mean[k]),
+                null_mean=null_mean, excess=exc_obs,
+                point_lo=lo, point_hi=hi, simult_half_width=simult)
+
+
+def _digest(*arrays):
+    """Stable content hash of defining inputs (cache manifests, R1)."""
+    import hashlib
+    h = hashlib.sha256()
+    for a in arrays:
+        arr = np.ascontiguousarray(np.asarray(a))
+        h.update(str(arr.dtype).encode())
+        h.update(str(arr.shape).encode())
+        h.update(arr.tobytes())
+    return h.hexdigest()[:16]
+
+
+SPEC_REVISION = "REPAIR_SPEC-r2"
+
+
+def assignment_artifact(traj_id, times, lons, n_draws, seed, path):
+    """The ONE stored wave-by-draw assignment matrix (REPAIR_SPEC R1).
+
+    Regenerates the permutation deterministically, then either writes the artifact
+    (matrix plus a manifest of content hashes over every defining input) or validates
+    the stored artifact against the regenerated matrix and manifest, erroring on any
+    disagreement. Every R1 consumer (both composite figures, every panel and tercile)
+    must obtain its permutation through this artifact, so no consumer can silently
+    use a different null.
+    """
+    import os
+    t_ns = np.asarray(times, dtype="datetime64[ns]").astype("int64")
+    manifest = dict(seed=int(seed), n_draws=int(n_draws),
+                    h_tid=_digest(np.asarray(traj_id)),
+                    h_time=_digest(t_ns), h_lon=_digest(np.asarray(lons, float)))
+    rng = np.random.default_rng(seed)
+    perm, apply_draw = anchor_permutation(traj_id, times, lons, n_draws, rng)
+    if os.path.exists(path):
+        z = np.load(path, allow_pickle=False)
+        for k, v in manifest.items():
+            stored = z[k].item() if getattr(z[k], "shape", None) == () else z[k]
+            if str(stored) != str(v):
+                raise RuntimeError(f"R1 assignment artifact {path}: manifest field "
+                                   f"{k} disagrees (stored {stored!r}, current {v!r})")
+        if not np.array_equal(z["perm"], perm):
+            raise RuntimeError(f"R1 assignment artifact {path}: stored matrix "
+                               "disagrees with the regenerated permutation")
+    else:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        np.savez_compressed(path, perm=perm, spec=SPEC_REVISION,
+                            **{k: np.asarray(v) for k, v in manifest.items()})
+    return perm, apply_draw, manifest
+
+
+def catalog_support_check(lon_placed, rel_pad, cs_lon):
+    """REPAIR_SPEC R1 support assertion, shared by every null consumer."""
+    cs_lon = np.asarray(cs_lon, dtype=float)
+    if float(cs_lon.max() - cs_lon.min()) >= 359.0:
+        return                                            # global catalog: full support
+    if (lon_placed.min() - rel_pad < cs_lon.min() - 1.0
+            or lon_placed.max() + rel_pad > cs_lon.max() + 1.0):
+        raise RuntimeError("R1 support assertion failed: a placed anchor's relative "
+                           "bins leave the storm catalog's longitude domain")

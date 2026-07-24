@@ -59,12 +59,15 @@ from aew.data.aewc import load_aewc_trajectories
 from aew.data.era5 import load_region_6h
 from aew.environment import (
     cluster_bootstrap_diff,
+    complete_window_mask,
     forward_response,
     lead_field_box,
     stratified_terciles,
 )
+from aew.terrain import DELTA_HPA, mask_level_inplace
 from aew.thermo import saturation_vapor_pressure, theta_e
-from aew.trajectory import Gridded, back_trajectories, classify_origin
+from aew.trajectory import (Gridded, aggregate_parcels, back_trajectories,
+                            classify_origin)
 from validate_heldout import parse_years
 
 # the frozen baseline constants (identical to validate_heldout.py)
@@ -162,8 +165,8 @@ def load_troughs_and_systems(years, csct_path):
     return tr, cst_all[inyr].values, csx[inyr], csy[inyr]
 
 
-def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, low_s, high_s,
-              seed, outdir):
+def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp, low_s,
+              high_s, seed, outdir):
     """The per-level statistics family. The contrast/point call order below IS the
     random-stream order; do not reorder without bumping the documented layout."""
     tier_idx = TIER_ORDER.index(tier)
@@ -176,6 +179,14 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, low_s, high_s
     # ---- Eulerian family on the level's relative-humidity field ----
     rt, rlat, rlon, rfield = load_region_6h(f"r{level}", years=years)
     rt_vals = rt.values
+    spt, splat, splon, spf, delta_hpa = sp
+    if not (spt.equals(rt) and np.array_equal(splat, rlat)
+            and np.array_equal(splon, rlon)):
+        raise ValueError(f"surface-pressure grid/time differs from r{level}")
+
+    def mask_field(field):
+        """R2 (REPAIR_SPEC.md): in-place terrain-validity mask at this level."""
+        return mask_level_inplace(field, spf, float(level), delta_hpa)
 
     def box_full(lon_shift, lead_h):
         return lead_field_box(tr.time, tr.lon + lon_shift, rt_vals, rlat, rlon, rfield,
@@ -197,6 +208,17 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, low_s, high_s
         raise RuntimeError(f"{tier}/{level}: meridian box coverage {cov:.4f} < 0.999 "
                            "over the full corridor; the ERA5 record is degraded, "
                            "refusing a canonical run")
+    # the guard above ran on the UNMASKED field (its job is ERA5 integrity); the
+    # estimands below run on the terrain-masked field (R2), so the meridian box is
+    # recomputed after masking and its coverage loss is masking, not degradation
+    mask_field(rfield)
+    dep.point(tier, level, "terrain_invalid_fraction", None, "frac",
+              float(np.isnan(rfield).mean()),
+              note=f"grid points with sp <= {level}+{delta_hpa:.0f} hPa")
+    lv_full = box_full(0.0, LEAD_H)
+    dep.point(tier, level, "terrain_masked_box_fraction", -24, "frac",
+              float(np.isnan(lv_full).mean()),
+              note="meridian boxes missing under the at-least-half validity rule")
     box0 = lv_full[sel_idx]
     ok0 = np.isfinite(box0)
     r_eul = dep.contrast(tier, level, "eulerian_box", -24, "%",
@@ -234,11 +256,11 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, low_s, high_s
     seeds_h = seeds_t.astype("datetime64[ns]").astype("int64") / 3.6e12
 
     tu, wlat, wlon, uu = load_region_6h(f"u{level}", years=years)
-    u = Gridded(tu.values, wlat, wlon, uu)
+    u = Gridded(tu.values, wlat, wlon, mask_field(uu))
     del uu
     gc.collect()
     tv, _, _, vv = load_region_6h(f"v{level}", years=years)
-    v = Gridded(tv.values, wlat, wlon, vv)
+    v = Gridded(tv.values, wlat, wlon, mask_field(vv))
     del vv
     gc.collect()
     print(f"  integrating {seeds_t.size} parcels {BACK_H:.0f} h backward at "
@@ -261,7 +283,7 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, low_s, high_s
     del rh
     gc.collect()
     tt_, tlat, tlon, tfield = load_region_6h(f"t{level}", years=years)
-    temp = Gridded(tt_.values, tlat, tlon, tfield)
+    temp = Gridded(tt_.values, tlat, tlon, mask_field(tfield))
     del tfield
     gc.collect()
     t_par = {}
@@ -271,10 +293,15 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, low_s, high_s
     del temp
     gc.collect()
 
-    def case_mean(par_vals):
-        return np.nanmean(par_vals.reshape(n_case, npar), axis=1)
+    def case_mean(par_vals, min_valid=5):
+        """Shared R2 parcel rule (aew.trajectory.aggregate_parcels)."""
+        return aggregate_parcels(par_vals, n_case, npar, min_valid)[0]
 
     # ---- along-inflow relative humidity (the supply-contrast profile) ----
+    _, nv72 = aggregate_parcels(rh_par[BACK_H], n_case, npar)
+    dep.point(tier, level, "env_cases_under5_valid", -72, "count",
+              int((nv72 < 5).sum()),
+              note="troughs with fewer than five valid parcels at -72 h (env missing)")
     rh_case = {eh: case_mean(rh_par[eh]) for eh in ELAPSED_H}
     for eh in ELAPSED_H:
         cm = rh_case[eh]
@@ -322,22 +349,34 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, low_s, high_s
     sector = classify_origin(seeds_lat, seeds_lon, plat[-1], plon[-1])
     dep.point(tier, level, "parcels_lost_fraction", -72, "frac",
               float((sector == "lost").mean()))
-    sec_case = {s: (sector == s).astype(float).reshape(n_case, npar).mean(axis=1)
-                for s in ("south", "north", "east", "west", "local")}
-    dlat_case = np.nan_to_num(
-        np.nanmean((plat[-1] - seeds_lat).reshape(n_case, npar), axis=1), nan=0.0)
+    # R2 route rule (implementation-review fold): fractions over VALID (non-lost)
+    # parcels only, missing under five valid; displacement likewise, never nan-to-zero
+    valid_p = (sector != "lost").reshape(n_case, npar)
+    nval_p = valid_p.sum(axis=1)
+    route_ok = nval_p >= 5
+    dep.point(tier, level, "route_cases_under5_valid", -72, "count",
+              int((~route_ok).sum()),
+              note="troughs with fewer than five valid parcels; route stats missing")
+    sec_case = {}
+    with np.errstate(invalid="ignore"):
+        for s_ in ("south", "north", "east", "west", "local"):
+            cnt = ((sector == s_).reshape(n_case, npar) & valid_p).sum(axis=1)
+            sec_case[s_] = np.where(route_ok, cnt / np.maximum(nval_p, 1), np.nan)
+        dl = np.where(valid_p, (plat[-1] - seeds_lat).reshape(n_case, npar), np.nan)
+        dlat_case = np.where(route_ok, np.nanmean(dl, axis=1), np.nan)
+    ok_r = route_ok
     for s in ("south", "north", "east", "west", "local"):
         dep.contrast(tier, level, f"route_{s}_fraction", -72, "frac",
-                     gids[low_s], sec_case[s][low_s],
-                     gids[high_s], sec_case[s][high_s], rng)
+                     gids[low_s & ok_r], sec_case[s][low_s & ok_r],
+                     gids[high_s & ok_r], sec_case[s][high_s & ok_r], rng)
     dep.contrast(tier, level, "route_displacement", -72, "deg",
-                 gids[low_s], dlat_case[low_s],
-                 gids[high_s], dlat_case[high_s], rng,
-                 note="origin minus seed latitude, lost parcels as 0")
+                 gids[low_s & ok_r], dlat_case[low_s & ok_r],
+                 gids[high_s & ok_r], dlat_case[high_s & ok_r], rng,
+                 note="origin minus seed latitude over valid parcels")
     if level == 850:
         # 850 hPa intersects the eastern highlands (ERA5 extrapolates below ground),
         # so the west-of-25E subset is the terrain-safe version of the route test
-        west = tr.lon[sel_idx] < 25.0
+        west = (tr.lon[sel_idx] < 25.0) & ok_r
         dep.contrast(tier, level, "route_south_fraction_west25", -72, "frac",
                      gids[west & low_s], sec_case["south"][west & low_s],
                      gids[west & high_s], sec_case["south"][west & high_s], rng,
@@ -374,7 +413,9 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, low_s, high_s
 
     # north-origin arm only (conditional diagnostic; retention differs by group)
     te48 = theta_e(t_par[BACK_H], rh_par[BACK_H], float(level))
-    te_n = case_mean(np.where(sector == "north", te48, np.nan))
+    # conditional on the north-origin arm: a parcel SUBSET by design, so the
+    # five-of-nine rule does not apply; one valid north parcel defines the arm
+    te_n = case_mean(np.where(sector == "north", te48, np.nan), min_valid=1)
     okn = np.isfinite(te_n)
     dep.contrast(tier, level, "thetae_north_origin", -72, "K",
                  gids[low_s & okn], te_n[low_s & okn],
@@ -482,7 +523,7 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, low_s, high_s
           f"({_time.time() - t0:.0f} s for the {level} hPa block)", flush=True)
 
 
-def run_extras(dep, tier, years, tr, sel_idx, low_s, high_s, seed):
+def run_extras(dep, tier, years, tr, sel_idx, low_s, high_s, sp, seed):
     """Column water vapour and the 600-925 hPa shear control (Eulerian box family)."""
     tier_idx = TIER_ORDER.index(tier)
     rng = np.random.default_rng([seed, tier_idx, 1])
@@ -514,15 +555,25 @@ def run_extras(dep, tier, years, tr, sel_idx, low_s, high_s, seed):
     gc.collect()
 
     # shear magnitude built pairwise to hold at most three season-set arrays at once
+    spt, splat, splon, spf, delta_hpa = sp
     ft, flat, flon, u6 = load_region_6h("u600", years=years)
     t2, l2, o2, u9 = load_region_6h("u925", years=years)
     if not (t2.equals(ft) and np.array_equal(l2, flat) and np.array_equal(o2, flon)):
         raise ValueError("ERA5 u925 grid/time differs from u600")
+    if not (spt.equals(ft) and np.array_equal(splat, flat)
+            and np.array_equal(splon, flon)):
+        raise ValueError("surface-pressure grid/time differs from u600")
+    # R2: mask each level before differencing; NaN propagates so the shear exists
+    # only at points valid for BOTH levels (the common-valid rule)
+    mask_level_inplace(u6, spf, 600.0, delta_hpa)
+    mask_level_inplace(u9, spf, 925.0, delta_hpa)
     du = u6 - u9
     del u6, u9
     gc.collect()
     t3, l3, o3, v6 = load_region_6h("v600", years=years)
     t4, l4, o4, v9 = load_region_6h("v925", years=years)
+    mask_level_inplace(v6, spf, 600.0, delta_hpa)
+    mask_level_inplace(v9, spf, 925.0, delta_hpa)
     for nm, (tk, lk, ok_) in (("v600", (t3, l3, o3)), ("v925", (t4, l4, o4))):
         if not (tk.equals(ft) and np.array_equal(lk, flat) and np.array_equal(ok_, flon)):
             raise ValueError(f"ERA5 {nm} grid/time differs from u600")
@@ -546,6 +597,11 @@ def main():
     ap.add_argument("--csct", default="data/original/csct/csct_africa_cs245.nc")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--outdir", default="deposit")
+    ap.add_argument("--delta-hpa", type=float, default=DELTA_HPA,
+                    help="R2 validity buffer (prespecified sensitivities: 0, 50)")
+    ap.add_argument("--footprint", choices=["timematched", "static"],
+                    default="timematched",
+                    help="R2 sensitivity: static = valid at EVERY time in the record")
     a = ap.parse_args()
     tiers = [t.strip() for t in a.tiers.split(",") if t.strip()]
     levels = [int(x) for x in a.levels.split(",") if x.strip()]
@@ -563,6 +619,23 @@ def main():
         print(f"\n=== tier {tier}: {len(years)} seasons "
               f"{years[0]}..{years[-1]} ===", flush=True)
         tr, cst, csx, csy = load_troughs_and_systems(years, a.csct)
+        # R3 (REPAIR_SPEC.md): complete-window eligibility BEFORE the response and the
+        # split, so classes and everything conditioned on them inherit it
+        n_all = len(tr)
+        elig = complete_window_mask(tr.time)
+        tr = tr.filter(elig)
+        dep.point(tier, None, "n_corridor_troughs_all_season", None, "count", n_all,
+                  note="before R3 complete-window eligibility")
+        dep.point(tier, None, "n_window_ineligible", None, "count",
+                  int(n_all - len(tr)),
+                  note="passage outside [Jul 3 00, Sep 30 00] UTC")
+        # surface pressure for the R2 terrain masks, shared by both levels and extras
+        spt, splat, splon, spf = load_region_6h("sp", years=years)
+        if a.footprint == "static":
+            # the static common-support sensitivity: a point is valid only when valid
+            # at EVERY time in the record (broadcast view; masking never writes to sp)
+            spf = np.broadcast_to(spf.min(axis=0, keepdims=True), spf.shape)
+        sp = (spt, splat, splon, spf, float(a.delta_hpa))
         resp = forward_response(tr.time, tr.lon, cst, csx, csy, RESP_WIN_H, DLON,
                                 LAT_LO, LAT_HI)
         month = pd.DatetimeIndex(tr.time).month.values.astype(float)
@@ -601,9 +674,21 @@ def main():
         print(f"wrote {tp}", flush=True)
 
         for level in levels:
-            run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx,
+            run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp,
                       low_s, high_s, a.seed, a.outdir)
-        run_extras(dep, tier, years, tr, sel_idx, low_s, high_s, a.seed)
+        run_extras(dep, tier, years, tr, sel_idx, low_s, high_s, sp, a.seed)
+        att_stats = ("n_corridor_troughs_all_season", "n_window_ineligible",
+                     "n_corridor_troughs", "n_waves", "n_selected", "n_quiet",
+                     "n_active", "terrain_invalid_fraction",
+                     "terrain_masked_box_fraction", "env_cases_under5_valid",
+                     "route_cases_under5_valid", "parcels_lost_fraction")
+        att = [r for r in dep.rows
+               if r["tier"] == tier and r["statistic"] in att_stats]
+        pd.DataFrame(att)[["tier", "level", "statistic", "diff", "note"]].to_csv(
+            os.path.join(a.outdir, f"attrition_{tier}.csv"), index=False,
+            float_format="%.6f")
+        del spf, sp
+        gc.collect()
 
     out = os.path.join(a.outdir, "canonical_numbers.csv")
     pd.DataFrame(dep.rows).to_csv(out, index=False, float_format="%.6f")

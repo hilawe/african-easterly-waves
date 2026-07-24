@@ -40,9 +40,10 @@ VAR_CDS = {
     "t700": ("temperature", "700"),
     "t850": ("temperature", "850"),
     "tcwv": ("total_column_water_vapour", None),
+    "sp": ("surface_pressure", None),   # terrain-validity mask (REPAIR_SPEC R2)
 }
 # short NetCDF variable names CDS uses for the fields above (for build_* concat helpers)
-CDS_SHORT_NAMES = ("u", "v", "r", "tcwv")
+CDS_SHORT_NAMES = ("u", "v", "r", "tcwv", "sp")
 
 
 def cds_request(var_key, year, months=range(1, 13), hours=SYNOPTIC_HOURS,

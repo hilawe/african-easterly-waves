@@ -44,8 +44,9 @@ import xarray as xr
 
 from aew.data.aewc import load_aewc_trajectories
 from aew.data.era5 import load_region_6h
-from aew.environment import forward_response, lead_field_box
-from aew.trajectory import Gridded, back_trajectories
+from aew.environment import complete_window_mask, forward_response, lead_field_box
+from aew.terrain import DELTA_HPA, mask_level_inplace
+from aew.trajectory import Gridded, aggregate_parcels, back_trajectories
 from validate_heldout import parse_years
 
 LAT_LO, LAT_HI = 5.0, 15.0
@@ -69,6 +70,9 @@ def build_design(years, csct_path):
     tr = (load_aewc_trajectories(aewc_paths)
           .filter_region(min_lat=5, max_lat=20, min_lon=-30, max_lon=40)
           .filter_months([7, 8, 9]))
+    n_all = len(tr)
+    tr = tr.filter(complete_window_mask(tr.time))  # R3 complete-window eligibility
+    print(f"eligible troughs {len(tr)} of {n_all} (complete windows)", flush=True)
     cs = xr.open_dataset(csct_path)
     cst_all = pd.DatetimeIndex(cs["time"].values)
     csx = np.asarray(cs["lon"].values, float)
@@ -88,8 +92,13 @@ def build_design(years, csct_path):
     year = pd.DatetimeIndex(tr.time).year.values
     lonbin = np.digitize(tr.lon, LON_EDGES)
 
-    # Eulerian boxes at -24 h: RH700, TCWV, 600-925 shear
+    # Eulerian boxes at -24 h: RH700, TCWV, 600-925 shear (terrain-masked, R2)
+    spt, splat, splon, spf = load_region_6h("sp", years=years)
     rt, rlat, rlon, rfield = load_region_6h("r700", years=years)
+    if not (spt.equals(rt) and np.array_equal(splat, rlat)
+            and np.array_equal(splon, rlon)):
+        raise ValueError("surface-pressure grid/time differs from r700")
+    mask_level_inplace(rfield, spf, 700.0, DELTA_HPA)
     box_rh = lead_field_box(tr.time, tr.lon, rt.values, rlat, rlon, rfield,
                             LEAD_H, tol_h=TOL_H, dlon=BOX_DLON,
                             lat_lo=LAT_LO, lat_hi=LAT_HI)
@@ -102,6 +111,8 @@ def build_design(years, csct_path):
     _, _, _, u9 = load_region_6h("u925", years=years)
     _, _, _, v6 = load_region_6h("v600", years=years)
     _, _, _, v9 = load_region_6h("v925", years=years)
+    for f_, lev_ in ((u6, 600.0), (v6, 600.0), (u9, 925.0), (v9, 925.0)):
+        mask_level_inplace(f_, spf, lev_, DELTA_HPA)   # R2: common-valid shear
     shear_field = np.sqrt((u6 - u9) ** 2 + (v6 - v9) ** 2)
     del u6, u9, v6, v9
     shear = lead_field_box(tr.time, tr.lon, ft.values, flat, flon, shear_field,
@@ -111,10 +122,10 @@ def build_design(years, csct_path):
 
     # Lagrangian along-inflow RH at -72 h for every trough (9 parcels each)
     tu, wlat, wlon, uu = load_region_6h("u700", years=years)
-    u = Gridded(tu.values, wlat, wlon, uu)
+    u = Gridded(tu.values, wlat, wlon, mask_level_inplace(uu, spf, 700.0, DELTA_HPA))
     del uu
     tv, _, _, vv = load_region_6h("v700", years=years)
-    v = Gridded(tv.values, wlat, wlon, vv)
+    v = Gridded(tv.values, wlat, wlon, mask_level_inplace(vv, spf, 700.0, DELTA_HPA))
     del vv
     seed_time = tr.time.astype("datetime64[ns]") - np.timedelta64(int(LEAD_H * 3600), "s")
     gd, gl = np.meshgrid(SEED_DLON, SEED_LATS)
@@ -131,9 +142,11 @@ def build_design(years, csct_path):
     del rfield
     k = int(round(BACK_H / (elapsed[1] - elapsed[0])))
     t_abs = (seeds_t.astype("datetime64[ns]").astype("int64") / 3.6e12) - BACK_H
-    inflow_rh = np.nanmean(rh.sample(t_abs, plat[k], plon[k]).reshape(n, npar), axis=1)
+    inflow_rh, _ = aggregate_parcels(rh.sample(t_abs, plat[k], plon[k]), n, npar)
 
     df = pd.DataFrame({
+        "time": pd.DatetimeIndex(tr.time),
+        "lon": tr.lon,
         "response": resp.astype(int),
         "inflow_rh": inflow_rh,
         "box_rh": box_rh,
@@ -146,8 +159,15 @@ def build_design(years, csct_path):
         "wave": tr.variables["traj_id"],
     })
     before = len(df)
+    # R4 source (implementation-review fold): the wave-unit estimand's cohort is every
+    # eligible trough with only the missing-H rule applied, NOT the model's six-way
+    # complete-case cohort, so the unfiltered table is written before that filter
+    df[["wave", "time", "lon", "response", "inflow_rh"]].to_csv(
+        "deposit/eligible_troughs.csv", index=False, float_format="%.6f")
     df = df[np.isfinite(df[PREDICTORS]).all(axis=1)].reset_index(drop=True)
-    print(f"analyzable troughs (finite predictors): {len(df)} of {before}", flush=True)
+    print(f"analyzable troughs (finite predictors): {len(df)} of {before}; "
+          f"unfiltered eligible table written to deposit/eligible_troughs.csv",
+          flush=True)
     return df
 
 
@@ -207,7 +227,15 @@ def main():
     os.makedirs(a.outdir, exist_ok=True)
 
     pooled_years = parse_years(TIERS["pooled"])
-    if a.cache and os.path.exists(a.cache):
+    # the cache holds the POST-filter design, so the R4 eligible table (written only
+    # inside build_design, pre-filter) cannot be recovered from it; a cache without
+    # that table alongside forces a rebuild rather than starving wave_estimands.py
+    use_cache = (a.cache and os.path.exists(a.cache)
+                 and os.path.exists("deposit/eligible_troughs.csv"))
+    if a.cache and os.path.exists(a.cache) and not use_cache:
+        print(f"cache {a.cache} present but deposit/eligible_troughs.csv absent; "
+              f"rebuilding the design", flush=True)
+    if use_cache:
         df = pd.read_csv(a.cache)
         print(f"loaded cached design {len(df)} from {a.cache}", flush=True)
     else:
@@ -311,6 +339,51 @@ def main():
     pd.DataFrame(lrows).to_csv(
         os.path.join(a.outdir, "control_model_ladder.csv"), index=False,
         float_format="%.6f")
+
+    # R6 (REPAIR_SPEC.md): overdispersion sensitivities on the primary specification,
+    # identical design matrix and fixed effects, cluster-robust on the wave, reported
+    # as IRR per pooled SD beside the Poisson values
+    prim_terms = ["inflow_rh", "antecedent", "amplitude", "shear"]
+    rhs_prim = " + ".join(f"z_{c}" for c in prim_terms) + " + C(lonmonth) + C(year)"
+    sens_rows = []
+    pois = smf.glm(f"response ~ {rhs_prim}", data=d,
+                   family=sm.families.Poisson()).fit(
+        cov_type="cluster", cov_kwds={"groups": d["wave"].values})
+    qp = smf.glm(f"response ~ {rhs_prim}", data=d,
+                 family=sm.families.Poisson()).fit(
+        cov_type="cluster", cov_kwds={"groups": d["wave"].values}, scale="X2")
+    try:
+        nb = smf.negativebinomial(f"response ~ {rhs_prim}", data=d).fit(
+            cov_type="cluster", cov_kwds={"groups": d["wave"].values},
+            maxiter=200, disp=0)
+        nb_ok = getattr(nb.mle_retvals, "get", lambda *a: True)("converged", True) \
+            if hasattr(nb, "mle_retvals") else True
+    except Exception as e:                                    # report, never silent
+        nb, nb_ok = None, False
+        print(f"negative binomial fit failed: {e}", flush=True)
+    for model_name, res, note in (("poisson_cluster", pois, "primary"),
+                                  ("quasi_poisson_cluster", qp, "scale=X2"),
+                                  ("negbin2_cluster", nb,
+                                   "NB2 log link" if nb_ok else "DID NOT CONVERGE")):
+        if res is None:
+            sens_rows.append(dict(model=model_name, predictor="inflow_rh",
+                                  coef=np.nan, irr=np.nan, irr_lo=np.nan,
+                                  irr_hi=np.nan, pvalue=np.nan, note=note))
+            continue
+        for c in prim_terms:
+            ci_ = res.conf_int().loc[f"z_{c}"]
+            sens_rows.append(dict(
+                model=model_name, predictor=c, coef=float(res.params[f"z_{c}"]),
+                irr=float(np.exp(res.params[f"z_{c}"])),
+                irr_lo=float(np.exp(ci_[0])), irr_hi=float(np.exp(ci_[1])),
+                pvalue=float(res.pvalues[f"z_{c}"]), note=note))
+    pd.DataFrame(sens_rows).to_csv(
+        os.path.join(a.outdir, "control_model_sensitivities.csv"), index=False,
+        float_format="%.6f")
+    disp = float(d["response"].var() / d["response"].mean())
+    lines.append(f"\nOVERDISPERSION: response variance/mean = {disp:.2f}; "
+                 "NB2 and quasi-Poisson sensitivities in "
+                 "control_model_sensitivities.csv")
 
     summary = "\n".join(lines)
     print(summary)

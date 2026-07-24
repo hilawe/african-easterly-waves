@@ -121,7 +121,8 @@ def lead_value(trough_times, traj_id, values, lead_h=24.0, tol_h=6.0):
 
 
 def lead_field_box(trough_times, trough_lons, f_time, f_lat, f_lon, field,
-                   lead_h=24.0, tol_h=3.0, dlon=5.0, lat_lo=5.0, lat_hi=15.0):
+                   lead_h=24.0, tol_h=3.0, dlon=5.0, lat_lo=5.0, lat_hi=15.0,
+                   keep_min=0.5):
     """Pre-arrival environment from a gridded field: box mean at the trough's meridian,
     ``lead_h`` hours BEFORE the trough observation.
 
@@ -148,8 +149,10 @@ def lead_field_box(trough_times, trough_lons, f_time, f_lat, f_lon, field,
 
     Returns
     -------
-    out : ndarray, one box-mean value per trough observation (NaN where no field time is
-          within ``tol_h`` of the target, or the box has no finite cells)
+    out : ndarray, one box-mean value per trough observation. NaN where no field time
+          is within ``tol_h`` of the target, or fewer than ``keep_min`` of the box's
+          cells are finite (REPAIR_SPEC.md R2: a terrain-masked box reports missing
+          rather than a shrunken-footprint mean).
     """
     tt = _ns_hours(trough_times)
     L = np.asarray(trough_lons, dtype=float)
@@ -179,8 +182,9 @@ def lead_field_box(trough_times, trough_lons, f_time, f_lat, f_lon, field,
         if not box.any():
             continue
         cell = field[k][np.ix_(band, box)]
-        if np.isfinite(cell).any():
-            out[i] = np.nanmean(cell)
+        finite = np.isfinite(cell)
+        if finite.mean() >= keep_min:
+            out[i] = cell[finite].mean()
     return out
 
 
@@ -283,7 +287,29 @@ def terciles(x):
     """
     x = np.asarray(x, dtype=float)
     finite = np.isfinite(x)
-    lo_t, hi_t = np.nanpercentile(x[finite], [33.3, 66.7]) if finite.any() else (np.nan, np.nan)
+    # exact 1/3 and 2/3 linear quantiles (REPAIR_SPEC R3; 33.3/66.7 percentiles are
+    # a different estimator and can flip boundary observations)
+    lo_t, hi_t = (np.nanquantile(x[finite], [1.0 / 3.0, 2.0 / 3.0])
+                  if finite.any() else (np.nan, np.nan))
     low = finite & (x <= lo_t)
     high = finite & (x >= hi_t)
     return low, high
+
+
+def complete_window_mask(times):
+    """REPAIR_SPEC.md R3: True where both storm-count windows lie inside the JAS record.
+
+    ``forward_response`` uses half-open windows: the response window is [t, t+24 h) and
+    the antecedent window is [t-48 h, t-24 h). The cloud-system catalog's 3-hourly
+    stamps cover [July 1 00 UTC, October 1 00 UTC) of each season, so eligibility on
+    the 6-hourly trough lattice is passage time in [July 3 00 UTC, September 30
+    00 UTC], both ends inclusive. Applied BEFORE the tercile split, so classes,
+    class-conditioned composites, trajectories, and the control model inherit it; the
+    unconditional anatomy composites deliberately do not use it.
+    """
+    t = pd.DatetimeIndex(times)
+    after_start = (t.month > 7) | ((t.month == 7) & (t.day >= 3))
+    before_end = (t.month < 9) | ((t.month == 9) & (
+        (t.day < 30) | ((t.day == 30) & (t.hour == 0))))
+    in_season = t.month.isin([7, 8, 9])
+    return np.asarray(in_season & after_start & before_end)
