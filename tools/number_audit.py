@@ -109,6 +109,13 @@ ALLOW_RES = [re.compile(p) for p in (
     r"\b\d{1,3}(?:,\d{3})*[-\s](?:observation|wave|parcel|season|replicate|draw)s?\b",
     r"\b\d+th\b",                                          # percentile ordinals
     r"\bpart\s+[IVX\d]+\b",
+    # Patterns below cover forms that occur mainly in FIGURE CAPTIONS. The lint used to
+    # stop at the first table heading and so never reached them (round-6 review); they
+    # are structural or design constants, not estimands.
+    r"\b\d+(?:\.\d+)?[-\s]\d+(?:\.\d+)?\s*(?:N|S|E|W)\b",   # "5-15 N" band form
+    r"\b\d{2}(?:,\s*\d{2})*(?:,?\s*and\s*\d{2})?\s*UTC\b",   # "00, 06, 12, and 18 UTC"
+    r"(?<![\d.])-(?:24|36|48|60|72)(?:,\s*(?:and\s*)?-?(?:24|36|48|60|72))*\s*h\b",
+    r"\b\d{1,3}(?:,\d{3})*\s+(?:draws|replicates|permutations)\b",
 )]
 
 # no letter, digit, or hyphen immediately before (skips B1, CS-245, C00784, S1 and
@@ -117,8 +124,15 @@ ALLOW_RES = [re.compile(p) for p in (
 NUMERAL_RE = re.compile(r"(?<![A-Za-z0-9-])[+-]?\d+(?:,\d{3})*(?:\.\d+)?")
 
 
-def lint_untagged(text, skip_headings=("## References", "## Table")):
-    """Numerals with no tag and no allowlist cover; returns (line_no, token) pairs."""
+def lint_untagged(text, skip_headings=("## References",)):
+    """Numerals with no tag and no allowlist cover; returns (line_no, token) pairs.
+
+    Only the reference list is excluded. "## Table" used to truncate here too, which
+    silently ended the lint at the first table and left EVERY figure caption unchecked,
+    since the captions sit after it. That is how "about two" and an untagged 1,000-draw
+    caption reached the manuscript (round-6 review). Table design constants are covered
+    by the allowlist instead of by skipping the rest of the document.
+    """
     for h in skip_headings:
         i = text.find(h)
         if i >= 0:

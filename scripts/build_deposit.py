@@ -86,6 +86,19 @@ ELAPSED_H = (0.0, 12.0, 24.0, 36.0, 48.0)   # passage-relative -24 .. -72 h
 DECOMP_H = (0.0, 24.0, 48.0)
 EPOCHS = ((1983, 1993), (1994, 2007))
 EXC_PCTL = 70.0
+# Replicate count for every canonical cluster bootstrap. This was left at the
+# cluster_bootstrap_diff default of 2,000 while the manuscript stated 20,000, so the
+# published per-observation intervals did not come from the described procedure
+# (full-access review round 6). It is named here, passed explicitly, and recorded in
+# every contrast row so the two can never drift apart again. Changing it changes the
+# random-stream consumption of every downstream call, so it invalidates the whole
+# deposit and requires a full canonical rerun.
+N_BOOT = 20_000
+# Terrain-safe longitude restriction for the 850 hPa support sensitivity. 808 of the
+# 810 cases the terrain mask removes at 850 hPa lie between 30 and 40 E, and the loss
+# is differential by class (9.5 percent of quiet against 6.5 percent of active), so the
+# eastern corridor is where that level's estimates are least supported.
+WEST_LON_CUT = 25.0
 
 TIERS = {"dev": "2000-2004", "heldout": "1983-1999,2005-2007", "pooled": "1983-2007"}
 TIER_ORDER = ("dev", "heldout", "pooled")
@@ -120,7 +133,8 @@ class Deposit:
 
     def contrast(self, tier, level, stat, time_rel, unit, gq, vq, ga, va, rng,
                  scale=1.0, note=""):
-        d, lo, hi, na, nb = cluster_bootstrap_diff(gq, vq, ga, va, rng)
+        d, lo, hi, na, nb = cluster_bootstrap_diff(gq, vq, ga, va, rng,
+                                                   n_boot=N_BOOT)
         row = dict(tier=tier, level=level, statistic=stat, time_rel_h=time_rel,
                    unit=unit, kind="contrast",
                    n_quiet=int(vq.size), n_active=int(va.size),
@@ -128,7 +142,8 @@ class Deposit:
                    mean_quiet=float(np.mean(vq)) * scale,
                    mean_active=float(np.mean(va)) * scale,
                    diff=d * scale, ci_lo=lo * scale, ci_hi=hi * scale,
-                   significant=bool(not (lo <= 0.0 <= hi)), note=note)
+                   significant=bool(not (lo <= 0.0 <= hi)), n_boot=N_BOOT,
+                   note=note)
         self.rows.append(row)
         print(f"  {tier:7s} {str(level):4s} {stat:34s} {row['diff']:+8.3f} "
               f"[{row['ci_lo']:+8.3f}, {row['ci_hi']:+8.3f}] {unit:7s} "
@@ -299,9 +314,24 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp, low_s,
 
     # ---- along-inflow relative humidity (the supply-contrast profile) ----
     _, nv72 = aggregate_parcels(rh_par[BACK_H], n_case, npar)
+    lost = nv72 < 5
     dep.point(tier, level, "env_cases_under5_valid", -72, "count",
-              int((nv72 < 5).sum()),
+              int(lost.sum()),
               note="troughs with fewer than five valid parcels at -72 h (env missing)")
+    # STRATIFIED attrition. The aggregate count alone cannot show whether the terrain
+    # mask removes cases evenly, and at 850 hPa it does not: the loss concentrates in
+    # the eastern highlands and falls harder on MCS-quiet cases, which is why that
+    # level carries a west-of-25E sensitivity (round-6 review asked for this ledger).
+    # dep.point consumes no random numbers, so these rows do not perturb any stream.
+    lon_case = tr.lon[sel_idx]
+    dep.point(tier, level, "env_lost_east30", -72, "count",
+              int((lost & (lon_case >= 30.0)).sum()),
+              note="of the lost cases, those at or east of 30 E")
+    for nm, msk in (("quiet", low_s), ("active", high_s)):
+        n = int(msk.sum())
+        dep.point(tier, level, f"env_lost_pct_{nm}", -72, "%",
+                  100.0 * float((lost & msk).sum()) / n if n else float("nan"),
+                  note=f"percent of MCS-{nm} cases lost to the parcel-validity rule")
     rh_case = {eh: case_mean(rh_par[eh]) for eh in ELAPSED_H}
     for eh in ELAPSED_H:
         cm = rh_case[eh]
@@ -402,6 +432,23 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp, low_s,
             else:
                 d_T[eh] = row
 
+    if level == 850:
+        # The terrain-safe restriction applied to the THERMODYNAMIC endpoint, which the
+        # route sensitivity above did not cover. Round-6 review showed the 850 hPa vapor
+        # excess does not survive it while relative humidity does, so both are deposited
+        # rather than left for a reader to assume they behave alike.
+        wl = tr.lon[sel_idx] < WEST_LON_CUT
+        okw = np.isfinite(rh_case[BACK_H]) & wl
+        dep.contrast(tier, level, "lagrangian_rh_west25", -72, "%",
+                     gids[low_s & okw], rh_case[BACK_H][low_s & okw],
+                     gids[high_s & okw], rh_case[BACK_H][high_s & okw], rng,
+                     note="terrain-safe west-of-25E subset")
+        okm = np.isfinite(mix_case[BACK_H]) & wl
+        dep.contrast(tier, level, "decomp_mix_west25", -72, "g/kg",
+                     gids[low_s & okm], mix_case[BACK_H][low_s & okm],
+                     gids[high_s & okm], mix_case[BACK_H][high_s & okm], rng,
+                     note="terrain-safe west-of-25E subset")
+
     te_case = {}
     for eh in ELAPSED_H:
         te = theta_e(t_par[eh], rh_par[eh], float(level))
@@ -458,6 +505,21 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp, low_s,
         dep.point(tier, level, "attenuation_factor", None, "ratio",
                   lag72["diff"] / r_eul["diff"],
                   note="lagrangian -72 h contrast over the meridian Eulerian box")
+    # The MATCHED-LEAD ratio, against the two Eulerian control boxes read at the same
+    # -72 h lead rather than at the -24 h seed box. Figure 6 computed this inline and
+    # the prose said "about two", so a published quantity sat outside the registry and
+    # evaded the number audit (round-6 review). It is derived here, from rows already
+    # deposited, and consumes no random stream.
+    ctl = [r for r in dep.rows
+           if r["tier"] == tier and r["level"] == level and r["time_rel_h"] == -72
+           and r["statistic"] in ("eulerian_control_L+8", "eulerian_control_L+12")]
+    if len(ctl) == 2:
+        ctl_mean = float(np.mean([r["diff"] for r in ctl]))
+        if ctl_mean != 0:
+            dep.point(tier, level, "attenuation_factor_matched", None, "ratio",
+                      lag72["diff"] / ctl_mean,
+                      note="lagrangian -72 h contrast over the mean of the two "
+                           "Eulerian control boxes read at the same -72 h lead")
 
     # ---- group-mean inflow paths (figure F6a input; consumes no random numbers,
     # computed after every statistic so the streams above are untouched) ----

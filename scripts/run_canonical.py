@@ -52,6 +52,11 @@ def main():
                           "--cache", "deposit/control_model_design.csv"])
     run("wave_estimands", [PY_, "scripts/wave_estimands.py"])
     run("response_sens", [PY_, "scripts/sensitivity_response.py"])
+    # feeds the registry's yearstrat_* rows, which the abstract and section 2d quote.
+    # It sat OUTSIDE this sequence, so a canonical rerun regenerated everything around
+    # it and merged its previous-generation CSV: the mixed-generation state this
+    # orchestrator exists to prevent (found while folding round 6).
+    run("yearstrat_sens", [PY_, "scripts/sensitivity_yearstrat.py"])
     run("fig2_null", [PY_, "scripts/fig_wave_following.py",
                       "--out", f"{DL}/aew_wave_following_pooled.png"])
     run("fig3_null", [PY_, "scripts/fig_ct_wave_following.py",
@@ -85,7 +90,9 @@ def main():
     # running them here is the promotion.
     run("promote_paper", [PY_, "tools/build_pandoc_paper.py"])
     run("promote_supplement", [PY_, "tools/build_supplement.py"])
-    check = [PY_, "tools/check_manuscript_figures.py"]
+    # --strict: a comparison that could not run is a failure here, because this
+    # driver just regenerated the sources it is comparing against.
+    check = [PY_, "tools/check_manuscript_figures.py", "--strict"]
     if a.allow_untagged:
         check.append("--allow-untagged")
     run("checker", check)

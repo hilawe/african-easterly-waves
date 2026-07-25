@@ -69,8 +69,14 @@ def main():
     # sample size and cannot be compared for concentration. Each profile is therefore
     # also normalized by its own total, and the shape statistics (peak fraction, the
     # share inside the core interval, the share west of the axis, and the centroid)
-    # are what the caption may compare. The 2026-07-25 full-access review caught the
-    # earlier raw-count comparison, whose direction was wrong as well as its scale.
+    # are what the caption may compare.
+    #
+    # DENOMINATOR, stated exactly because the first version of this fix got it wrong.
+    # prof is a 5-15 N mean of wave_relative_counts, which counts a system once per
+    # trough whose window contains it, over the plotted +/-30 degree support. So
+    # prof.sum() is a count of binned event-trough matches inside that support, NOT the
+    # n_events first detections. The shares below are shares of those matches, and no
+    # label may call them shares of first detections.
     sel = (REL_C >= SEARCH[0]) & (REL_C <= SEARCH[1])
     core = (REL_C >= -4.0) & (REL_C <= 2.0)
     west = REL_C < 0.0
@@ -80,6 +86,7 @@ def main():
         frac = prof / prof.sum()
         centroid = float((REL_C * frac).sum())
         rows.append(dict(figure="F3", subset=k, n_events=len(events[k]),
+                         n_matches=float(prof.sum()),
                          peak_count=prof[i], peak_rel_lon=REL_C[i],
                          peak_frac_pct=100.0 * float(frac[i]),
                          share_core_pct=100.0 * float(frac[core].sum()),
@@ -121,8 +128,8 @@ def main():
         axb.plot(REL_C, 100.0 * f, color=c, label=lab)
     axb.axvline(0, color="green", lw=2)
     axb.set_xlabel("Longitude relative to trough (deg; east positive)")
-    axb.set_ylabel("share of the set's first detections (% per 2-deg bin)")
-    axb.set_title("The same curves, each normalized by its own total")
+    axb.set_ylabel("share of the set's binned trough matches (% per 2-deg bin)")
+    axb.set_title("Each curve normalized by its own binned total")
     axb.legend(fontsize=8)
     axb.grid(alpha=0.3)
     panel_label(axb, "b", 17)

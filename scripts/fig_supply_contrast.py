@@ -137,12 +137,12 @@ def main():
     # 2026-07-25). The matched-lead ratio is drawn at -72 h against the mean of the
     # two -72 h control boxes.
     att = get(df, a.tier, a.level, "attenuation_factor")["diff"]
+    matched = get(df, a.tier, a.level, "attenuation_factor_matched")["diff"]
     r72 = lag[lag.time_rel_h == -72].iloc[0]
     ebox = get(df, a.tier, a.level, "eulerian_box", -24)
     r24 = lag[lag.time_rel_h == -24].iloc[0]
     e72 = 0.5 * (get(df, a.tier, a.level, "eulerian_control_L+8", -72)["diff"]
                  + get(df, a.tier, a.level, "eulerian_control_L+12", -72)["diff"])
-    matched = r72["diff"] / e72
 
     ax2.annotate("", xy=(-23.0, ebox["diff"]), xytext=(-23.0, r72["diff"]),
                  arrowprops=dict(arrowstyle="->", color="#333333", lw=1.0))

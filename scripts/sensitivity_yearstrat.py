@@ -24,6 +24,11 @@ import pandas as pd
 
 from aew.environment import cluster_bootstrap_diff
 
+# Matches scripts/build_deposit.py. This script was left on the 2,000 default
+# while the manuscript stated 20,000, and it produces the year-matched contrast
+# quoted in the abstract (round-6 review).
+N_BOOT = 20_000
+
 EDGES = np.arange(-30, 41, 10.0)
 MIN_BIN = 30
 
@@ -64,12 +69,12 @@ def main():
                         ("yearmonthlon", ["year", "month", "lonbin"])):
         lo, hi = stratified_terciles_cells(d, cols)
         diff, ci_lo, ci_hi, nq, na = cluster_bootstrap_diff(
-            d.traj_id[lo], d.H[lo], d.traj_id[hi], d.H[hi], rng)
+            d.traj_id[lo], d.H[lo], d.traj_id[hi], d.H[hi], rng, n_boot=N_BOOT)
         gap = d.year[hi].mean() - d.year[lo].mean()
         rows.append(dict(split=label, diff=diff, ci_lo=ci_lo, ci_hi=ci_hi,
                          n_quiet=int(lo.sum()), n_active=int(hi.sum()),
                          clusters_quiet=nq, clusters_active=na,
-                         year_gap=gap,
+                         year_gap=gap, n_boot=N_BOOT,
                          significant=bool(not (ci_lo <= 0 <= ci_hi))))
         print(f"{label:14s} diff {diff:+.3f} [{ci_lo:+.3f}, {ci_hi:+.3f}] "
               f"n {int(lo.sum())}/{int(hi.sum())} year-gap {gap:+.2f}", flush=True)

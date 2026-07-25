@@ -41,6 +41,11 @@ DLON = 5.0               # convection box half-width in longitude
 MAX_LAG = 8              # +/- 8 samples = +/- 48 h (the R6 frozen lag grid)
 PEAK_WIN = 48.0          # the R6 frozen estimator searches the FULL +/-48 h grid
 JAS = (7, 8, 9)
+# Year-block bootstrap replicates. This was 500 while the manuscript stated 20,000
+# for its cluster bootstraps, so the two disagreed (round-6 review). The lead-lag
+# resamples YEARS rather than waves, which is a different unit, so the manuscript
+# now says so explicitly; the count is matched here to remove the second discrepancy.
+N_BOOT = 20_000
 
 
 def load_era5_curv(u_glob, v_glob):
@@ -123,7 +128,7 @@ def seasonal_lag_correlation(w_raw, c_raw, times, max_lag, months=JAS, buffer_da
             np.concatenate(w_cores), np.concatenate(c_cores))
 
 
-def bootstrap_peak_ci(lags, R_years, peak_win, rng, n_boot=500):
+def bootstrap_peak_ci(lags, R_years, peak_win, rng, n_boot=N_BOOT):
     """Year-block bootstrap CI for the peak lag of the mean correlation curve.
 
     Resamples whole years with replacement, re-averages their correlation curves, and takes
@@ -238,7 +243,7 @@ def main():
 
     # longitudinal gradient of the peak lag. A fixed-meridian lag restates the spatial phase
     # offset, but its CHANGE with longitude is new information: a wider convective lead in the
-    # east than the west is the coupling-maturity signature (convective forcing of a weak
+    # east than the west is a longitude-dependent phase relationship (one reading is
     # vorticity perturbation upstream, tightening toward the coupled quarter-wavelength phase
     # downstream). Bootstrap resamples YEARS jointly across meridians (the shared sampling
     # unit), rebuilds each meridian's mean curve and peak, and refits the slope.
@@ -249,8 +254,8 @@ def main():
     if ridx.size >= 4 and len(nyrs) == 1:
         nyr = nyrs.pop()
         slope = np.polyfit(meridians, peak_h, 1)[0]
-        boots = np.empty(500)
-        for b in range(500):
+        boots = np.empty(N_BOOT)
+        for b in range(N_BOOT):
             yidx = rng.integers(0, nyr, nyr)
             ph_b = [peak_lag(lags[win], np.nanmean(R_years_all[j][yidx], axis=0)[win],
                              refine=False)[0]
@@ -289,7 +294,9 @@ def main():
                             ci_hi=np.nan),
                        dict(statistic="leadlag_n_distinct_lags",
                             value=float(_pd.Series(peak_h).nunique()), ci_lo=np.nan,
-                            ci_hi=np.nan)]).to_csv(
+                            ci_hi=np.nan),
+                       dict(statistic="leadlag_n_boot", value=float(N_BOOT),
+                            ci_lo=np.nan, ci_hi=np.nan)]).to_csv(
             "deposit/leadlag_stats.csv", index=False, float_format="%.6f")
         print(f"\nLAG GRADIENT along the corridor: slope {slope:+.2f} h/deg "
               f"(year bootstrap 95% CI [{g_lo:+.2f}, {g_hi:+.2f}], {gsig}); "
@@ -297,7 +304,9 @@ def main():
               f"west of 5W {np.nanmean(west):+.1f} h.")
         print("Reading: the convective lead widens toward the east (weak vorticity "
               "perturbations lag their convection by more upstream) and tightens toward the "
-              "coast, the signature of a wave-convection coupling that matures westward "
+              "coast. Maturing wave-convection coupling is one reading; a change in wave "
+              "structure along the corridor is another, and this measurement does not "
+              "separate them. "
               "along the corridor. This gradient, not the single-meridian lag, is the "
               "time-domain information beyond the spatial composite.")
 

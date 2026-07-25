@@ -29,6 +29,11 @@ import pandas as pd
 
 from aew.data.aewc import load_aewc_trajectories
 from aew.data.era5 import load_region_6h
+# Matches scripts/build_deposit.py; this script was on the 2,000 default while
+# the manuscript stated 20,000, and its intervals are quoted in 5c and the
+# supplement (round-6 review).
+N_BOOT = 20_000
+
 from aew.environment import (cluster_bootstrap_diff, complete_window_mask,
                              forward_response)
 from aew.terrain import DELTA_HPA, mask_level_inplace
@@ -156,7 +161,8 @@ def main():
                                 LAT_LO, LAT_HI)
         low, high = stratified_quantile_split(resp, tr.lon, month, q_lo, q_hi)
         d, lo_ci, hi_ci, na, nb = cluster_bootstrap_diff(
-            gids[low & ok], rh72[low & ok], gids[high & ok], rh72[high & ok], rng)
+            gids[low & ok], rh72[low & ok], gids[high & ok], rh72[high & ok], rng,
+            n_boot=N_BOOT)
         sig = not (lo_ci <= 0 <= hi_ci)
         split = ("terciles" if (q_lo, q_hi) == (1 / 3, 2 / 3)
                  else "median" if q_lo == q_hi else "quartiles")
