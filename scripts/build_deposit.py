@@ -743,7 +743,10 @@ def main():
                      "n_corridor_troughs", "n_waves", "n_selected", "n_quiet",
                      "n_active", "terrain_invalid_fraction",
                      "terrain_masked_box_fraction", "env_cases_under5_valid",
-                     "route_cases_under5_valid", "parcels_lost_fraction")
+                     "route_cases_under5_valid", "parcels_lost_fraction",
+                     # the stratified ledger, which the export list omitted so it
+                     # reached the registry but not attrition_<tier>.csv (round 7)
+                     "env_lost_east30", "env_lost_pct_quiet", "env_lost_pct_active")
         att = [r for r in dep.rows
                if r["tier"] == tier and r["statistic"] in att_stats]
         pd.DataFrame(att)[["tier", "level", "statistic", "diff", "note"]].to_csv(

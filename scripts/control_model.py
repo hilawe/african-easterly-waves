@@ -237,6 +237,44 @@ def main():
               f"rebuilding the design", flush=True)
     if use_cache:
         df = pd.read_csv(a.cache)
+        # VALIDATE the cache against the current deposit rather than trusting that it
+        # exists. run_canonical rebuilds the deposit and then reruns this driver from
+        # the cache; the fresh OUTPUT mtimes then satisfy the checker, so a changed
+        # sample could be combined with a previous-generation design and the sequence
+        # would still report success (round-7 review, blocker). The response is the
+        # quantity build_deposit recomputes, so disagreeing on it means the cache
+        # predates the current sample.
+        ref = os.path.join(os.path.dirname(a.cache), "troughs_pooled.csv")
+        if os.path.exists(ref):
+            t = pd.read_csv(ref)
+            # the two tables round longitude differently on write (float32 source
+            # against %.6f), so the join key is rounded rather than compared exactly
+            key = ["time", "lon_k"]
+            dl = df[["time", "lon", "response"]].copy()
+            tl = t[["time", "lon", "response"]].copy()
+            dl["lon_k"] = dl.lon.round(3)
+            tl["lon_k"] = tl.lon.round(3)
+            merged = dl[key + ["response"]].merge(
+                tl[key + ["response"]], on=key, how="inner",
+                suffixes=("_cache", "_deposit"))
+            bad = int((merged.response_cache != merged.response_deposit).sum())
+            # a cache whose keys barely overlap the deposit is as suspect as one whose
+            # responses disagree, so coverage is required too
+            frac = len(merged) / max(len(df), 1)
+            if merged.empty or bad or frac < 0.95:
+                print(f"cache {a.cache} DISAGREES with {ref} "
+                      f"({bad} of {len(merged)} responses differ, "
+                      f"{100 * frac:.1f} percent of design rows matched); "
+                      f"rebuilding the design", flush=True)
+                use_cache = False
+            else:
+                print(f"cache validated against {ref}: {len(merged)} keys "
+                      f"({100 * frac:.1f} percent of design rows), responses "
+                      f"identical", flush=True)
+        else:
+            print(f"{ref} absent, cannot validate the cache; rebuilding", flush=True)
+            use_cache = False
+    if use_cache:
         print(f"loaded cached design {len(df)} from {a.cache}", flush=True)
     else:
         df = build_design(pooled_years, a.csct)

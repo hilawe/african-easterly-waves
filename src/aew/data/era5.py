@@ -262,8 +262,18 @@ def load_region_6h(var_key, path_glob=None, years=None):
         ds = xr.open_dataset(p)
         tname = "valid_time" if "valid_time" in ds.coords else "time"
         ts.append(pd.DatetimeIndex(ds[tname].values))
-        lat = np.asarray(ds["latitude"].values, float)
-        lon = np.asarray(ds["longitude"].values, float)
+        # VALIDATE rather than overwrite. These were reassigned every iteration with no
+        # cross-file check, so equal-shaped but shifted or reversed grids would have
+        # concatenated silently and corrupted every trajectory built on them (round-7
+        # review). fig_leadlag's loader already checks this; this one did not.
+        lat_i = np.asarray(ds["latitude"].values, float)
+        lon_i = np.asarray(ds["longitude"].values, float)
+        if lat is None:
+            lat, lon = lat_i, lon_i
+        elif not (np.array_equal(lat, lat_i) and np.array_equal(lon, lon_i)):
+            raise ValueError(
+                f"ERA5 grid mismatch in {p!r}: latitude/longitude differ from the "
+                f"earlier files in this concatenation, so the blocks cannot be stacked")
         name = [v for v in ds.data_vars if v in ("r", "tcwv", "q", "u", "v", "t")]
         da = ds[name[0]] if name else ds[list(ds.data_vars)[0]]
         # squeeze only the singleton level dimension; a blind squeeze() would also

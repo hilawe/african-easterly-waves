@@ -106,7 +106,11 @@ ALLOW_RES = [re.compile(p) for p in (
     r"\b\d+(?:\.\d+)?\s+to\s+\d+(?:\.\d+)?\s*(?:N|S|E|W)\b",       # coordinate ranges
     r"[+-]?\d+(?:\.\d+)?\s+to\s+[+-]?\d+(?:\.\d+)?[-\s](?:h\b|days?\b|degrees?\b)",
     r"\b95\s*percent\b",                                  # the confidence level
-    r"\b\d{1,3}(?:,\d{3})*[-\s](?:observation|wave|parcel|season|replicate|draw)s?\b",
+    # HYPHENATED adjectival use only ("a 20,000-replicate bootstrap"). The spaced form
+    # ("20,000 replicates") is a bare count and must be tagged, because that is exactly
+    # the claim that silently drifted from the code in round 6.
+    r"\b\d{1,3}(?:,\d{3})*-(?:observation|wave|parcel|season|replicate|draw)s?\b",
+    r"\b\d{1,3}(?:,\d{3})*\s(?:observation|wave|parcel|season)s?\b",
     r"\b\d+th\b",                                          # percentile ordinals
     r"\bpart\s+[IVX\d]+\b",
     # Patterns below cover forms that occur mainly in FIGURE CAPTIONS. The lint used to
@@ -115,7 +119,9 @@ ALLOW_RES = [re.compile(p) for p in (
     r"\b\d+(?:\.\d+)?[-\s]\d+(?:\.\d+)?\s*(?:N|S|E|W)\b",   # "5-15 N" band form
     r"\b\d{2}(?:,\s*\d{2})*(?:,?\s*and\s*\d{2})?\s*UTC\b",   # "00, 06, 12, and 18 UTC"
     r"(?<![\d.])-(?:24|36|48|60|72)(?:,\s*(?:and\s*)?-?(?:24|36|48|60|72))*\s*h\b",
-    r"\b\d{1,3}(?:,\d{3})*\s+(?:draws|replicates|permutations)\b",
+    # replicate and draw counts are NOT allowlisted: they are exactly the class of
+    # claim that drifted from the code in round 6 (manuscript said 20,000, the driver
+    # ran 2,000) and an allowlist would let it recur unnoticed. Tag them.
 )]
 
 # no letter, digit, or hyphen immediately before (skips B1, CS-245, C00784, S1 and

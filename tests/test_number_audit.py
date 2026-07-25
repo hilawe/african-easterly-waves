@@ -66,3 +66,26 @@ def test_load_canonical_flags_duplicates(tmp_path):
     df.to_csv(p, index=False)
     rows, dups = load_canonical(p)
     assert len(dups) == 1 and "duplicate" in dups[0]
+
+
+def test_replicate_count_claim_is_audited():
+    """Claiming a replicate count the deposit did not use must fail the audit.
+
+    Round 6 found the manuscript claiming 20,000 bootstrap replicates while the driver
+    ran 2,000, and nothing caught it: the count sat in prose with no canonical row, and
+    the lint allowlisted bare replicate counts. This pins both halves of that fix.
+    """
+    canon = {("config", "", "bootstrap_replicates", ""): {"diff": 20000.0}}
+    good = "bootstraps of 20,000<!--n:config::bootstrap_replicates::diff:u0--> replicates"
+    assert audit(good, canon) == []
+    bad = good.replace("20,000", "2,000")
+    errs = audit(bad, canon)
+    assert errs and "bootstrap_replicates" in errs[0], errs
+
+
+def test_bare_replicate_counts_are_not_allowlisted():
+    """An untagged replicate or draw count must be flagged, not waved through."""
+    assert lint_untagged("cluster bootstraps of 20,000 replicates.")
+    assert lint_untagged("across 1,000 draws.")
+    # the hyphenated adjectival form stays allowed
+    assert not lint_untagged("a 20,000-replicate bootstrap")

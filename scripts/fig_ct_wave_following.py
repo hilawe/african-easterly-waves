@@ -33,9 +33,16 @@ SEARCH = (-10.0, 10.0)
 
 
 def band_prof(tr_time, tr_lon, ev):
+    """Return (band-mean profile, total matches in the band).
+
+    The profile is a MEAN over the band's latitude rows, so its sum is the match total
+    divided by the number of rows. Both are returned because the normalized shares use
+    the profile while the honest count is the total (round-7 review: the deposited
+    n_matches was the mean-scaled value and so was not a match count).
+    """
     c, _ = wave_relative_counts(tr_time, tr_lon, ev.time, ev.lon, ev.lat,
                                 REL_C, LAT_C, time_tol_hours=3.0)
-    return c[BAND].mean(axis=0)
+    return c[BAND].mean(axis=0), float(c[BAND].sum())
 
 
 def main():
@@ -62,7 +69,9 @@ def main():
     print(f"AEWC troughs {len(tr)}; CT first detections all {len(allg)}, "
           f"already deep at first detection {len(deep)}")
 
-    obs = {k: band_prof(tr.time, tr.lon, ev) for k, ev in events.items()}
+    prof_tot = {k: band_prof(tr.time, tr.lon, ev) for k, ev in events.items()}
+    obs = {k: v[0] for k, v in prof_tot.items()}
+    tot = {k: v[1] for k, v in prof_tot.items()}
 
     # descriptive peaks over the same search interval the R1 figures use, ties west.
     # The born-deep set is a SUBSET of all first detections, so raw counts scale with
@@ -86,7 +95,8 @@ def main():
         frac = prof / prof.sum()
         centroid = float((REL_C * frac).sum())
         rows.append(dict(figure="F3", subset=k, n_events=len(events[k]),
-                         n_matches=float(prof.sum()),
+                         n_matches=tot[k],
+                         bandmean_profile_total=float(prof.sum()),
                          peak_count=prof[i], peak_rel_lon=REL_C[i],
                          peak_frac_pct=100.0 * float(frac[i]),
                          share_core_pct=100.0 * float(frac[core].sum()),

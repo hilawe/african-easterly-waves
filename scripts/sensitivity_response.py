@@ -166,7 +166,7 @@ def main():
         sig = not (lo_ci <= 0 <= hi_ci)
         split = ("terciles" if (q_lo, q_hi) == (1 / 3, 2 / 3)
                  else "median" if q_lo == q_hi else "quartiles")
-        rows.append(dict(variant=label, dlon=dlon, win_h=win, split=split,
+        rows.append(dict(n_boot=N_BOOT, variant=label, dlon=dlon, win_h=win, split=split,
                          n_quiet=int((low & ok).sum()), n_active=int((high & ok).sum()),
                          diff=d, ci_lo=lo_ci, ci_hi=hi_ci, significant=bool(sig)))
         print(f"{label:17s} {dlon:5.0f} {win:4.0f} {split:>10s} "
