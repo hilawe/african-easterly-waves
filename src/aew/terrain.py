@@ -40,7 +40,7 @@ def valid_fraction(sp_pa, level_hpa, delta_hpa=DELTA_HPA):
 
 
 def masked_box_mean(field, keep_min=0.5):
-    """Mean over the last axes of a (…, ny, nx) box with the at-least-half rule.
+    """Mean over the last axes of a (..., ny, nx) box with the at-least-half rule.
 
     Returns NaN where fewer than ``keep_min`` of the box's points are finite, so a box
     dominated by masked terrain reports missing rather than a shrunken-footprint mean.
