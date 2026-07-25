@@ -1,0 +1,53 @@
+# Exact environment of the canonical run, captured 2026-07-25.
+#
+# pyproject.toml gives lower bounds only, which does not pin what a future
+# installation would resolve for a two-hour analysis (round-8 review). This file
+# records what actually produced the deposited record. Recreate with:
+#
+#     python3.12 -m venv .venv
+#     .venv/bin/pip install -r requirements-lock.txt && .venv/bin/pip install -e .
+#
+# Python 3.12.13 on Darwin/arm64
+#
+# Editable Git install with no remote (aew==0.0.1)
+Cartopy==0.25.0
+Markdown==3.10.2
+Pygments==2.20.0
+attrs==26.1.0
+cdsapi==0.7.7
+certifi==2026.6.17
+cftime==1.6.5
+charset-normalizer==3.4.7
+contourpy==1.3.3
+cycler==0.12.1
+ecmwf-datastores-client==0.5.1
+fonttools==4.63.0
+idna==3.18
+iniconfig==2.3.0
+kiwisolver==1.5.0
+matplotlib==3.11.0
+multiurl==0.3.9
+netCDF4==1.7.4
+numpy==2.5.0
+packaging==26.2
+pandas==3.0.3
+patsy==1.0.2
+pillow==12.2.0
+pluggy==1.6.0
+pyparsing==3.3.2
+pypdf==6.14.2
+pyproj==3.7.2
+pyshp==3.1.4
+pytest==9.1.1
+python-dateutil==2.9.0.post0
+pytz==2026.2
+reportlab==5.0.0
+requests==2.34.2
+scipy==1.18.0
+shapely==2.1.2
+six==1.17.0
+statsmodels==0.14.6
+tqdm==4.68.3
+typing_extensions==4.15.0
+urllib3==2.7.0
+xarray==2026.4.0

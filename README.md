@@ -52,9 +52,17 @@ ground-relative.
 ## Install and test
 
 ```
-python -m venv .venv && source .venv/bin/activate
+python3.12 -m venv .venv && source .venv/bin/activate
 pip install -e .
 pytest -q
+```
+
+The unit tests need only the library core above. Reproducing the full analysis needs the
+plotting and statistics packages as well, and the exact versions that produced the
+published record are pinned in `requirements-lock.txt`:
+
+```
+pip install -r requirements-lock.txt && pip install -e ".[canonical]"
 ```
 
 The library (`aew`) has unit tests on synthetic inputs for every numerical operator: the
