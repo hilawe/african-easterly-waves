@@ -46,7 +46,7 @@ ground-relative.
   September months, matching the ISCCP baseline at least as well as an existing published
   product.
 - In the wave-following composite, MCS counts peak in and just west of the moving trough,
-  a maximum that survives geographically matched shifted-trough nulls, and stronger troughs
+  a maximum that survives an anchor-permutation null in which whole waves keep their track shapes while anchor longitudes are permuted within year-month strata, and stronger troughs
   organize convection more sharply.
 
 ## Install and test
