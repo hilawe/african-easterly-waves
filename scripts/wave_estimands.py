@@ -16,7 +16,6 @@ import os
 import numpy as np
 import pandas as pd
 
-from aew.wave_level import N_BOOT  # replicate count, recorded per row
 from aew.wave_level import (
     between_contrast,
     paired_contrast,
@@ -71,7 +70,9 @@ def main():
 
     out = os.path.join(a.outdir, "wave_estimands.csv")
     for r in rows:
-        r["n_boot"] = N_BOOT      # so the registry row carries its own count
+        # the count that actually RAN. Recording the module default here meant a
+        # --n-boot override was silently mislabelled (round 8).
+        r["n_boot"] = a.n_boot
     pd.DataFrame(rows).to_csv(out, index=False, float_format="%.6f")
     print(f"wrote {out}")
 

@@ -239,41 +239,68 @@ def main():
         df = pd.read_csv(a.cache)
         # VALIDATE the cache against the current deposit rather than trusting that it
         # exists. run_canonical rebuilds the deposit and then reruns this driver from
-        # the cache; the fresh OUTPUT mtimes then satisfy the checker, so a changed
-        # sample could be combined with a previous-generation design and the sequence
-        # would still report success (round-7 review, blocker). The response is the
-        # quantity build_deposit recomputes, so disagreeing on it means the cache
-        # predates the current sample.
-        ref = os.path.join(os.path.dirname(a.cache), "troughs_pooled.csv")
-        if os.path.exists(ref):
-            t = pd.read_csv(ref)
-            # the two tables round longitude differently on write (float32 source
-            # against %.6f), so the join key is rounded rather than compared exactly
-            key = ["time", "lon_k"]
-            dl = df[["time", "lon", "response"]].copy()
-            tl = t[["time", "lon", "response"]].copy()
-            dl["lon_k"] = dl.lon.round(3)
-            tl["lon_k"] = tl.lon.round(3)
-            merged = dl[key + ["response"]].merge(
-                tl[key + ["response"]], on=key, how="inner",
-                suffixes=("_cache", "_deposit"))
-            bad = int((merged.response_cache != merged.response_deposit).sum())
-            # a cache whose keys barely overlap the deposit is as suspect as one whose
-            # responses disagree, so coverage is required too
-            frac = len(merged) / max(len(df), 1)
-            if merged.empty or bad or frac < 0.95:
-                print(f"cache {a.cache} DISAGREES with {ref} "
-                      f"({bad} of {len(merged)} responses differ, "
-                      f"{100 * frac:.1f} percent of design rows matched); "
-                      f"rebuilding the design", flush=True)
-                use_cache = False
-            else:
-                print(f"cache validated against {ref}: {len(merged)} keys "
-                      f"({100 * frac:.1f} percent of design rows), responses "
-                      f"identical", flush=True)
-        else:
+        # the cache; the fresh OUTPUT mtimes then satisfy the checker, so a stale design
+        # could ride through a green run (round-7 blocker). Round 8 found the first
+        # version too weak: it compared the RESPONSE only, so a change to the
+        # environmental predictors that left the response alone still passed, and the
+        # join was not one-to-one, which is why coverage read 100.2 percent.
+        #
+        # The key is (time, longitude, wave). A handful of exact duplicate rows exist on
+        # both sides, so each side is deduplicated on that key first and the comparison
+        # runs over the unique key sets. Every predicted-on quantity is compared, not
+        # just the response.
+        DEP_DIR = os.path.dirname(a.cache) or "."
+        ref = os.path.join(DEP_DIR, "troughs_pooled.csv")
+        cases700 = os.path.join(DEP_DIR, "cases_pooled_700.csv")
+        KEY = ["time", "lon_k", "wave_k"]
+
+        def keyed(frame, lon_col="lon", wave_col=None):
+            f = frame.copy()
+            f["lon_k"] = f[lon_col].round(3)
+            f["wave_k"] = f[wave_col] if wave_col else f["wave"]
+            return f.drop_duplicates(KEY)
+
+        if not os.path.exists(ref):
             print(f"{ref} absent, cannot validate the cache; rebuilding", flush=True)
             use_cache = False
+        else:
+            dl = keyed(df)
+            tl = keyed(pd.read_csv(ref), wave_col="traj_id")
+            m = dl.merge(tl[KEY + ["response"]], on=KEY, how="inner",
+                         suffixes=("", "_dep"))
+            frac = len(m) / max(len(dl), 1)
+            msgs = []
+            if frac < 0.95:
+                msgs.append(f"only {100 * frac:.1f} percent of design keys matched")
+            bad = int((m["response"] != m["response_dep"]).sum())
+            if bad:
+                msgs.append(f"{bad} response values differ")
+            # the environmental predictors, which the first version never compared
+            n_pred = 0
+            if os.path.exists(cases700):
+                cl = keyed(pd.read_csv(cases700), wave_col="traj_id")
+                for col, dep_col in (("inflow_rh", "rh_m72"), ("box_rh", "box_rh_m24")):
+                    if col not in dl.columns or dep_col not in cl.columns:
+                        continue
+                    mm = dl[KEY + [col]].merge(cl[KEY + [dep_col]], on=KEY, how="inner")
+                    mm = mm.dropna(subset=[col, dep_col])
+                    if mm.empty:
+                        msgs.append(f"{col}: no rows to compare")
+                        continue
+                    n_pred += 1
+                    delta = (mm[col] - mm[dep_col]).abs()
+                    off = int((delta > 1e-3).sum())
+                    if off:
+                        msgs.append(f"{col}: {off} of {len(mm)} differ "
+                                    f"(max {delta.max():.3g})")
+            if msgs:
+                print(f"cache {a.cache} DISAGREES with the deposit "
+                      f"({'; '.join(msgs)}); rebuilding the design", flush=True)
+                use_cache = False
+            else:
+                print(f"cache validated against the deposit: {len(m)} keys "
+                      f"({100 * frac:.1f} percent), response and {n_pred} "
+                      f"predictor(s) identical", flush=True)
     if use_cache:
         print(f"loaded cached design {len(df)} from {a.cache}", flush=True)
     else:

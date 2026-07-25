@@ -66,7 +66,7 @@ def main():
              get(df, a.tier, None, "shear_box_L-8"),
              get(df, a.tier, None, "shear_wave_level")]
     panel(ax1, shear, ["meridian\nbox", "box at\nL-5", "box at\nL-8", "wave\nlevel"],
-          C_SHEAR, "m/s", "600-925 hPa shear, shrinks upstream and is zero at wave level")
+          C_SHEAR, "m/s", "600-925 hPa shear, shrinks upstream and is unresolved at wave level")
     panel_label(ax1, "a", 20)
     moist = [get(df, a.tier, 700, "eulerian_box", -24),
              get(df, a.tier, 700, "lagrangian_rh", -48),
