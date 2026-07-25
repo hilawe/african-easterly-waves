@@ -77,6 +77,14 @@ def main():
             ("figS3_control", "scripts/fig_control_model.py",
              "aew_fig_control_model.png")):
         run(label, [PY_, script, "--out", f"{DL}/{out}"])
+    # PROMOTE the regenerated images into docs/paper/figures before checking. The
+    # scripts above write to ~/Downloads and the REPO copy is what the PDF embeds, so
+    # without this the sequence could finish green over stale repo figures: exactly the
+    # gap the 2026-07-25 full-access review found still open after the previous round
+    # moved figure regeneration into this driver. The builders own copy_figure(), so
+    # running them here is the promotion.
+    run("promote_paper", [PY_, "tools/build_pandoc_paper.py"])
+    run("promote_supplement", [PY_, "tools/build_supplement.py"])
     check = [PY_, "tools/check_manuscript_figures.py"]
     if a.allow_untagged:
         check.append("--allow-untagged")

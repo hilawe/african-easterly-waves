@@ -272,6 +272,23 @@ def main():
                             ci_hi=np.nan),
                        dict(statistic="leadlag_mean_r",
                             value=float(np.nanmean(r_at_peak)), ci_lo=np.nan,
+                            ci_hi=np.nan),
+                       # the frozen estimator is the discrete maximum on the 6 h grid,
+                       # so every per-meridian lag is one of two adjacent grid values.
+                       # These counts make that quantitative in the prose instead of
+                       # leaving the gradient to read as a continuously measured lag
+                       # (full-access review, 2026-07-25).
+                       dict(statistic="leadlag_n_meridians",
+                            value=float(np.isfinite(peak_h).sum()), ci_lo=np.nan,
+                            ci_hi=np.nan),
+                       dict(statistic="leadlag_n_meridians_at_modal_lag",
+                            value=float((peak_h == _pd.Series(peak_h).mode()[0]).sum()),
+                            ci_lo=np.nan, ci_hi=np.nan),
+                       dict(statistic="leadlag_modal_lag",
+                            value=float(_pd.Series(peak_h).mode()[0]), ci_lo=np.nan,
+                            ci_hi=np.nan),
+                       dict(statistic="leadlag_n_distinct_lags",
+                            value=float(_pd.Series(peak_h).nunique()), ci_lo=np.nan,
                             ci_hi=np.nan)]).to_csv(
             "deposit/leadlag_stats.csv", index=False, float_format="%.6f")
         print(f"\nLAG GRADIENT along the corridor: slope {slope:+.2f} h/deg "

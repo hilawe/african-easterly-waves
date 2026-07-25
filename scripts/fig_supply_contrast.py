@@ -130,14 +130,33 @@ def main():
                      fmt="s", color=C_EUL, ms=4.5, elinewidth=0.9, capsize=2,
                      label="fixed boxes (Eulerian)" if i == 0 else None)
 
+    # Two ratios, each drawn where its own comparison lives. The seed-box ratio
+    # (attenuation_factor) compares the -72 h tracked value against the -24 h box, so
+    # its arrow belongs at -24 h; drawing it at the -72 h end implied a gap against
+    # the -72 h fixed boxes that is about a third smaller (full-access review,
+    # 2026-07-25). The matched-lead ratio is drawn at -72 h against the mean of the
+    # two -72 h control boxes.
     att = get(df, a.tier, a.level, "attenuation_factor")["diff"]
     r72 = lag[lag.time_rel_h == -72].iloc[0]
-    e72 = get(df, a.tier, a.level, "eulerian_box", -24)
-    ax2.annotate("", xy=(-69.5, e72["diff"]), xytext=(-69.5, r72["diff"]),
+    ebox = get(df, a.tier, a.level, "eulerian_box", -24)
+    r24 = lag[lag.time_rel_h == -24].iloc[0]
+    e72 = 0.5 * (get(df, a.tier, a.level, "eulerian_control_L+8", -72)["diff"]
+                 + get(df, a.tier, a.level, "eulerian_control_L+12", -72)["diff"])
+    matched = r72["diff"] / e72
+
+    ax2.annotate("", xy=(-23.0, ebox["diff"]), xytext=(-23.0, r72["diff"]),
                  arrowprops=dict(arrowstyle="->", color="#333333", lw=1.0))
-    ax2.annotate(f"{att:.1f}x smaller\nin the fixed box",
-                 (-68.8, 0.5 * (e72["diff"] + r72["diff"])), fontsize=8,
+    ax2.annotate(f"{att:.1f}x the -24 h\nseed box", (-27.5, 0.5 * (ebox["diff"]
+                 + r72["diff"])), fontsize=8, color="#333333", va="center",
+                 ha="right")
+    ax2.annotate("", xy=(-69.5, e72), xytext=(-69.5, r72["diff"]),
+                 arrowprops=dict(arrowstyle="->", color="#333333", lw=1.0))
+    ax2.annotate(f"{matched:.1f}x at the\nsame -72 h lead",
+                 (-68.8, 0.5 * (e72 + r72["diff"])), fontsize=8,
                  color="#333333", va="center")
+    print(f"F6 ratios: seed-box {att:.2f}x (Lagrangian -72 h {r72['diff']:+.3f} over "
+          f"-24 h box {ebox['diff']:+.3f}); matched-lead {matched:.2f}x (over the "
+          f"-72 h control-box mean {e72:+.3f}); Lagrangian at -24 h {r24['diff']:+.3f}")
 
     ax2.axhline(0, color="k", lw=0.7)
     ax2.set_xlim(-76, -20)

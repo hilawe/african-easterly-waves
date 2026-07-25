@@ -64,33 +64,69 @@ def main():
 
     obs = {k: band_prof(tr.time, tr.lon, ev) for k, ev in events.items()}
 
-    # descriptive peaks over the same search interval the R1 figures use, ties west
+    # descriptive peaks over the same search interval the R1 figures use, ties west.
+    # The born-deep set is a SUBSET of all first detections, so raw counts scale with
+    # sample size and cannot be compared for concentration. Each profile is therefore
+    # also normalized by its own total, and the shape statistics (peak fraction, the
+    # share inside the core interval, the share west of the axis, and the centroid)
+    # are what the caption may compare. The 2026-07-25 full-access review caught the
+    # earlier raw-count comparison, whose direction was wrong as well as its scale.
     sel = (REL_C >= SEARCH[0]) & (REL_C <= SEARCH[1])
+    core = (REL_C >= -4.0) & (REL_C <= 2.0)
+    west = REL_C < 0.0
     rows = []
     for k, prof in obs.items():
         i = np.flatnonzero(sel)[int(np.argmax(prof[sel]))]
+        frac = prof / prof.sum()
+        centroid = float((REL_C * frac).sum())
         rows.append(dict(figure="F3", subset=k, n_events=len(events[k]),
-                         peak_count=prof[i], peak_rel_lon=REL_C[i]))
+                         peak_count=prof[i], peak_rel_lon=REL_C[i],
+                         peak_frac_pct=100.0 * float(frac[i]),
+                         share_core_pct=100.0 * float(frac[core].sum()),
+                         share_west_pct=100.0 * float(frac[west].sum()),
+                         centroid_rel_lon=centroid))
         print(f"F3 {k:18s}: peak {prof[i]:.0f} at {REL_C[i]:+.0f} deg "
-              f"(descriptive; n={len(events[k])})")
+              f"(n={len(events[k])}); normalized peak {100 * frac[i]:.2f}%, "
+              f"core[-4,+2] {100 * frac[core].sum():.2f}%, "
+              f"west {100 * frac[west].sum():.2f}%, centroid {centroid:+.2f} deg")
     pd.DataFrame(rows).to_csv("deposit/fig3_descriptive_stats.csv",
                               index=False, float_format="%.6f")
 
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(figsize=(9, 5))
-    ax.plot(REL_C, obs["all"], color="tab:red",
-            label=f"all first cold-cloud detections (n={len(allg)})")
-    ax.plot(REL_C, obs["deep_at_detection"], color="tab:purple",
-            label=f"already deep (<200 K) at first detection (n={len(deep)})")
-    ax.axvline(0, color="green", lw=2)
-    ax.set_xlabel("Longitude relative to trough (deg; east positive)")
-    ax.set_ylabel("first-detection count, 5-15N mean")
-    ax.set_title("First cold-cloud detection relative to the moving trough "
-                 "(JAS; descriptive)")
-    ax.legend()
-    ax.grid(alpha=0.3)
+    from aew.plotting import panel_label
+
+    lab_all = f"all first cold-cloud detections (n={len(allg)})"
+    lab_deep = f"already deep (<200 K) at first detection (n={len(deep)})"
+    fig, (axa, axb) = plt.subplots(1, 2, figsize=(12, 5))
+
+    # (a) where first detections fall, in counts. The two curves are NOT comparable
+    # for shape here, only for how many detections each set contributes.
+    axa.plot(REL_C, obs["all"], color="tab:red", label=lab_all)
+    axa.plot(REL_C, obs["deep_at_detection"], color="tab:purple", label=lab_deep)
+    axa.axvline(0, color="green", lw=2)
+    axa.set_xlabel("Longitude relative to trough (deg; east positive)")
+    axa.set_ylabel("first-detection count, 5-15N mean")
+    axa.set_title("Where first detections fall (counts)")
+    axa.legend(fontsize=8)
+    axa.grid(alpha=0.3)
+    panel_label(axa, "a", 17)
+
+    # (b) the shape comparison, each curve normalized by its own total so the
+    # born-deep subset's smaller sample does not read as a narrower distribution
+    for k, c, lab in (("all", "tab:red", lab_all),
+                      ("deep_at_detection", "tab:purple", lab_deep)):
+        f = obs[k] / obs[k].sum()
+        axb.plot(REL_C, 100.0 * f, color=c, label=lab)
+    axb.axvline(0, color="green", lw=2)
+    axb.set_xlabel("Longitude relative to trough (deg; east positive)")
+    axb.set_ylabel("share of the set's first detections (% per 2-deg bin)")
+    axb.set_title("The same curves, each normalized by its own total")
+    axb.legend(fontsize=8)
+    axb.grid(alpha=0.3)
+    panel_label(axb, "b", 17)
+
     fig.tight_layout()
     fig.savefig(a.out, dpi=150)
     print("wrote", a.out)
