@@ -7,9 +7,10 @@ Climatology) from source data and extends them with independent data pathways an
 wave-following composite framework.
 
 The scientific target is the coupling between the westward-propagating African easterly
-wave and the large thunderstorm clusters that travel with it: where the storms sit relative
-to the wave, how that depends on wave amplitude and wavelength, and how the location of
-storm initiation differs from the location of mature storms.
+wave and the large thunderstorm clusters that travel with it, meaning where the storms sit
+relative to the wave, how that depends on wave amplitude, and how the thermodynamic
+environment flowing into a trough differs between waves that organize deep convection and
+waves that do not.
 
 ![Two-layer thermodynamic signatures of convective development in African easterly waves](docs/schematic.png)
 

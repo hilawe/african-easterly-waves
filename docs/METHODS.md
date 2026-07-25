@@ -115,20 +115,24 @@ three hours of the observation is binned by its longitude relative to the trough
 latitude, summed over all trough observations. The time window is half open so a system
 midway between two consecutive 6-hourly trough observations is counted once.
 
-The trough-relative signal is separated from the background cloud climatology by a matched
-null that keeps the trough times and latitudes but randomizes the trough longitudes, so any
-enhancement fixed in geography rather than tied to the trough averages out. Cloud-system
-counts exceed this null by about six times its two-standard-deviation spread in and just
-west of the trough, and fall to the null level beyond about ten degrees. The peak sits near
-the trough and slightly to its west, the direction of propagation, consistent with the
-established phase relationship between AEW troughs and deep convection.
+The trough-relative signal is separated from the background cloud climatology by an
+anchor-permutation null in which whole waves keep their track shapes while anchor
+longitudes are permuted within year-month strata, so any enhancement fixed in geography
+rather than tied to the trough averages out. The peak sits at the trough axis at 1.27
+times the null background, with a randomization p of 0.001 on the selection-aware maximum
+over the -10 to +10 degree search interval.
 
 Stratifying the trough population by curvature vorticity sharpens the picture. Troughs in
-the upper amplitude tercile produce a narrower and higher convective excess at the trough
-(peak about 102 systems in the 5 to 15 N band) than troughs in the lower tercile (about
-76). Convective-system genesis, taken as the first observation of each CT family, is also
-enhanced near the trough but is distributed more broadly in trough-relative longitude than
-mature-system frequency, which concentrates in and just west of the trough.
+the upper amplitude tercile produce a higher convective excess at the trough (peak excess
+168 systems in the 5 to 15 N band) than troughs in the lower tercile (102), with the
+strong-minus-weak difference resolved by a paired selection-aware test.
+
+First cold-cloud detections, taken as the first observation of each CT family, are also
+enhanced near the trough. Families already colder than 200 K at first detection are
+distributed the same way. Normalized by their own binned totals, the two curves peak at
+the axis at 4.46 against 4.48 percent and hold 16.69 against 16.61 percent inside the -4
+to +2 degree core. Where a family is first detected does not separate the two sets, and
+no life-cycle transition from genesis to maturity is claimed from this figure.
 
 ## Reproducibility
 

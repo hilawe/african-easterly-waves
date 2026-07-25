@@ -27,13 +27,14 @@ physics, because the wave is a moving thing, not a fixed location.
 Storms concentrate in and just west of the moving trough, the direction the wave is heading.
 To check that this is real and not just the fact that the Sahel is stormy anyway, the storm
 excess near the trough is compared against a scrambled control in which the trough longitudes
-are randomized. The excess near the trough is about 1.6 times the size of the excess in the
-scrambled control, and that difference is far outside what the control's own spread would
-produce by chance (about nine times its scatter). The clustering is tied to the trough, not
-to geography. Two refinements sharpen the picture. Stronger waves organize storms more
-tightly, with the strongest third of waves producing a higher, narrower storm peak than the
-weakest third. And where storm systems first appear is spread broadly around the wave, while
-where mature systems pile up is narrowly focused in and just west of the trough.
+are randomized. The peak sits right at the trough at about 1.27 times the scrambled
+control, and a randomization test puts the odds of that arising by chance at about one in a
+thousand. The clustering is tied to the trough, not to geography. One refinement sharpens
+the picture, because stronger waves organize storms more sharply, with the strongest third of waves
+producing a higher storm peak than the weakest third. A second thing that was once claimed
+here did not hold up. Storms that are already deep when first spotted turn out to appear in
+the same places as storms generally, so this record does not separate where storms are born
+from where they mature.
 
 ## Why some waves light up and others do not
 
@@ -50,10 +51,12 @@ The flow-following way is different. Instead of a fixed box, the analysis traces
 ribbon of air flowing into each trough, back three days upstream, and reads the humidity of
 that inflow. Along the real inflow, the storm-growing troughs are fed by air about +3.0
 percent moister (a range of +2.0 to +4.0 covers the uncertainty), and the contrast grows the
-farther back the air is traced. The fixed box sees only a diluted shadow of this, just over a
-third of the flow-following contrast, because a fixed box mixes the moist inflow ribbon with
-drier surrounding air. The moisture difference is real, but it lives in the moving inflow, not
-in a stationary snapshot. In blunt terms, the storm-growing troughs are the ones drinking from
+farther back the air is traced. A fixed box sees a smaller contrast, roughly a third of the
+flow-following value when compared against the box at the trough and about half when
+compared at the same three-day lead. Part of that gap is the sampling frame and part is
+that the two groups' air arrives by different routes, so it is not purely a matter of a
+fixed box blurring a moving ribbon. The moisture difference is real, and it shows up larger
+when the air is followed than when it is watched from a fixed point. In blunt terms, the storm-growing troughs are the ones drinking from
 a moister stream, and you only see how much moister if you follow the stream.
 
 The difference also shows up in the tails, which is what convection cares about. Air feeding
@@ -114,9 +117,8 @@ and each step was independently cross-checked against the original code.
 
 ## What it adds up to
 
-The trough-following map of storms is the solid, repeatable core, with the split between where
-storms are born and where they mature and the finding that stronger waves organize storms more
-sharply. On top of it, the paper measures a clear thermodynamic difference between the troughs
+The trough-following map of storms is the solid, repeatable core, together with the finding
+that stronger waves organize storms more sharply. On top of it, the paper measures a clear thermodynamic difference between the troughs
 that grow storms and those that stay quiet. The difference is modest in the average, larger in
 how often the inflow is moist enough to matter, and visible only when the air is followed along
 its path rather than read from a fixed box. It has a two-layer structure, less dry Saharan air
