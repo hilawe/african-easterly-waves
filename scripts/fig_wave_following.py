@@ -231,10 +231,10 @@ def main():
         ax3.axhline(rr["simult_half_width"], color=col, lw=0.8, ls="--", alpha=0.7)
         ax3.axhline(-rr["simult_half_width"], color=col, lw=0.8, ls="--", alpha=0.7)
     ax3.plot(rel_c, rw["excess"], color="tab:blue",
-             label=f"weak waves (n={int(masks['weak'].sum())}, "
+             label=f"weak-amplitude troughs (n={int(masks['weak'].sum())}, "
                    f"peak {rw['peak_excess']:.0f}, p = {rw['p_value']:.3g})")
     ax3.plot(rel_c, rs["excess"], color="tab:red",
-             label=f"strong waves (n={int(masks['strong'].sum())}, "
+             label=f"strong-amplitude troughs (n={int(masks['strong'].sum())}, "
                    f"peak {rs['peak_excess']:.0f}, p = {rs['p_value']:.3g})")
     ax3.axvline(0, color="green", lw=2)
     ax3.axhline(0, color="k", lw=0.6)

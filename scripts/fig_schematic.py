@@ -95,10 +95,10 @@ def panel(ax, active):
         for dx, dy, r in ((0, 0, 0.62), (0.55, 0.18, 0.44), (-0.55, 0.14, 0.44)):
             ax.add_patch(plt.Circle((cx + dx, 7.35 + dy), r, fc="white",
                                     ec=CHAR, lw=1.0, zorder=6))
-        ax.text(cx, 6.35, "deep convection\ndevelops", fontsize=7.8, color=CHAR,
+        ax.text(cx, 6.35, "more MCS\nactivity", fontsize=7.8, color=CHAR,
                 ha="center", va="top", zorder=7)
     else:
-        ax.text(5.6, 7.3, "convection\nstays shallow", fontsize=7.8, color=CHAR,
+        ax.text(5.6, 7.3, "less MCS\nactivity", fontsize=7.8, color=CHAR,
                 ha="center", style="italic", zorder=7)
 
     # ---- 850 hPa: identical southwest monsoon arrows in both panels ----
@@ -106,7 +106,7 @@ def panel(ax, active):
         arrow(ax, (x0, 1.35), (x0 + 1.5, 2.75), MONSOON, 1.8)
     ax.text(1.25, 0.6, "shared SW monsoon inflow", fontsize=7.8, color=CHAR)
     if active:
-        ax.text(5.35, 3.0, "moister, cooler,\nhigher theta-e\n(state contrast)",
+        ax.text(5.35, 3.0, "moister (state contrast;\ntemperature and\ntheta-e not resolved)",
                 fontsize=8.2, color="#00441b", ha="center", va="center", zorder=7)
         # wake recovery, labeled interpretation
         for dx in (-0.3, 0.15, 0.6):
@@ -119,7 +119,7 @@ def panel(ax, active):
                 fontsize=7.2, color=CHAR, ha="center", va="top", style="italic",
                 zorder=7)
     else:
-        ax.text(5.35, 2.9, "drier, warmer\nmonsoon layer", fontsize=8.2,
+        ax.text(5.35, 2.9, "drier\nmonsoon layer", fontsize=8.2,
                 color="#7f4909", ha="center", va="center", zorder=7)
 
     # theta-e glyph between the layers, the round-14 wording
@@ -127,7 +127,7 @@ def panel(ax, active):
         ax.add_patch(FancyBboxPatch((1.15, 4.65), 4.3, 0.75,
                                     boxstyle="round,pad=0.12", fc="white", ec=CHAR,
                                     lw=0.9, zorder=8))
-        ax.text(3.3, 5.02, "theta-e > 0: vapor outweighs cooling", fontsize=8.2,
+        ax.text(3.3, 5.02, "700 hPa: theta-e > 0, vapor over cooling", fontsize=8.2,
                 color=CHAR, ha="center", va="center", zorder=9)
 
 
@@ -138,7 +138,7 @@ def main():
     fig, (axa, axq) = plt.subplots(1, 2, figsize=(12.0, 6.0))
     panel(axa, active=True)
     panel(axq, active=False)
-    fig.suptitle("The two-layer thermodynamic signature of convective development",
+    fig.suptitle("The two-layer thermodynamic signature of MCS detection activity",
                  fontsize=12.5, color=CHAR)
     fig.text(0.5, 0.015,
              "All flow arrows are ground-relative (the frame of the trajectory "

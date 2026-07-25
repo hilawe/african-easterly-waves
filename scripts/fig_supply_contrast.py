@@ -135,7 +135,7 @@ def main():
     e72 = get(df, a.tier, a.level, "eulerian_box", -24)
     ax2.annotate("", xy=(-69.5, e72["diff"]), xytext=(-69.5, r72["diff"]),
                  arrowprops=dict(arrowstyle="->", color="#333333", lw=1.0))
-    ax2.annotate(f"{att:.1f}x attenuation\nin the fixed frame",
+    ax2.annotate(f"{att:.1f}x smaller\nin the fixed box",
                  (-68.8, 0.5 * (e72["diff"] + r72["diff"])), fontsize=8,
                  color="#333333", va="center")
 

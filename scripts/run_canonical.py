@@ -59,6 +59,24 @@ def main():
     run("leadlag", [PY_, "scripts/fig_leadlag.py",
                     "--out", f"{DL}/aew_leadlag_pooled.png"])
     run("registry", [PY_, "tools/build_registry.py"])
+    # every estimand-bearing manuscript figure is regenerated HERE, as a canonical
+    # consumer of the tables just written, so an image can never lag the numbers
+    # (the full-access review caught F5/F6 stale after the repair rerun). F1 and S1
+    # are frozen validation figures with no estimand content and stay outside.
+    for label, script, out in (
+            ("fig5_eulerian", "scripts/fig05_eulerian.py", "aew_fig_eulerian.png"),
+            ("fig6_supply", "scripts/fig_supply_contrast.py",
+             "aew_fig_supply_contrast.png"),
+            ("fig7_fingerprint", "scripts/fig_fingerprint.py",
+             "aew_fig_fingerprint.png"),
+            ("fig8_organization", "scripts/fig_organization_axis.py",
+             "aew_fig_organization_axis.png"),
+            ("fig9_schematic", "scripts/fig_schematic.py",
+             "aew_fig_schematic_v5draft.png"),
+            ("figS2_exceedance", "scripts/fig_exceedance.py", "aew_exceedance.png"),
+            ("figS3_control", "scripts/fig_control_model.py",
+             "aew_fig_control_model.png")):
+        run(label, [PY_, script, "--out", f"{DL}/{out}"])
     check = [PY_, "tools/check_manuscript_figures.py"]
     if a.allow_untagged:
         check.append("--allow-untagged")
