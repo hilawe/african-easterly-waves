@@ -349,9 +349,10 @@ def main():
     pois = smf.glm(f"response ~ {rhs_prim}", data=d,
                    family=sm.families.Poisson()).fit(
         cov_type="cluster", cov_kwds={"groups": d["wave"].values})
-    qp = smf.glm(f"response ~ {rhs_prim}", data=d,
-                 family=sm.families.Poisson()).fit(
-        cov_type="cluster", cov_kwds={"groups": d["wave"].values}, scale="X2")
+    # a quasi-Poisson variant (scale="X2") was removed: under cluster-robust
+    # covariance the scale never enters the standard errors, so its rows were
+    # byte-identical to the Poisson-cluster rows and reported nothing; NB2 below is
+    # the genuine dispersion sensitivity
     try:
         nb = smf.negativebinomial(f"response ~ {rhs_prim}", data=d).fit(
             cov_type="cluster", cov_kwds={"groups": d["wave"].values},
@@ -362,7 +363,6 @@ def main():
         nb, nb_ok = None, False
         print(f"negative binomial fit failed: {e}", flush=True)
     for model_name, res, note in (("poisson_cluster", pois, "primary"),
-                                  ("quasi_poisson_cluster", qp, "scale=X2"),
                                   ("negbin2_cluster", nb,
                                    "NB2 log link" if nb_ok else "DID NOT CONVERGE")):
         if res is None:
@@ -382,8 +382,7 @@ def main():
         float_format="%.6f")
     disp = float(d["response"].var() / d["response"].mean())
     lines.append(f"\nOVERDISPERSION: response variance/mean = {disp:.2f}; "
-                 "NB2 and quasi-Poisson sensitivities in "
-                 "control_model_sensitivities.csv")
+                 "NB2 sensitivity in control_model_sensitivities.csv")
 
     summary = "\n".join(lines)
     print(summary)
