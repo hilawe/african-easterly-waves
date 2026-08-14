@@ -106,7 +106,12 @@ def panel(ax, active):
         arrow(ax, (x0, 1.35), (x0 + 1.5, 2.75), MONSOON, 1.8)
     ax.text(1.25, 0.6, "shared SW monsoon inflow", fontsize=7.8, color=CHAR)
     if active:
-        ax.text(5.35, 3.0, "moister (state contrast;\ntemperature and\ntheta-e not resolved)",
+        # y raised from 3.0: the second monsoon arrow lands at (4.6, 2.75) and its head
+        # was overlapping the third line of this label. The arrows are fixed by the
+        # design grammar (identical in both panels), so the label moves, not the arrow.
+        # Rightward is unavailable, the block already reaches x = 6.55 against the
+        # trough axis at 6.6.
+        ax.text(5.35, 3.4, "moister (state contrast;\ntemperature and\ntheta-e not resolved)",
                 fontsize=8.2, color="#00441b", ha="center", va="center", zorder=7)
         # wake recovery, labeled interpretation
         for dx in (-0.3, 0.15, 0.6):
@@ -119,7 +124,8 @@ def panel(ax, active):
                 fontsize=7.2, color=CHAR, ha="center", va="top", style="italic",
                 zorder=7)
     else:
-        ax.text(5.35, 2.9, "drier\nmonsoon layer", fontsize=8.2,
+        # same centre as the active-panel label so the two panels stay aligned
+        ax.text(5.35, 3.4, "drier\nmonsoon layer", fontsize=8.2,
                 color="#7f4909", ha="center", va="center", zorder=7)
 
     # theta-e glyph between the layers, the round-14 wording

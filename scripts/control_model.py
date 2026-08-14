@@ -24,8 +24,10 @@ are comparable:
   tcwv        the total column water vapour box 24 h before passage
 
 with longitude-bin-by-month and calendar-year fixed effects. The model is a Poisson GLM
-with cluster-robust standard errors on the wave (traj_id), which handles both the count
-overdispersion and the within-wave autocorrelation, matching the wave-cluster bootstrap
+with cluster-robust standard errors on the wave (traj_id). Clustering protects the
+inference against within-wave dependence and variance misspecification; it does not make
+the Poisson mean-variance relation an overdispersion model, which is why the
+negative-binomial sensitivity exists. The clustering matches the wave-cluster bootstrap
 used elsewhere. The model is fitted on the development sample (2000-2004), on the 20
 held-out seasons, and on the pooled record; a moisture coefficient that stays positive
 and significant across the three tiers is the out-of-sample validation.
@@ -61,7 +63,86 @@ SEED_LATS = (7.0, 10.0, 13.0)
 LON_EDGES = np.arange(-30, 41, 10.0)
 
 TIERS = {"dev": "2000-2004", "heldout": "1983-1999,2005-2007", "pooled": "1983-2007"}
+
+def _file_digest(path):
+    """SHA-256 of a file's bytes, or None when absent."""
+    import hashlib
+    if not os.path.exists(path):
+        return None
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+ANCHORS = ("troughs_pooled.csv", "cases_pooled_700.csv")
+
+# Comparison tolerance. The deposit is written at four decimal places while the cache
+# carries full precision, so exact equality is impossible by construction.
+TOL = 1e-3
+
+# cache column -> deposited counterpart in cases_pooled_700.csv
+COMPARED = (("inflow_rh", "rh_m72"), ("box_rh", "box_rh_m24"),
+            ("antecedent", "antecedent"))
+
+KEY = ["time_k", "lon_k", "wave_k"]
+
+
+def read_design_csv(path):
+    """Read a cached design or a deposited anchor with an EXACT float round-trip.
+
+    pandas' default C parser is fast but not correctly rounded, so a plain read and
+    rewrite moves the last bit of some values. Measured on the real shear column,
+    11.323954631638083 on disk reads back and rewrites as 11.323954631638085. The
+    published control_model_design.csv is written from the cache on the cached path and
+    from the fresh build otherwise, so without this the two paths produce numerically
+    different tables and the deposited file depends on whether a cache happened to
+    exist. The guard's own comparisons are at 1e-3 and are indifferent to this, which is
+    exactly why it would have gone unnoticed.
+    """
+    return pd.read_csv(path, float_precision="round_trip")
+
+
+def _freshness_path(cache):
+    return cache + ".sources.json"
+
+
+def write_freshness_record(cache, dep_dir):
+    """Record the digests of the two anchor tables the cache was built against.
+
+    THIS RECORDS NOTHING ABOUT THE CACHE ITSELF, and the omission is the design. Round
+    10 showed that a manifest hashing the cache is self-authorizing, because anything
+    this program writes about its own output can be rewritten by running this program
+    again. So the record answers only the one question no other mechanism can answer,
+    which is whether the anchors on disk are the ones the cache was built from. Row
+    counts, column lists and a digest of the cache all lived here before and none was
+    load-bearing once the cohort is checked against a table this program does not write.
+
+    See docs/DESIGN_CACHE_SPEC.md for what the guard establishes and what it does not.
+    """
+    import json
+    rec = dict(sources={name: _file_digest(os.path.join(dep_dir, name))
+                        for name in ANCHORS})
+    with open(_freshness_path(cache), "w") as fh:
+        json.dump(rec, fh, indent=2, sort_keys=True)
+    return rec
+
+
 PREDICTORS = ["inflow_rh", "box_rh", "antecedent", "amplitude", "shear", "tcwv"]
+
+
+def complete_case(df):
+    """The modelled cohort, every eligible trough whose six predictors are all finite.
+
+    Applied identically on the cached and the freshly built path, which is what lets the
+    cache hold the ELIGIBLE cohort rather than this one. Storing the eligible cohort is
+    what makes the cache's row set checkable, because it then equals the deposited
+    trough set exactly, whereas the complete-case cohort is not derivable from the
+    deposit at all: of the 2,082 eligible troughs dropped here, all 2,082 have a finite
+    deposited inflow_rh, so the deposit cannot say which troughs the filter removes.
+    """
+    return df[np.isfinite(df[PREDICTORS]).all(axis=1)].reset_index(drop=True)
 
 
 def build_design(years, csct_path):
@@ -158,16 +239,15 @@ def build_design(years, csct_path):
         "year": year,
         "wave": tr.variables["traj_id"],
     })
-    before = len(df)
-    # R4 source (implementation-review fold): the wave-unit estimand's cohort is every
-    # eligible trough with only the missing-H rule applied, NOT the model's six-way
-    # complete-case cohort, so the unfiltered table is written before that filter
-    df[["wave", "time", "lon", "response", "inflow_rh"]].to_csv(
-        "deposit/eligible_troughs.csv", index=False, float_format="%.6f")
-    df = df[np.isfinite(df[PREDICTORS]).all(axis=1)].reset_index(drop=True)
-    print(f"analyzable troughs (finite predictors): {len(df)} of {before}; "
-          f"unfiltered eligible table written to deposit/eligible_troughs.csv",
-          flush=True)
+    # Returns the ELIGIBLE cohort, one row per corridor trough that passed the
+    # complete-window rule, with non-finite predictors left in place. The complete-case
+    # filter is complete_case() and is applied by the caller, identically on the fresh
+    # and the cached path. Keeping the two separate is what makes the cache's row set
+    # checkable against the deposit, since the eligible cohort equals the deposited
+    # trough set while the complete-case cohort is not derivable from the deposit.
+    print(f"eligible design rows {len(df)}, of which "
+          f"{int(np.isfinite(df[PREDICTORS]).all(axis=1).sum())} have all six "
+          f"predictors finite", flush=True)
     return df
 
 
@@ -217,6 +297,385 @@ def ladder(df, scaler_mean, scaler_std):
     return "\n".join(out)
 
 
+
+class _Refuse(Exception):
+    """A check that could not be performed. It is never a pass.
+
+    Every path that cannot establish what it is supposed to establish raises this, so
+    the guard has no branch that reports success over an unperformed check. Round 10
+    found four fail-open shapes in the previous version, where an absent cases file
+    recorded a null digest and validation then accepted with zero predictors compared,
+    and where malformed JSON raised out of the guard entirely instead of refusing.
+    """
+
+
+EXACT_INT = 2 ** 53   # beyond this, float equality stops meaning integer equality
+
+
+def _numeric(frame, col, what, *, require_numeric_dtype=False):
+    """Coerce a column to numeric, refusing when a NON-NULL value fails to convert.
+
+    A plain to_numeric(errors="coerce") turns text into NaN, and NaN then flows into a
+    comparison as either a false difference or, when both sides carry text, as agreement.
+    Acceptance was reachable four separate ways through that hole,
+    including a non-numeric deposited response that the guard reported as identical, and
+    non-numeric predictors that were accepted and then raised a TypeError downstream in
+    complete_case(). A value that is absent stays absent; a value that is present and
+    not a number is a refusal.
+    """
+    raw = frame[col]
+    if getattr(raw, "ndim", 1) != 1:
+        raise _Refuse(f"{what}: duplicate column label {col}")
+    if require_numeric_dtype and not pd.api.types.is_numeric_dtype(raw):
+        # coercible is not the same as numeric. A string-typed year compared equal here
+        # and then selected zero rows in the tier filter downstream, and object-dtype
+        # predictors were accepted and then raised a TypeError in complete_case().
+        raise _Refuse(f"{what}: {col} is {raw.dtype}, not a numeric column")
+    num = pd.to_numeric(raw, errors="coerce")
+    bad = int((num.isna() & raw.notna()).sum())
+    if bad:
+        raise _Refuse(f"{what}: {bad} non-numeric value(s) in {col}")
+    return num
+
+
+def _exact_int(series, col, what):
+    """Refuse values too large for float equality to mean integer equality.
+
+    Adjacent integers above 2**53 collapse to the same float, so two different responses
+    or wave identifiers compared equal and the guard then printed "EXACTLY equal". Real
+    values here are convective-system counts and trajectory identifiers, both far inside
+    the range, so the bound costs nothing.
+    """
+    big = int((series.abs() >= EXACT_INT).sum())
+    if big:
+        raise _Refuse(f"{what}: {big} value(s) in {col} are too large for exact "
+                      f"comparison (>= 2**53)")
+    return series
+
+
+def _keyed(frame, what, lon_col="lon", wave_col="wave"):
+    """Attach the comparison key (time, longitude to 3 dp, wave) and require it unique.
+
+    Uniqueness is REQUIRED rather than imposed. The previous version called
+    drop_duplicates on both sides, which silently collapsed conflicting duplicate rows
+    before any comparison ran while the model was fitted on the original duplicated
+    frame. The key is unique in the real record, measured at 0 duplicates across the
+    cache, troughs_pooled.csv and eligible_troughs.csv, so requiring it costs nothing on
+    a healthy input and refuses the state the old code hid.
+    """
+    missing = [c for c in ("time", lon_col, wave_col) if c not in frame.columns]
+    if missing:
+        raise _Refuse(f"{what}: missing column(s) {', '.join(missing)}")
+    f = frame.copy()
+    # utc=True on BOTH sides, so a timezone-aware cache and a naive anchor normalize to
+    # one representation instead of raising out of the merge. These are model times in
+    # UTC throughout, so treating a naive value as UTC is the correct reading.
+    f["time_k"] = pd.to_datetime(f["time"], errors="coerce", utc=True)
+    if f["time_k"].isna().any():
+        raise _Refuse(f"{what}: {int(f['time_k'].isna().sum())} unparseable time value(s)")
+    f["lon_k"] = _numeric(f, lon_col, what).round(3)
+    if f["lon_k"].isna().any():
+        raise _Refuse(f"{what}: {int(f['lon_k'].isna().sum())} missing longitude value(s)")
+    # the wave key is validated as numeric too. A string-typed wave column otherwise
+    # raised an uncaught pandas ValueError out of the merge, and a null wave was
+    # accepted because only time and longitude were checked for nulls.
+    f["wave_k"] = _numeric(f, wave_col, what)
+    if f["wave_k"].isna().any():
+        raise _Refuse(f"{what}: {int(f['wave_k'].isna().sum())} missing wave value(s)")
+    dup = int(f.duplicated(KEY).sum())
+    if dup:
+        raise _Refuse(f"{what}: {dup} duplicate key row(s), so a one-to-one "
+                      f"correspondence is undefined")
+    return f
+
+
+def derived_fixed_effects(time, lon):
+    """The fixed-effect labels implied by a trough's own time and longitude.
+
+    ``year`` and ``lonmonth`` are not free columns. They are exact functions of the key,
+    computed this way in build_design, so a cached value that disagrees with its own row
+    is wrong and can be refused with certainty rather than declared unverifiable.
+
+    This exists because permuting these two columns in a real
+    11,457-row cache, the guard accepted it, and the pooled primary term moved from
+    1.013844 (0.994046 to 1.034037) to 1.002920 (0.983313 to 1.022918). They enter every
+    fitted model here and the within-between model downstream, and the first version of
+    this guard checked neither, because the required-column list covered the response and
+    the six predictors only.
+    """
+    t = pd.DatetimeIndex(time)
+    lonbin = np.digitize(np.asarray(lon, float), LON_EDGES)
+    return (t.year.values,
+            np.array([f"L{int(b)}M{int(m)}" for b, m in zip(lonbin, t.month.values)]))
+
+
+def _merge_keyed(left, right, what, **kw):
+    """Join on the comparison key, turning a merge-time failure into a refusal.
+
+    ONLY the merge is wrapped. An earlier version caught ValueError across the whole
+    validator, which meant a genuine programming error anywhere inside became an
+    ordinary refusal and the pipeline merely rebuilt, so the guard could be broken for
+    good while looking conservative. The dtype checks should make these unreachable;
+    they are a refusal of last resort, never an escape.
+    """
+    try:
+        return left.merge(right, on=KEY, **kw)
+    except (pd.errors.MergeError, ValueError) as e:
+        raise _Refuse(f"{what}: keys cannot be compared ({e.__class__.__name__}: {e})")
+
+
+def _read_anchor(dep_dir, name):
+    """Load one of the two tables build_deposit.py writes and this program does not."""
+    path = os.path.join(dep_dir, name)
+    if not os.path.exists(path):
+        raise _Refuse(f"{name}: absent at {path}, so the cohort cannot be checked")
+    try:
+        f = read_design_csv(path)
+    except Exception as e:
+        raise _Refuse(f"{name}: unreadable ({e.__class__.__name__})")
+    if f.empty:
+        raise _Refuse(f"{name}: no rows")
+    return f
+
+
+def _check_freshness(cache, dep_dir):
+    """Refuse unless the anchors on disk are the ones the cache was built against."""
+    import json
+    path = _freshness_path(cache)
+    if not os.path.exists(path):
+        raise _Refuse("no freshness record beside the cache")
+    try:
+        with open(path) as fh:
+            rec = json.load(fh)
+    except (ValueError, OSError) as e:
+        raise _Refuse(f"freshness record unreadable ({e.__class__.__name__})")
+    if not isinstance(rec, dict):
+        raise _Refuse("freshness record is not a JSON object")
+    src = rec.get("sources")
+    if not isinstance(src, dict) or not src:
+        raise _Refuse("freshness record carries no sources")
+    out = []
+    for name in ANCHORS:
+        want = src.get(name)
+        if not want:
+            raise _Refuse(f"freshness record has no digest for {name}")
+        try:
+            got = _file_digest(os.path.join(dep_dir, name))
+        except OSError as e:
+            # present but unreadable, for example a permissions problem. The spec says
+            # an anchor that cannot be read is a refusal, and without this it would
+            # propagate as a crash instead.
+            raise _Refuse(f"{name} unreadable ({e.__class__.__name__})")
+        if got is None:
+            raise _Refuse(f"{name} absent, so freshness cannot be established")
+        if want != got:
+            out.append(f"{name} changed since the cache was built")
+    return out
+
+
+def validate_design_cache(df, cache, dep_dir=None):
+    """Decide whether a cached ELIGIBLE-cohort design may be reused. Returns (ok, msgs).
+
+    ``ok`` is true only when ``msgs`` is empty. There is no third state and no argument
+    by which a caller can declare a check unavailable.
+
+    WHAT THIS ESTABLISHES. The cache describes the same cohort of trough observations as
+    the deposit currently on disk, one row per deposited trough in both directions, and
+    every quantity the deposit independently carries agrees with the cache.
+
+    WHAT IT DOES NOT ESTABLISH, stated here because the previous three versions each
+    claimed more in their success message than they checked. It does not establish that
+    amplitude, shear or tcwv are correct, since nothing in the deposit carries them. It
+    does not establish inflow_rh, box_rh or antecedent on rows outside the classified
+    subsample, which is 3,099 of 11,457. And it does not detect deliberate tampering,
+    which is declared out of scope rather than half-attempted: any reference value this
+    program writes can be rewritten by running this program again. The guard is built
+    against STALENESS, which is what has actually gone wrong in rounds 7, 8 and 10.
+
+    The full statement is docs/DESIGN_CACHE_SPEC.md, written before this repair because
+    the unit had been repaired three times and each repair introduced the next defect.
+    """
+    dep = dep_dir or os.path.dirname(cache) or "."
+    msgs, notes = [], []
+    n_cache = n_dep = n_cmp = uncovered = 0
+    try:
+        msgs.extend(_check_freshness(cache, dep))
+
+        # Every column that enters a fitted model, not only the response and the six
+        # predictors. year and lonmonth were omitted from this list in the first version
+        # and a review permuted them undetected.
+        missing = [c for c in ["response", *PREDICTORS, "year", "lonmonth"]
+                   if c not in df.columns]
+        if missing:
+            raise _Refuse(f"cache: missing modelled column(s) {', '.join(missing)}")
+        if df.columns.duplicated().any():
+            dupcols = sorted(set(df.columns[df.columns.duplicated()]))
+            raise _Refuse(f"cache: duplicate column label(s) {', '.join(dupcols)}")
+        cl = _keyed(df, "cache")
+        for c in PREDICTORS:
+            _numeric(cl, c, "cache", require_numeric_dtype=True)
+        resp = _exact_int(_numeric(cl, "response", "cache", require_numeric_dtype=True),
+                          "response", "cache")
+        if not np.isfinite(resp).all():
+            raise _Refuse(f"cache: {int((~np.isfinite(resp)).sum())} non-finite "
+                          f"response value(s)")
+
+        # FIXED EFFECTS. Exact functions of the row's own key, so a disagreement is
+        # certain rather than merely suspicious.
+        want_year, want_lonmonth = derived_fixed_effects(cl["time_k"].dt.tz_localize(None),
+                                                         cl["lon"])
+        off_year = int((_numeric(cl, "year", "cache",
+                                 require_numeric_dtype=True).values != want_year).sum())
+        if off_year:
+            msgs.append(f"year: {off_year} of {len(cl)} disagree with the row's own time")
+        off_lm = int((cl["lonmonth"].astype(str).values != want_lonmonth).sum())
+        if off_lm:
+            msgs.append(f"lonmonth: {off_lm} of {len(cl)} disagree with the row's own "
+                        f"time and longitude")
+
+        # COHORT. An OUTER join in both directions, so a cached row matching no
+        # deposited trough and a deposited trough missing from the cache are both
+        # findings. An inner join, which the previous version used, silently drops the
+        # very rows a truncation test is about. validate= asserts the one-to-one
+        # property at runtime rather than trusting the duplicate checks above.
+        tl = _keyed(_read_anchor(dep, "troughs_pooled.csv"), "troughs_pooled.csv",
+                    wave_col="traj_id")
+        n_cache, n_dep = len(cl), len(tl)
+        if "response" not in tl.columns:
+            raise _Refuse("troughs_pooled.csv: missing column(s) response")
+        _exact_int(cl["wave_k"], "wave", "cache")
+        _exact_int(tl["wave_k"], "traj_id", "troughs_pooled.csv")
+        j = _merge_keyed(cl[KEY + ["response"]], tl[KEY + ["response"]],
+                         "cohort join", how="outer", suffixes=("", "_dep"),
+                         indicator=True, validate="one_to_one")
+        orphan = int((j["_merge"] == "left_only").sum())
+        absent = int((j["_merge"] == "right_only").sum())
+        if orphan:
+            msgs.append(f"{orphan} cached row(s) match no deposited trough")
+        if absent:
+            msgs.append(f"{absent} deposited trough(s) missing from the cache")
+        both = j[j["_merge"] == "both"]
+        # EXACT for the response. It is a count of convective systems, deposited at
+        # three decimal places, so it round-trips exactly and there is no reason to
+        # allow it the 1e-3 the four-decimal environmental fields need. Under the
+        # tolerance a uniform shift of 0.0005 on every response was accepted and then
+        # reported as "identical".
+        a = _numeric(both, "response", "cache")
+        b = _numeric(both, "response_dep", "troughs_pooled.csv")
+        off = int((a.values != b.values).sum())
+        if off:
+            msgs.append(f"response: {off} of {len(both)} differ from the deposit")
+        # NO LONGITUDE VALUE COMPARISON HERE, deliberately, and the reason is recorded
+        # so it is not re-added as an improvement. A comparison at TOL could never fire:
+        # the key rounds longitude to three decimals, so two values sharing a key differ
+        # by strictly less than 1e-3 and always pass, while any larger difference has
+        # already changed the key and been caught as an orphan. It would be a check that
+        # cannot fail, which is worse than no check because it draws the eye of the next
+        # reader. The residual it appears to cover is irreducible against this deposit
+        # and is stated in docs/DESIGN_CACHE_SPEC.md.
+
+        # VALUES. Every quantity the deposit also carries, on every shared row. No
+        # dropna, because the previous version's dropna turned an injected NaN into a
+        # row that was silently not compared.
+        cs = _keyed(_read_anchor(dep, "cases_pooled_700.csv"), "cases_pooled_700.csv",
+                    wave_col="traj_id")
+        absent_cols = [d for _, d in COMPARED if d not in cs.columns]
+        if absent_cols:
+            raise _Refuse(f"cases_pooled_700.csv: missing column(s) "
+                          f"{', '.join(absent_cols)}")
+        # The classified subsample is a STRICT SUBSET of the eligible cohort, so a cases
+        # row matching no cached row means the two tables describe different records.
+        # The inner join below silently drops such a row, so an incoherent cases anchor
+        # carrying 40 valid rows and 1 orphan returned success. Checked before the join
+        # rather than inferred from it.
+        stray = int((~cs.set_index(KEY).index.isin(cl.set_index(KEY).index)).sum())
+        if stray:
+            msgs.append(f"cases_pooled_700.csv: {stray} row(s) match no cached trough")
+        cmp_ = _merge_keyed(cl[KEY + [c for c, _ in COMPARED]],
+                            cs[KEY + [d for _, d in COMPARED]], "predictor join",
+                            how="inner", suffixes=("", "_dep"), validate="one_to_one")
+        if cmp_.empty:
+            raise _Refuse("cases_pooled_700.csv shares no row with the cache, so no "
+                          "predictor was compared")
+        n_cmp = len(cmp_)
+        uncovered = n_cache - n_cmp
+        for col, dep_col in COMPARED:
+            right = dep_col if dep_col != col else col + "_dep"
+            a = _numeric(cmp_, col, "cache")
+            b = _numeric(cmp_, right, "cases_pooled_700.csv")
+            one_sided = int((a.isna() ^ b.isna()).sum())
+            if one_sided:
+                msgs.append(f"{col}: {one_sided} row(s) present on one side only")
+            # An infinity on either side is refused rather than compared. inf minus inf
+            # is NaN, which is not greater than the tolerance, so two matching
+            # infinities passed and the guard then printed that they agreed within
+            # 1e-3, which is not a statement any comparison had made.
+            inf = int((np.isinf(a.values) | np.isinf(b.values)).sum())
+            if inf:
+                msgs.append(f"{col}: {inf} infinite value(s), which cannot be compared")
+            pair = a.notna() & b.notna() & np.isfinite(a.values) & np.isfinite(b.values)
+            off = int(((a[pair] - b[pair]).abs() > TOL).sum())
+            if off:
+                msgs.append(f"{col}: {off} of {int(pair.sum())} differ from the deposit")
+            neither = int((a.isna() & b.isna()).sum())
+            if neither:
+                notes.append(f"{col}: {neither} absent on both sides, read as agreement")
+    except _Refuse as e:
+        msgs.append(str(e))
+
+    if not msgs:
+        print(f"cache accepted: {n_cache} rows in one-to-one correspondence with "
+              f"{n_dep} deposited troughs, response EXACTLY equal, year and lonmonth "
+              f"consistent with each row's own time and longitude; "
+              f"{', '.join(c for c, _ in COMPARED)} agree within {TOL:g} on the {n_cmp} "
+              f"rows the classified subsample covers. NOT CHECKED: {uncovered} row(s) "
+              f"have no deposited predictor counterpart and rest on the response alone, "
+              f"and amplitude, shear and tcwv have no independent source in the deposit "
+              f"at all, so a stale value in those three is NOT detectable either. Within the "
+              f"checked cohort and the checked columns this detects stale generations; "
+              f"it does not detect deliberate tampering "
+              f"(docs/DESIGN_CACHE_SPEC.md)."
+              + ("".join(f" NOTE: {n}." for n in notes)), flush=True)
+    return (not msgs), msgs
+
+
+def plan_cache_reuse(cache_path, outdir):
+    """Return an eligible-cohort design to reuse, or None meaning rebuild.
+
+    Extracted from main() so the reuse DECISION is unit-testable without the two-hour
+    build behind it. None is returned, and NOTHING is raised, for four cases: no --cache
+    given, an absent cache (the ordinary first run [R-CACHE-01]), an unreadable cache
+    [R-CACHE-02], and a cache the guard rejects. A DataFrame is returned only when the
+    guard accepts. A cache that cannot be trusted is a rebuild, never an error and never
+    a silent reuse.
+
+    float_precision on the read (via read_design_csv) is REQUIRED, not a refinement:
+    pandas' default C parser is not correctly rounded, so without it the cached and the
+    freshly built path produce numerically different design tables, and
+    control_model_design.csv would depend on whether a cache happened to exist.
+    """
+    if not cache_path or not os.path.exists(cache_path):
+        return None
+    try:
+        df = read_design_csv(cache_path)
+    except Exception as e:
+        print(f"cache {cache_path} unreadable ({e.__class__.__name__}); "
+              f"rebuilding the design", flush=True)
+        return None
+    # VALIDATE against the current deposit rather than trusting that the file exists.
+    # run_canonical rebuilds the deposit and then reruns this driver from the cache, and
+    # the fresh OUTPUT mtimes then satisfy the checker, so a stale design could ride
+    # through a green run. That was the round-7 blocker, and rounds 8 and 10 each
+    # defeated the repair for it. See docs/DESIGN_CACHE_SPEC.md.
+    ok, msgs = validate_design_cache(df, cache_path, outdir)
+    if not ok:
+        print(f"cache {cache_path} REJECTED ({'; '.join(msgs)}); "
+              f"rebuilding the design", flush=True)
+        return None
+    print(f"loaded cached eligible design, {len(df)} rows, from {cache_path}", flush=True)
+    return df
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--csct", default="data/original/csct/csct_africa_cs245.nc")
@@ -227,86 +686,33 @@ def main():
     os.makedirs(a.outdir, exist_ok=True)
 
     pooled_years = parse_years(TIERS["pooled"])
-    # the cache holds the POST-filter design, so the R4 eligible table (written only
-    # inside build_design, pre-filter) cannot be recovered from it; a cache without
-    # that table alongside forces a rebuild rather than starving wave_estimands.py
-    use_cache = (a.cache and os.path.exists(a.cache)
-                 and os.path.exists("deposit/eligible_troughs.csv"))
-    if a.cache and os.path.exists(a.cache) and not use_cache:
-        print(f"cache {a.cache} present but deposit/eligible_troughs.csv absent; "
-              f"rebuilding the design", flush=True)
-    if use_cache:
-        df = pd.read_csv(a.cache)
-        # VALIDATE the cache against the current deposit rather than trusting that it
-        # exists. run_canonical rebuilds the deposit and then reruns this driver from
-        # the cache; the fresh OUTPUT mtimes then satisfy the checker, so a stale design
-        # could ride through a green run (round-7 blocker). Round 8 found the first
-        # version too weak: it compared the RESPONSE only, so a change to the
-        # environmental predictors that left the response alone still passed, and the
-        # join was not one-to-one, which is why coverage read 100.2 percent.
-        #
-        # The key is (time, longitude, wave). A handful of exact duplicate rows exist on
-        # both sides, so each side is deduplicated on that key first and the comparison
-        # runs over the unique key sets. Every predicted-on quantity is compared, not
-        # just the response.
-        DEP_DIR = os.path.dirname(a.cache) or "."
-        ref = os.path.join(DEP_DIR, "troughs_pooled.csv")
-        cases700 = os.path.join(DEP_DIR, "cases_pooled_700.csv")
-        KEY = ["time", "lon_k", "wave_k"]
-
-        def keyed(frame, lon_col="lon", wave_col=None):
-            f = frame.copy()
-            f["lon_k"] = f[lon_col].round(3)
-            f["wave_k"] = f[wave_col] if wave_col else f["wave"]
-            return f.drop_duplicates(KEY)
-
-        if not os.path.exists(ref):
-            print(f"{ref} absent, cannot validate the cache; rebuilding", flush=True)
-            use_cache = False
-        else:
-            dl = keyed(df)
-            tl = keyed(pd.read_csv(ref), wave_col="traj_id")
-            m = dl.merge(tl[KEY + ["response"]], on=KEY, how="inner",
-                         suffixes=("", "_dep"))
-            frac = len(m) / max(len(dl), 1)
-            msgs = []
-            if frac < 0.95:
-                msgs.append(f"only {100 * frac:.1f} percent of design keys matched")
-            bad = int((m["response"] != m["response_dep"]).sum())
-            if bad:
-                msgs.append(f"{bad} response values differ")
-            # the environmental predictors, which the first version never compared
-            n_pred = 0
-            if os.path.exists(cases700):
-                cl = keyed(pd.read_csv(cases700), wave_col="traj_id")
-                for col, dep_col in (("inflow_rh", "rh_m72"), ("box_rh", "box_rh_m24")):
-                    if col not in dl.columns or dep_col not in cl.columns:
-                        continue
-                    mm = dl[KEY + [col]].merge(cl[KEY + [dep_col]], on=KEY, how="inner")
-                    mm = mm.dropna(subset=[col, dep_col])
-                    if mm.empty:
-                        msgs.append(f"{col}: no rows to compare")
-                        continue
-                    n_pred += 1
-                    delta = (mm[col] - mm[dep_col]).abs()
-                    off = int((delta > 1e-3).sum())
-                    if off:
-                        msgs.append(f"{col}: {off} of {len(mm)} differ "
-                                    f"(max {delta.max():.3g})")
-            if msgs:
-                print(f"cache {a.cache} DISAGREES with the deposit "
-                      f"({'; '.join(msgs)}); rebuilding the design", flush=True)
-                use_cache = False
-            else:
-                print(f"cache validated against the deposit: {len(m)} keys "
-                      f"({100 * frac:.1f} percent), response and {n_pred} "
-                      f"predictor(s) identical", flush=True)
-    if use_cache:
-        print(f"loaded cached design {len(df)} from {a.cache}", flush=True)
-    else:
+    # The cache holds the ELIGIBLE cohort, so both deposited tables this script owns
+    # (eligible_troughs.csv and control_model_design.csv) are derived from it below on
+    # either path. The previous version cached the POST-filter design, could not
+    # reproduce the eligible table from it, and therefore forced a full rebuild whenever
+    # eligible_troughs.csv was missing. That branch is gone rather than repaired.
+    df = plan_cache_reuse(a.cache, a.outdir)
+    if df is None:
         df = build_design(pooled_years, a.csct)
         if a.cache:
             df.to_csv(a.cache, index=False)
+            write_freshness_record(a.cache, a.outdir)
+            print(f"wrote {a.cache} and {_freshness_path(a.cache)}", flush=True)
+
+    # R4 source (implementation-review fold): the wave-unit estimand's cohort is every
+    # eligible trough with only the missing-H rule applied, NOT the model's six-way
+    # complete-case cohort, so this table is written from the eligible frame.
+    df[["wave", "time", "lon", "response", "inflow_rh"]].to_csv(
+        os.path.join(a.outdir, "eligible_troughs.csv"), index=False,
+        float_format="%.6f")
+    df = complete_case(df)
+    # The published design table, consumed by scripts/within_between_model.py. It is
+    # written on every run, cached or not, and it is no longer the cache itself.
+    df.to_csv(os.path.join(a.outdir, "control_model_design.csv"), index=False)
+    print(f"analyzable troughs (finite predictors): {len(df)}; wrote "
+          f"{a.outdir}/eligible_troughs.csv and {a.outdir}/control_model_design.csv",
+          flush=True)
+
     # one scaler from the pooled analyzable sample, applied to every tier
     scaler_mean = {c: float(df[c].mean()) for c in PREDICTORS}
     scaler_std = {c: float(df[c].std()) for c in PREDICTORS}

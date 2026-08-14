@@ -89,7 +89,7 @@ EXC_PCTL = 70.0
 # Replicate count for every canonical cluster bootstrap. This was left at the
 # cluster_bootstrap_diff default of 2,000 while the manuscript stated 20,000, so the
 # published per-observation intervals did not come from the described procedure
-# (full-access review round 6). It is named here, passed explicitly, and recorded in
+# (found in round 6). It is named here, passed explicitly, and recorded in
 # every contrast row so the two can never drift apart again. Changing it changes the
 # random-stream consumption of every downstream call, so it invalidates the whole
 # deposit and requires a full canonical rerun.
@@ -163,12 +163,12 @@ class Deposit:
         return row
 
 
-def load_troughs_and_systems(years, csct_path):
+def load_troughs_and_systems(years, csct_path, tie="smallest"):
     aewc_paths = [f"data/aewc/ERA-Int_ew_700hPa_{y}_AFR.nc" for y in years]
     missing = [p for p in aewc_paths if not os.path.exists(p)]
     if missing:
         raise FileNotFoundError(f"{len(missing)} AEWC files missing, first: {missing[0]}")
-    tr = (load_aewc_trajectories(aewc_paths)
+    tr = (load_aewc_trajectories(aewc_paths, tie=tie)
           .filter_region(min_lat=5, max_lat=20, min_lon=-30, max_lon=40)
           .filter_months([7, 8, 9]))
     cs = xr.open_dataset(csct_path)
@@ -661,6 +661,10 @@ def main():
     ap.add_argument("--outdir", default="deposit")
     ap.add_argument("--delta-hpa", type=float, default=DELTA_HPA,
                     help="R2 validity buffer (prespecified sensitivities: 0, 50)")
+    ap.add_argument("--tie-rule", choices=["smallest", "largest"], default="smallest",
+                    help="which co-longest trajectory represents a merged wave. 614 of "
+                         "2,972 merged components have a tie, so this is a real degree "
+                         "of freedom and the variant run is the sensitivity for it.")
     ap.add_argument("--footprint", choices=["timematched", "static"],
                     default="timematched",
                     help="R2 sensitivity: static = valid at EVERY time in the record")
@@ -680,7 +684,8 @@ def main():
         years = parse_years(TIERS[tier])
         print(f"\n=== tier {tier}: {len(years)} seasons "
               f"{years[0]}..{years[-1]} ===", flush=True)
-        tr, cst, csx, csy = load_troughs_and_systems(years, a.csct)
+        tr, cst, csx, csy = load_troughs_and_systems(years, a.csct,
+                                                    tie=a.tie_rule)
         # R3 (REPAIR_SPEC.md): complete-window eligibility BEFORE the response and the
         # split, so classes and everything conditioned on them inherit it
         n_all = len(tr)

@@ -65,7 +65,11 @@ def main():
     ax.plot(nd, np.linspace(0, 1, nd.size), color="tab:blue", label=f"{Q} (n={nd.size})")
     ax.plot(dv, np.linspace(0, 1, dv.size), color="tab:red", label=f"{A} (n={dv.size})")
     ax.axvline(thr, color="k", lw=1, ls="--")
-    ax.text(thr - 0.7, 0.42, f"pooled 70th pctl ({thr:.1f}%)", fontsize=8,
+    # Low on the axis, in the clear space below both curves. At the threshold the two
+    # cumulative curves sit near 0.65 and 0.75 by construction (they are 1 minus the
+    # exceedance probabilities printed above), so a label starting at 0.42 ran straight
+    # through them.
+    ax.text(thr - 0.7, 0.04, f"pooled 70th pctl ({thr:.1f}%)", fontsize=8,
             rotation=90, ha="right", va="bottom")
     ax.axhline(1 - p_q / 100.0, color="tab:blue", lw=0.8, ls=":")
     ax.axhline(1 - p_a / 100.0, color="tab:red", lw=0.8, ls=":")

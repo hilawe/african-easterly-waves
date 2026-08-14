@@ -57,7 +57,8 @@ class Troughs:
         return self._subset(np.asarray(mask, dtype=bool))
 
 
-def load_aewc_trajectories(paths_or_glob, lead_hours=(24.0, 48.0), dedup=True):
+def load_aewc_trajectories(paths_or_glob, lead_hours=(24.0, 48.0), dedup=True,
+                          tie="smallest"):
     """Load AEWC troughs WITH trajectory linkage and lead (preconditioning) amplitude.
 
     The file is a contiguous ragged array: count(trajectory) gives each wave's sample
@@ -141,10 +142,10 @@ def load_aewc_trajectories(paths_or_glob, lead_hours=(24.0, 48.0), dedup=True):
     # drop only rows with no valid location (keep NaN lead amplitudes; caller filters)
     good = np.isfinite(tr.lat) & np.isfinite(tr.lon)
     tr = tr._subset(good)
-    return deduplicate(tr) if dedup else tr
+    return deduplicate(tr, tie=tie) if dedup else tr
 
 
-def load_aewc_troughs(paths_or_glob, dedup=True):
+def load_aewc_troughs(paths_or_glob, dedup=True, tie="smallest"):
     """Load one or more AEWC yearly files into a Troughs container."""
     import xarray as xr
 
@@ -197,10 +198,10 @@ def load_aewc_troughs(paths_or_glob, dedup=True):
         variables={"wavelength": np.concatenate(wls), "crv": np.concatenate(crvs),
                    "rv": np.concatenate(rvs), "traj_id": np.concatenate(tids)},
     )
-    return deduplicate(tr) if dedup else tr
+    return deduplicate(tr, tie=tie) if dedup else tr
 
 
-def deduplicate(tr, min_shared=3):
+def deduplicate(tr, min_shared=3, tie="smallest"):
     """Remove the AEWC's duplicate trough observations and merge fragment trajectories.
 
     The Belanger tracker assigns some physical waves several overlapping trajectory IDs
@@ -208,13 +209,31 @@ def deduplicate(tr, min_shared=3):
     observations in the West African JAS domain are exact duplicates of another
     trajectory's. This collapses that double-counting in two steps:
 
-    1. Keep one observation per unique (time, lat, lon), dropping the duplicates.
-    2. Union trajectories that share at least ``min_shared`` common (time, lat, lon) points
-       into one physical wave, recorded in a new ``wave_id`` variable, so wave-level
-       clustering (e.g. the cluster bootstrap) counts a fragmented wave once.
+    1. Union trajectories that share at least ``min_shared`` common (time, lat, lon)
+       points into one physical wave, recorded in a new ``wave_id`` variable, so
+       wave-level clustering (e.g. the cluster bootstrap) counts a fragmented wave once.
+    2. Keep ONLY the longest member trajectory of each merged component (most
+       observations in the loaded record, ties broken by smallest original id), and
+       drop the other fragments entirely.
 
-    Positions are matched at the record's stored 3-decimal precision (the AEWC lat/lon are
-    given to that precision), which is exact for this data and robust to float round-trip.
+    Step 2 replaces an earlier rule that kept one copy of every unique (time, lat, lon)
+    point across the whole component. Where overlapping fragments diverged, every
+    divergent branch survived under one wave identifier, so a merged wave could occupy
+    several positions at the same timestamp (up to four, spreads up to 20 degrees), and
+    nineteen classified wave-time cells carried BOTH class labels at once (found by a
+    code audit, 2026-08-12, and reproduced exactly in-house). That broke
+    the one-wave, one-location reading the wave-cluster bootstrap assumes. The
+    longest-trajectory rule is provenance-based (the retained track is one the tracker
+    itself emitted, not a stitched composite), deterministic, and guarantees the
+    invariant asserted below: at most one position per wave per timestamp. It is
+    provisional pending discussion with the climatology's maintainers; candidate
+    refinements (tracker-quality scores, a continuity-objective path through the
+    component) select DIFFERENT single tracks, not different rules.
+
+    Trajectory pairs sharing fewer than ``min_shared`` points are NOT merged, and both
+    now survive in full; the old rule silently deleted the shared points from one of
+    them. Positions are matched at the record's stored 3-decimal precision (the AEWC
+    lat/lon are given to that precision), which is exact for this data.
 
     Requires a ``traj_id`` variable (both AEWC loaders provide it). Returns a new Troughs.
     """
@@ -261,9 +280,24 @@ def deduplicate(tr, min_shared=3):
                 parent[rb] = ra
     wave_id = np.array([find(int(x)) for x in tid], dtype=np.int64)
 
-    keep = np.zeros(len(tr), dtype=bool)    # first observation per unique (time,lat,lon)
-    for idxs in groups.values():
-        keep[idxs[0]] = True
+    # keep the LONGEST member trajectory of each component. The tie rule matters more
+    # than it looks: 614 of 2,972 merged components have two or more co-longest members,
+    # so the arbitrary part of the rule decides which track represents a fifth of the
+    # merged waves. ``tie`` exposes it so the choice can be varied as a sensitivity
+    # rather than assumed harmless (found 2026-08-13).
+    if tie not in ("smallest", "largest"):
+        raise ValueError(f"tie must be 'smallest' or 'largest', got {tie!r}")
+    sign = -1 if tie == "smallest" else 1
+    from collections import Counter
+    tid_counts = Counter(tid.tolist())
+    chosen = {}                             # component root -> chosen original traj id
+    for u in np.unique(tid):
+        root = find(int(u))
+        cand = (tid_counts[int(u)], sign * int(u))   # longest first, then the tie rule
+        if root not in chosen or cand > chosen[root][0]:
+            chosen[root] = (cand, int(u))
+    chosen_tid = {root: t for root, (_, t) in chosen.items()}
+    keep = np.array([int(x) == chosen_tid[find(int(x))] for x in tid], dtype=bool)
 
     out = tr._subset(keep)
     out.variables["wave_id"] = wave_id[keep]
@@ -271,4 +305,13 @@ def deduplicate(tr, min_shared=3):
     # on traj_id) counts a fragmented wave once; the pre-merge id is kept as orig_traj_id
     out.variables["orig_traj_id"] = np.asarray(tr.variables["traj_id"])[keep]
     out.variables["traj_id"] = wave_id[keep]
+
+    # THE INVARIANT this function exists to guarantee: one position per wave per time.
+    # A runtime assertion, not only a test, because every downstream estimand assumes it.
+    wt = list(zip(out.variables["traj_id"].tolist(),
+                  pd.DatetimeIndex(out.time).asi8.tolist()))
+    if len(wt) != len(set(wt)):
+        raise AssertionError(
+            "deduplicate() produced a wave with multiple positions at one timestamp; "
+            "the chosen trajectory itself carries duplicate times")
     return out

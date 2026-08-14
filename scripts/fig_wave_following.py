@@ -217,7 +217,12 @@ def main():
                   f"{r['peak_rel_lon']:+.0f} deg, ratio {r['peak_ratio']:.2f}, "
                   f"p = {r['p_value']:.3g})", fontsize=10)
     panel_label(ax2, "b", 15)
-    ax2.legend(fontsize=8)
+    # Same treatment as panel (c): the excess peak sits just left of centre and reached
+    # into a "best"-placed legend. Headroom plus a fixed upper-right corner, with the
+    # upper left reserved for the panel label.
+    _lo2, _hi2 = ax2.get_ylim()
+    ax2.set_ylim(_lo2, _hi2 + 0.45 * (_hi2 - _lo2))
+    ax2.legend(fontsize=8, loc="upper right", framealpha=0.9)
     ax2.grid(alpha=0.3)
 
     # (c) tercile split under the same assignment matrix; the weak tercile's pointwise
@@ -243,7 +248,13 @@ def main():
     ax3.set_title("Stratified by wave amplitude (curvature-vorticity terciles)",
                   fontsize=10)
     panel_label(ax3, "c", 15)
-    ax3.legend(fontsize=8)
+    # Headroom first, then a fixed corner. loc="best" put this legend on the central
+    # excess peak, which is the one part of the panel a reader needs to see. Adding
+    # headroom rather than shrinking the legend keeps the curves at full size, and the
+    # upper RIGHT corner is used because the panel label owns the upper left.
+    _lo3, _hi3 = ax3.get_ylim()
+    ax3.set_ylim(_lo3, _hi3 + 0.45 * (_hi3 - _lo3))
+    ax3.legend(fontsize=8, loc="upper right", framealpha=0.9)
     ax3.grid(alpha=0.3)
 
     fig.suptitle(f"Wave-following composite  ({n} trough obs, JAS)", fontsize=12)

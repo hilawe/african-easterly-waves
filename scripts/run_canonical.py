@@ -45,11 +45,22 @@ def main():
         for name, extra in (
                 ("sens_delta0", ["--delta-hpa", "0"]),
                 ("sens_delta50", ["--delta-hpa", "50"]),
-                ("sens_static", ["--footprint", "static"])):
+                ("sens_static", ["--footprint", "static"]),
+                # the deduplication tie-break is arbitrary and 614 of 2,972 merged
+                # components carry a tie, so the opposite rule is a variant run like
+                # the terrain ones rather than an assumption
+                ("sens_tierule", ["--tie-rule", "largest"])):
             run(name, [PY_, "scripts/build_deposit.py", "--tiers", "pooled",
                        "--outdir", f"deposit/{name}"] + extra)
+    # The cache is the ELIGIBLE cohort and is NOT the published design table. Pointing
+    # --cache at deposit/control_model_design.csv (which control_model.py now writes
+    # itself, post-filter) would make the guard compare that file against a cohort it is
+    # a strict subset of, and every deposited trough outside it would read as missing.
     run("control_model", [PY_, "scripts/control_model.py",
-                          "--cache", "deposit/control_model_design.csv"])
+                          "--cache", "deposit/control_model_design_eligible.csv"])
+    # the common-sample within-between decomposition (round 9); consumes the design
+    # table control_model just wrote, so it must follow that step
+    run("within_between", [PY_, "scripts/within_between_model.py"])
     run("wave_estimands", [PY_, "scripts/wave_estimands.py"])
     run("response_sens", [PY_, "scripts/sensitivity_response.py"])
     # feeds the registry's yearstrat_* rows, which the abstract and section 2d quote.
@@ -57,6 +68,10 @@ def main():
     # it and merged its previous-generation CSV: the mixed-generation state this
     # orchestrator exists to prevent (found while folding round 6).
     run("yearstrat_sens", [PY_, "scripts/sensitivity_yearstrat.py"])
+    # reads the canonical and tie-rule deposits and writes the comparison; skipped
+    # cleanly when --skip-sensitivities meant the variant was never built
+    if not a.skip_sensitivities:
+        run("tierule_sens", [PY_, "scripts/sensitivity_tierule.py"])
     run("fig2_null", [PY_, "scripts/fig_wave_following.py",
                       "--out", f"{DL}/aew_wave_following_pooled.png"])
     run("fig3_null", [PY_, "scripts/fig_ct_wave_following.py",
