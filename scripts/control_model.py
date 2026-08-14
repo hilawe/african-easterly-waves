@@ -503,7 +503,7 @@ def validate_design_cache(df, cache, dep_dir=None):
 
         # Every column that enters a fitted model, not only the response and the six
         # predictors. year and lonmonth were omitted from this list in the first version
-        # and a review permuted them undetected.
+        # and they were permuted undetected.
         missing = [c for c in ["response", *PREDICTORS, "year", "lonmonth"]
                    if c not in df.columns]
         if missing:
@@ -699,7 +699,7 @@ def main():
             write_freshness_record(a.cache, a.outdir)
             print(f"wrote {a.cache} and {_freshness_path(a.cache)}", flush=True)
 
-    # R4 source (implementation-review fold): the wave-unit estimand's cohort is every
+    # R4 source (implementation fold): the wave-unit estimand's cohort is every
     # eligible trough with only the missing-H rule applied, NOT the model's six-way
     # complete-case cohort, so this table is written from the eligible frame.
     df[["wave", "time", "lon", "response", "inflow_rh"]].to_csv(

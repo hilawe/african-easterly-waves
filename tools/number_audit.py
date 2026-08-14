@@ -43,7 +43,7 @@ def _fmt(value, spec):
 
 def load_canonical(path):
     """Keyed rows plus duplicate-key errors (a silent overwrite would let two
-    conflicting canonical rows coexist unnoticed; implementation-review fold)."""
+    conflicting canonical rows coexist unnoticed; implementation fold)."""
     df = pd.read_csv(path)
     rows, dups = {}, []
     for _, r in df.iterrows():
@@ -114,7 +114,7 @@ ALLOW_RES = [re.compile(p) for p in (
     r"\b\d+th\b",                                          # percentile ordinals
     r"\bpart\s+[IVX\d]+\b",
     # Patterns below cover forms that occur mainly in FIGURE CAPTIONS. The lint used to
-    # stop at the first table heading and so never reached them (round-6 review); they
+    # stop at the first table heading and so never reached them (round 6); they
     # are structural or design constants, not estimands.
     r"\b\d+(?:\.\d+)?[-\s]\d+(?:\.\d+)?\s*(?:N|S|E|W)\b",   # "5-15 N" band form
     r"\b\d{2}(?:,\s*\d{2})*(?:,?\s*and\s*\d{2})?\s*UTC\b",   # "00, 06, 12, and 18 UTC"
@@ -136,7 +136,7 @@ def lint_untagged(text, skip_headings=("## References",)):
     Only the reference list is excluded. "## Table" used to truncate here too, which
     silently ended the lint at the first table and left EVERY figure caption unchecked,
     since the captions sit after it. That is how "about two" and an untagged 1,000-draw
-    caption reached the manuscript (round-6 review). Table design constants are covered
+    caption reached the manuscript (round 6). Table design constants are covered
     by the allowlist instead of by skipping the rest of the document.
     """
     for h in skip_headings:

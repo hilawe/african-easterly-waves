@@ -1,4 +1,4 @@
-"""The three wave-level estimands (REPAIR_SPEC.md R4, implementation-review fold).
+"""The three wave-level estimands (REPAIR_SPEC.md R4, implementation fold).
 
 The single wave-level contrast of the original design let the 529 crossover waves sit
 on both sides of the comparison. Three prespecified estimands replace it, each

@@ -42,7 +42,7 @@ MAX_LAG = 8              # +/- 8 samples = +/- 48 h (the R6 frozen lag grid)
 PEAK_WIN = 48.0          # the R6 frozen estimator searches the FULL +/-48 h grid
 JAS = (7, 8, 9)
 # Year-block bootstrap replicates. This was 500 while the manuscript stated 20,000
-# for its cluster bootstraps, so the two disagreed (round-6 review). The lead-lag
+# for its cluster bootstraps, so the two disagreed (round 6). The lead-lag
 # resamples YEARS rather than waves, which is a different unit, so the manuscript
 # now says so explicitly; the count is matched here to remove the second discrepancy.
 N_BOOT = 20_000
@@ -247,7 +247,7 @@ def main():
     # vorticity perturbation upstream, tightening toward the coupled quarter-wavelength phase
     # downstream). Bootstrap resamples YEARS jointly across meridians (the shared sampling
     # unit), rebuilds each meridian's mean curve and peak, and refits the slope.
-    # R6 frozen estimator (implementation-review fold): the slope runs over the FIXED
+    # R6 frozen estimator (implementation fold): the slope runs over the FIXED
     # corridor's every meridian; the R>=R_MIN flag remains a reported diagnostic only.
     ridx = np.arange(meridians.size)
     nyrs = {R_years_all[j].shape[0] for j in ridx}
@@ -282,7 +282,7 @@ def main():
                        # so every per-meridian lag is one of two adjacent grid values.
                        # These counts make that quantitative in the prose instead of
                        # leaving the gradient to read as a continuously measured lag
-                       # (full-access review, 2026-07-25).
+                       # (found 2026-07-25).
                        dict(statistic="leadlag_n_meridians",
                             value=float(np.isfinite(peak_h).sum()), ci_lo=np.nan,
                             ci_hi=np.nan),

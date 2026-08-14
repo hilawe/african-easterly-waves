@@ -31,7 +31,7 @@ from aew.data.aewc import load_aewc_trajectories
 from aew.data.era5 import load_region_6h
 # Matches scripts/build_deposit.py; this script was on the 2,000 default while
 # the manuscript stated 20,000, and its intervals are quoted in 5c and the
-# supplement (round-6 review).
+# supplement (round 6).
 N_BOOT = 20_000
 
 from aew.environment import (cluster_bootstrap_diff, complete_window_mask,

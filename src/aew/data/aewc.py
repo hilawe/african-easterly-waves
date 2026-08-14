@@ -221,7 +221,7 @@ def deduplicate(tr, min_shared=3, tie="smallest"):
     divergent branch survived under one wave identifier, so a merged wave could occupy
     several positions at the same timestamp (up to four, spreads up to 20 degrees), and
     nineteen classified wave-time cells carried BOTH class labels at once (found by a
-    code audit, 2026-08-12, and reproduced exactly in-house). That broke
+    found 2026-08-12, and reproduced exactly in-house). That broke
     the one-wave, one-location reading the wave-cluster bootstrap assumes. The
     longest-trajectory rule is provenance-based (the retained track is one the tracker
     itself emitted, not a stitched composite), deterministic, and guarantees the

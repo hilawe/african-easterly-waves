@@ -229,7 +229,7 @@ def test_duplicate_key_is_rejected(deposit):
 @pytest.mark.parametrize("anchor", ["troughs_pooled.csv", "cases_pooled_700.csv"])
 def test_duplicate_key_in_anchor_is_rejected(deposit, anchor):
     # binds: [R-TROUGH-04] [R-CASES-04]
-    """BOTH anchors, which is the gap a repo-access review used to defeat the first
+    """BOTH anchors, which is the gap used to defeat the first
     version of this suite. It covered troughs_pooled.csv only, so a validator that
     deduplicated cases_pooled_700.csv before the one-to-one check passed all 40 tests
     while omitting a rule the specification states."""
@@ -248,7 +248,7 @@ def test_duplicate_key_in_anchor_is_rejected(deposit, anchor):
 def test_permuted_fixed_effect_is_rejected(deposit, col):
     # binds: [R-FE-01]
     """These enter every fitted model and the within-between model downstream, and the
-    first version of this guard checked neither. A repo-access review permuted them in a
+    first version of this guard checked neither. They were permuted in a
     real 11,457-row cache and the pooled primary term moved from 1.013844 to 1.002920
     while the guard reported success. They are exact functions of the row's own key, so
     a disagreement is certain rather than merely suspicious."""
@@ -374,7 +374,7 @@ def test_changed_deposit_is_rejected(deposit):
 @pytest.mark.parametrize("anchor", ["troughs_pooled.csv", "cases_pooled_700.csv"])
 def test_changed_anchor_bytes_are_rejected(deposit, anchor):
     # binds: [R-FRESH-05]
-    """BOTH digests, which is the second unbound specification rule an audit
+    """BOTH digests, which is the second unbound specification rule a later check
     found. The suite checked freshness only for troughs_pooled.csv, so a validator that
     ignored the cases-anchor digest passed all 55 tests. The mutation is a column the
     guard never reads, so ONLY the digest can catch it."""
@@ -599,7 +599,7 @@ def test_success_message_matches_what_the_code_does(deposit, capsys):
 def test_non_numeric_value_is_rejected(deposit, where, col):
     # binds: [R-CACHE-06]
     """A plain to_numeric(errors="coerce") turns text into NaN, and NaN then reads as a
-    false difference or, when both sides carry text, as agreement. A repo-access review
+    false difference or, when both sides carry text, as agreement. A later check
     reached acceptance four ways through that hole, including a non-numeric deposited
     response reported as identical and non-numeric predictors accepted and then raising
     a TypeError downstream.

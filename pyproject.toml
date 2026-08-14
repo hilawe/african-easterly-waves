@@ -25,7 +25,7 @@ stats = ["statsmodels>=0.14"]  # control_model.py (Poisson GLM, cluster-robust S
 dev = ["pytest>=7", "pytest-cov>=4"]
 # Everything scripts/run_canonical.py needs beyond the library core. The extras existed
 # but nothing named the set the canonical sequence requires, so the documented
-# "pip install -e ." could not run it (round-8 review). requirements-lock.txt pins the
+# "pip install -e ." could not run it (round 8). requirements-lock.txt pins the
 # exact versions that produced the deposited record.
 canonical = ["matplotlib>=3.8", "cartopy>=0.22", "statsmodels>=0.14"]
 

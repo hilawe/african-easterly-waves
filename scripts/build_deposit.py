@@ -321,7 +321,7 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp, low_s,
     # STRATIFIED attrition. The aggregate count alone cannot show whether the terrain
     # mask removes cases evenly, and at 850 hPa it does not: the loss concentrates in
     # the eastern highlands and falls harder on MCS-quiet cases, which is why that
-    # level carries a west-of-25E sensitivity (round-6 review asked for this ledger).
+    # level carries a west-of-25E sensitivity (round 6 asked for this ledger).
     # dep.point consumes no random numbers, so these rows do not perturb any stream.
     lon_case = tr.lon[sel_idx]
     dep.point(tier, level, "env_lost_east30", -72, "count",
@@ -379,7 +379,7 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp, low_s,
     sector = classify_origin(seeds_lat, seeds_lon, plat[-1], plon[-1])
     dep.point(tier, level, "parcels_lost_fraction", -72, "frac",
               float((sector == "lost").mean()))
-    # R2 route rule (implementation-review fold): fractions over VALID (non-lost)
+    # R2 route rule (implementation fold): fractions over VALID (non-lost)
     # parcels only, missing under five valid; displacement likewise, never nan-to-zero
     valid_p = (sector != "lost").reshape(n_case, npar)
     nval_p = valid_p.sum(axis=1)
@@ -434,7 +434,7 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp, low_s,
 
     if level == 850:
         # The terrain-safe restriction applied to the THERMODYNAMIC endpoint, which the
-        # route sensitivity above did not cover. Round-6 review showed the 850 hPa vapor
+        # route sensitivity above did not cover. Round 6 showed the 850 hPa vapor
         # excess does not survive it while relative humidity does, so both are deposited
         # rather than left for a reader to assume they behave alike.
         wl = tr.lon[sel_idx] < WEST_LON_CUT
@@ -508,7 +508,7 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp, low_s,
     # The MATCHED-LEAD ratio, against the two Eulerian control boxes read at the same
     # -72 h lead rather than at the -24 h seed box. Figure 6 computed this inline and
     # the prose said "about two", so a published quantity sat outside the registry and
-    # evaded the number audit (round-6 review). It is derived here, from rows already
+    # evaded the number audit (round 6). It is derived here, from rows already
     # deposited, and consumes no random stream.
     ctl = [r for r in dep.rows
            if r["tier"] == tier and r["level"] == level and r["time_rel_h"] == -72

@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Compose figure F9, the two-layer signature schematic (rebuild of the approved design).
 
-Design grammar, per the review rulings: transport differences are drawn ONLY in the
+Design grammar, per the design rulings. transport differences are drawn ONLY in the
 700 hPa arrows (widths and routes), state differences ONLY in the 850 hPa fill; the
 850 hPa inflow arrows are identical southwest monsoon arrows in both panels (the
 measured ground-relative origin distribution, west and south dominated); all flow

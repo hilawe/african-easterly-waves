@@ -1,7 +1,7 @@
 # Exact environment of the canonical run, captured 2026-07-25.
 #
 # pyproject.toml gives lower bounds only, which does not pin what a future
-# installation would resolve for a two-hour analysis (round-8 review). This file
+# installation would resolve for a two-hour analysis (round 8). This file
 # records what actually produced the deposited record. Recreate with:
 #
 #     python3.12 -m venv .venv

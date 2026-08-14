@@ -265,7 +265,7 @@ def load_region_6h(var_key, path_glob=None, years=None):
         # VALIDATE rather than overwrite. These were reassigned every iteration with no
         # cross-file check, so equal-shaped but shifted or reversed grids would have
         # concatenated silently and corrupted every trajectory built on them (round-7
-        # review). fig_leadlag's loader already checks this; this one did not.
+        # found later). fig_leadlag's loader already checks this; this one did not.
         lat_i = np.asarray(ds["latitude"].values, float)
         lon_i = np.asarray(ds["longitude"].values, float)
         if lat is None:

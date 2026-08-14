@@ -7,7 +7,7 @@ summaries that are not a formal decomposition: the exclusively-active against
 exclusively-quiet contrast (190 and 284 waves) and the paired contrast in a DIFFERENT
 cohort of 514 mixed waves. Exclusive classification selects for track length, so the two
 numbers are not additive pieces of one estimand (raised by the 2026-08-12
-code audit. The cohort summaries stay in the paper as descriptive
+a later check. The cohort summaries stay in the paper as descriptive
 context).
 
 This script supplies the formal version on ONE sample, the standard hybrid

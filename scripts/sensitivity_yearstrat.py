@@ -26,7 +26,7 @@ from aew.environment import cluster_bootstrap_diff
 
 # Matches scripts/build_deposit.py. This script was left on the 2,000 default
 # while the manuscript stated 20,000, and it produces the year-matched contrast
-# quoted in the abstract (round-6 review).
+# quoted in the abstract (round 6).
 N_BOOT = 20_000
 
 EDGES = np.arange(-30, 41, 10.0)

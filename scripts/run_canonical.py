@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""One validated sequence for the canonical record (implementation-review fold).
+"""One validated sequence for the canonical record (implementation fold).
 
 The canonical outputs were previously produced by four manually ordered drivers, so a
 stale or skipped step could leave a mixed-generation deposit. This orchestrator runs
@@ -81,7 +81,7 @@ def main():
     run("registry", [PY_, "tools/build_registry.py"])
     # every estimand-bearing manuscript figure is regenerated HERE, as a canonical
     # consumer of the tables just written, so an image can never lag the numbers
-    # (the full-access review caught F5/F6 stale after the repair rerun). F1 and S1
+    # (F5/F6 were found stale after the repair rerun). F1 and S1
     # are frozen validation figures with no estimand content and stay outside.
     for label, script, out in (
             ("fig5_eulerian", "scripts/fig05_eulerian.py", "aew_fig_eulerian.png"),
@@ -100,7 +100,7 @@ def main():
     # PROMOTE the regenerated images into docs/paper/figures before checking. The
     # scripts above write to ~/Downloads and the REPO copy is what the PDF embeds, so
     # without this the sequence could finish green over stale repo figures: exactly the
-    # gap the 2026-07-25 full-access review found still open after the previous round
+    # gap was found still open on 2026-07-25 after the previous round
     # moved figure regeneration into this driver. The builders own copy_figure(), so
     # running them here is the promotion.
     run("promote_paper", [PY_, "tools/build_pandoc_paper.py"])

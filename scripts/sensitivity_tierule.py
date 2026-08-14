@@ -3,7 +3,7 @@
 
 The deduplication keeps the LONGEST member trajectory of each merged wave, and where two
 or more members are co-longest the rule breaks the tie by smallest original identifier.
-That tie-break is arbitrary, and it is not rare. A code audit (2026-08-13)
+That tie-break is arbitrary, and it is not rare. A check (2026-08-13)
 found 614 of 2,972 merged components carry a tie, so the arbitrary part of the rule
 decides which track represents about a fifth of the merged waves.
 

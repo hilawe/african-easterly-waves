@@ -133,8 +133,7 @@ def main():
     # Two ratios, each drawn where its own comparison lives. The seed-box ratio
     # (attenuation_factor) compares the -72 h tracked value against the -24 h box, so
     # its arrow belongs at -24 h; drawing it at the -72 h end implied a gap against
-    # the -72 h fixed boxes that is about a third smaller (full-access review,
-    # 2026-07-25). The matched-lead ratio is drawn at -72 h against the mean of the
+    # the -72 h fixed boxes that is about a third smaller (found 2026-07-25). The matched-lead ratio is drawn at -72 h against the mean of the
     # two -72 h control boxes.
     att = get(df, a.tier, a.level, "attenuation_factor")["diff"]
     matched = get(df, a.tier, a.level, "attenuation_factor_matched")["diff"]

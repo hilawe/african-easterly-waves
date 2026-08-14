@@ -37,7 +37,7 @@ def band_prof(tr_time, tr_lon, ev):
 
     The profile is a MEAN over the band's latitude rows, so its sum is the match total
     divided by the number of rows. Both are returned because the normalized shares use
-    the profile while the honest count is the total (round-7 review: the deposited
+    the profile while the honest count is the total (round 7: the deposited
     n_matches was the mean-scaled value and so was not a match count).
     """
     c, _ = wave_relative_counts(tr_time, tr_lon, ev.time, ev.lon, ev.lat,
