@@ -40,6 +40,8 @@ tests/mutations_v1port_association.py.
          which makes every track unfilable
     A29  the six-hour inflation acts on the last DUE track rather than on the last track
          in the list, which is where MATLAB's residual loop index actually points
+    A30  the in-loop prune runs on a wave-free timestep, which version 1's `continue`
+         skips along with the association
 
 HOW THIS LIST GOT TO TWENTY-EIGHT. The first version had fourteen entries and every one of
 them was caught, which said more about the list than about the code. An independent review
@@ -138,11 +140,25 @@ def test_a_large_polygon_is_left_alone():
 
 def test_the_inflation_is_asymmetric_as_the_original_writes_it():
     """A12. FAITHFUL: longitude is scaled by sqrt(4/3 * s) and latitude by sqrt(2/3 * s),
-    stretching the search region more along the direction of travel than across it."""
+    stretching the search region more along the direction of travel than across it.
+
+    THE FACTORS, NOT JUST THEIR ORDER. A first version asserted only that the longitude
+    span came out larger than the latitude span, which any longitude-favouring stretch
+    passes, including a correct-looking symmetric one applied to a non-square polygon. The
+    two factors are pinned here, and so is the consequence that makes them worth pinning:
+    they multiply to sqrt(8/9), not to 1, so the inflated polygon lands at about 94 percent
+    of the area it was aiming for and STAYS below the threshold. That is why re-inflating
+    an already-inflated polygon keeps stretching it instead of settling.
+    """
     lons = np.array([0.0, 1.0, 1.0, 0.0])
     lats = np.array([0.0, 0.0, 1.0, 1.0])
     out_lon, out_lat = _inflate(lons, lats, POLY_AREA_6HR)
-    assert np.ptp(out_lon) > np.ptp(out_lat)
+    scale = POLY_AREA_6HR / 1.0
+    assert np.ptp(out_lon) == pytest.approx(np.sqrt((1.0 + 1.0 / 3.0) * scale))
+    assert np.ptp(out_lat) == pytest.approx(np.sqrt((2.0 / 3.0) * scale))
+    area = _polygon_area(out_lon, out_lat)
+    assert area == pytest.approx(POLY_AREA_6HR * np.sqrt(8.0 / 9.0))
+    assert area < POLY_AREA_6HR, "the target area is never actually reached"
 
 
 def test_a_zero_area_polygon_is_inflated_into_non_finite_coordinates():
@@ -196,7 +212,6 @@ def test_the_hull_is_closed_as_matlab_returns_it():
     lons = np.array([0.0, 1.0, 1.0, 0.0, 0.5])
     lats = np.array([0.0, 0.0, 1.0, 1.0, 0.5])
     hull_lon, hull_lat = _hull_polygon(lons, lats)
-    assert hull_lon[0] == hull_lat[0] * 0 + hull_lon[0]        # readability only
     assert hull_lon[0] == hull_lon[-1] and hull_lat[0] == hull_lat[-1]
     assert np.mean(hull_lon) != pytest.approx(np.mean(np.unique(hull_lon)))
 
@@ -354,7 +369,7 @@ def test_a_claimed_candidate_does_not_also_seed_a_track():
     assert len(tracks) == 1
 
 
-def test_a_candidate_with_no_trough_points_is_skipped(monkeypatch):
+def test_a_candidate_with_no_trough_points_is_skipped():
     """A17. Lines 374-377 skip such a candidate rather than seeding from it. Seeding would
     take the maximum of an empty array."""
     empty = {"time": 0.0, "lat_mean": 10.0, "lon_mean": 0.0,
@@ -612,6 +627,9 @@ def test_the_trough_mask_does_not_shadow_the_basin_key():
 
 # --- the in-loop prune ---------------------------------------------------------------------
 
+SOME_WAVES = [object()]      # the prune only asks whether the step had any
+
+
 def synthetic_track(n_steps, lon_step=-2.0, first_step=0, times=None):
     steps = list(range(first_step, first_step + n_steps))
     if times is None:
@@ -628,7 +646,7 @@ def test_the_prune_does_not_run_before_the_eighth_timestep():
     """A19. `ct_time >= tlm_thr*4` with tlm_thr two, so the prune starts at timestep eight
     and everything before it survives however stale."""
     stale = synthetic_track(2)
-    tracks, states = prune_stale_tracks([stale], [{}], step=6, now=100.0)
+    tracks, states = prune_stale_tracks([stale], [{}], step=6, now=100.0, waves=SOME_WAVES)
     assert tracks == [stale]
 
 
@@ -637,13 +655,13 @@ def test_a_recently_seen_short_track_survives_the_prune():
     would fail any lifetime test, and version 1 keeps it because it was seen just now."""
     fresh = synthetic_track(2, first_step=8)
     now = fresh["time"][-1] + RECENT_DAYS / 2.0
-    tracks, _ = prune_stale_tracks([fresh], [{}], step=20, now=now)
+    tracks, _ = prune_stale_tracks([fresh], [{}], step=20, now=now, waves=SOME_WAVES)
     assert tracks == [fresh]
 
 
 def test_a_stale_short_track_is_pruned():
     stale = synthetic_track(2)
-    tracks, states = prune_stale_tracks([stale], [{}], step=20, now=50.0)
+    tracks, states = prune_stale_tracks([stale], [{}], step=20, now=50.0, waves=SOME_WAVES)
     assert tracks == [] and states == []
 
 
@@ -651,7 +669,7 @@ def test_a_stale_but_long_track_survives():
     """The other half of the disjunction: more than eight observations keeps it alive even
     when it has not been seen for a long time."""
     long_track = synthetic_track(LIFETIME_STEPS + 1)
-    tracks, _ = prune_stale_tracks([long_track], [{}], step=20, now=50.0)
+    tracks, _ = prune_stale_tracks([long_track], [{}], step=20, now=50.0, waves=SOME_WAVES)
     assert tracks == [long_track]
 
 
@@ -659,7 +677,7 @@ def test_a_track_with_exactly_the_lifetime_count_is_not_long_enough():
     """The original writes `length(...) > tlm_thr*4`, a strict inequality, so eight
     observations is not enough and nine is."""
     exactly = synthetic_track(LIFETIME_STEPS)
-    tracks, _ = prune_stale_tracks([exactly], [{}], step=20, now=50.0)
+    tracks, _ = prune_stale_tracks([exactly], [{}], step=20, now=50.0, waves=SOME_WAVES)
     assert tracks == []
 
 
@@ -670,8 +688,65 @@ def test_the_prune_drops_states_alongside_their_tracks():
     keep = synthetic_track(LIFETIME_STEPS + 1)
     drop = synthetic_track(2)
     tracks, states = prune_stale_tracks([drop, keep, drop], [{"n": 0}, {"n": 1}, {"n": 2}],
-                                        step=20, now=50.0)
+                                        step=20, now=50.0, waves=SOME_WAVES)
     assert tracks == [keep] and states == [{"n": 1}]
+
+
+def test_the_prune_is_skipped_on_a_wave_free_timestep():
+    """Version 1's no-wave paths are `continue` statements in the middle of the timestep
+    loop, and that loop does not close until line 467, AFTER the prune at 441-466. So a
+    wave-free step skips the prune along with the association.
+
+    Reproducing the skip in `associate_step` alone was not enough, which is why this test
+    exists and why `waves` is a required argument here. A caller that pruned on every step
+    would drop tracks version 1 keeps, and at the end of a run that is the difference
+    between a short stale track reaching the speed filter and never getting there.
+    """
+    stale = synthetic_track(2)
+    tracks, states = prune_stale_tracks([stale], [{}], step=20, now=50.0, waves=[])
+    assert tracks == [stale], "a wave-free step must not prune"
+    tracks, states = prune_stale_tracks([stale], [{}], step=20, now=50.0,
+                                        waves=SOME_WAVES)
+    assert tracks == [], "the same track on a step that had waves is pruned"
+
+
+def test_the_hull_drops_collinear_points():
+    """MATLAB passes `'simplify',true` to convhull, which removes collinear points from the
+    hull. This measures that scipy does the same rather than assuming it, because the two
+    libraries are separately documented and the port's fidelity argument rests on them
+    agreeing here."""
+    lons = np.array([0.0, 1.0, 2.0, 2.0, 0.0])
+    lats = np.array([0.0, 0.0, 0.0, 2.0, 2.0])       # (1, 0) is collinear on an edge
+    hull_lon, hull_lat = _hull_polygon(lons, lats)
+    assert not np.any((hull_lon == 1.0) & (hull_lat == 0.0)), \
+        "the collinear point should not be a hull vertex"
+    assert len(hull_lon) == 5, "four corners plus the closing repeat"
+
+
+def test_the_doubled_vertex_is_what_makes_the_start_position_matter():
+    """The divergence `_hull_polygon` records as NOT ESTABLISHED, measured so its size is
+    on record rather than asserted away.
+
+    Closing the ring repeats the FIRST vertex, and the inflation centers on the mean of
+    that list, so which vertex is doubled changes the center. Neither MATLAB's convhull nor
+    scipy's ConvexHull documents where its cycle starts. If they disagree, the whole search
+    polygon shifts, and this measures by how much on the kind of polygon the tracker
+    actually builds. It is a bound on the risk, not a check that the port is right.
+    """
+    rng = np.random.default_rng(11)
+    points = rng.uniform(0.0, 10.0, size=(8, 2))
+    hull_lon, hull_lat = _hull_polygon(points[:, 0], points[:, 1])
+    open_lon, open_lat = hull_lon[:-1], hull_lat[:-1]
+    base = np.array([hull_lon.mean(), hull_lat.mean()])
+    shifts = []
+    for k in range(open_lon.size):
+        rot_lon = np.append(np.roll(open_lon, -k), np.roll(open_lon, -k)[0])
+        rot_lat = np.append(np.roll(open_lat, -k), np.roll(open_lat, -k)[0])
+        shifts.append(float(np.hypot(rot_lon.mean() - base[0],
+                                     rot_lat.mean() - base[1])))
+    assert max(shifts) > 0.5, (
+        "if a different start vertex moved the center by nothing, the divergence recorded "
+        "in _hull_polygon would not be worth recording and this test should be deleted")
 
 
 # --- the final speed filter and smoothing ---------------------------------------------------

@@ -121,6 +121,11 @@ MUTATIONS = {
     "prune_count_is_not_strict": _sub(
         '            or len(track["time"]) > lifetime_steps]',
         '            or len(track["time"]) >= lifetime_steps]'),
+    # A30 the prune runs on a wave-free timestep, which version 1's `continue` skips
+    "prune_runs_on_a_wave_free_timestep": _sub(
+        "    if not waves:\n        return tracks, states\n"
+        "    if step + 1 < lifetime_steps:",
+        "    if step + 1 < lifetime_steps:"),
     # A19 the prune runs from the first timestep
     "prune_runs_from_the_start": _sub(
         "    if step + 1 < lifetime_steps:",

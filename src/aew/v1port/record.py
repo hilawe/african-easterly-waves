@@ -90,6 +90,12 @@ TRACK_VARIABLES = (
 # The composited fields generate_ew_stats_f.m fills and this port does not. Written at the
 # fill value, in the order version 1 defines them, because variable order is part of what
 # a comparison against the published record checks.
+#
+# THEY ARE STILL READ FROM THE TRACK IF PRESENT, under the names version 1 uses for them,
+# so a later port of generate_ew_stats_f.m does not have to change this function to be
+# written out. An earlier version hard-wired them to fill, which would have silently
+# discarded exactly the data that stage exists to produce. Writing fill because a value is
+# absent is right; writing fill over a value that is there is not.
 COMPOSITE_VARIABLES = (
     "meanolr", "stdolr", "olr_area_fraction", "meanolra", "stdolra",
     "meanctb", "stdctb", "ctb_area_fraction",
@@ -97,6 +103,19 @@ COMPOSITE_VARIABLES = (
     "meanrain", "stdrain", "rain_area_fraction",
     "meancloud", "stdcloud", "cloud_area_fraction",
 )
+
+# The track field each composited variable reads, taken from the write loop of
+# output_ews_netcdf_f.m. The names are not guessable: `meanctb` reads `meanclaus`,
+# `meantpw` reads `meanvapor`, and every area fraction reads a `_cover` field.
+COMPOSITE_TRACK_KEYS = {
+    "meanolr": "meanolr", "stdolr": "stdolr", "olr_area_fraction": "olr_cover",
+    "meanolra": "meanolr_anom", "stdolra": "stdolr_anom",
+    "meanctb": "meanclaus", "stdctb": "stdclaus", "ctb_area_fraction": "claus_cover",
+    "meantpw": "meanvapor", "stdtpw": "stdvapor", "tpw_area_fraction": "vapor_cover",
+    "meanrain": "meanrain", "stdrain": "stdrain", "rain_area_fraction": "rain_cover",
+    "meancloud": "meancloud", "stdcloud": "stdcloud",
+    "cloud_area_fraction": "cloud_cover",
+}
 
 FRACTION_VARIABLES = ("olr_area_fraction", "ctb_area_fraction", "tpw_area_fraction",
                       "rain_area_fraction", "cloud_area_fraction")
@@ -619,9 +638,10 @@ def ragged_arrays(tracks, time_epoch="1900"):
     columns = {name: np.full(total, FILL, dtype=np.float32)
                for name in SAMPLE_VARIABLES}
     offset = 0
+    columns_of = tuple(TRACK_VARIABLES) + tuple(COMPOSITE_TRACK_KEYS.items())
     for track in tracks:
         n = len(track["time"])
-        for name, key in TRACK_VARIABLES:
+        for name, key in columns_of:
             values = track.get(key)
             if values is None:
                 continue
@@ -707,7 +727,18 @@ def write_year(directory, tracks, year, level, reanalysis, region_of=None, **kwa
 
     if region_of is None:
         def region_of(track):
-            return track["region_name"]
+            try:
+                return track["region_name"]
+            except KeyError:
+                raise ValueError(
+                    "this track has no 'region_name', so it cannot be filed. The tracker "
+                    "does not assign one: version 1 sets `region` and `region_name` in "
+                    "generate_ew_stats_f.m, which is not ported, so a track coming "
+                    "straight out of finalize_tracks has no basin. Assign one to each "
+                    "track, or pass region_of=... to say where it comes from. Note the "
+                    "tracker's own 'wave_points' key holds the trough masks and is a "
+                    "different thing entirely."
+                ) from None
     grouped = {code: [] for code in REGIONS}
     for track in tracks:
         code = region_of(track)

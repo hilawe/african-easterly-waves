@@ -120,6 +120,24 @@ MUTATIONS = {
         '{REGIONS}")\n'
         "        grouped[code].append(track)",
         "        if code in grouped:\n            grouped[code].append(track)"),
+    # R22 the composited fields are hard-wired to fill, so a track that carries them has
+    # its statistics silently discarded
+    "composited_fields_never_read_from_the_track": _sub(
+        "    columns_of = tuple(TRACK_VARIABLES) + tuple(COMPOSITE_TRACK_KEYS.items())",
+        "    columns_of = tuple(TRACK_VARIABLES)"),
+    # R22 a composited variable reads the wrong track field; the names are not guessable
+    "composited_field_reads_the_wrong_key": _sub(
+        '    "meanctb": "meanclaus", "stdctb": "stdclaus", '
+        '"ctb_area_fraction": "claus_cover",',
+        '    "meanctb": "meanctb", "stdctb": "stdclaus", '
+        '"ctb_area_fraction": "claus_cover",'),
+    # R23 a track with no basin raises a bare KeyError instead of saying what is wrong
+    "missing_basin_gives_a_bare_keyerror": _sub(
+        "            try:\n"
+        '                return track["region_name"]\n'
+        "            except KeyError:",
+        '            return track["region_name"]\n'
+        "            if False:"),
     # R19 the epoch shift is dropped, so the units attribute is right and the values are
     # eight centuries out
     "time_epoch_shift_dropped": _sub(

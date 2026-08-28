@@ -31,6 +31,9 @@ tests/mutations_v1port_record.py.
     R20  the satellite provenance attributes are dropped under the faithful setting, or
          kept under the corrected one
     R21  date_created is a fixed placeholder rather than the day the file was written
+    R22  the composited statistics are hard-wired to fill, so a track that carries them
+         has them silently discarded, or a variable reads the wrong track field
+    R23  a track with no basin fails with a bare KeyError instead of saying what is wrong
 
 THE PUBLISHED RECORD IS THE ORACLE HERE, not an analytic case. C00784's own files are in
 data/aewc, so the port's structure and metadata are checked against a file version 1
@@ -128,10 +131,41 @@ def test_a_field_the_tracker_did_not_compute_is_fill_not_zero():
     assert not np.any(columns["wavelength"] == 0.0)
 
 
-def test_the_composited_statistics_are_all_fill():
+def test_the_composited_statistics_are_fill_when_the_track_lacks_them():
     _, columns = R.ragged_arrays([track(5)])
     for name in R.COMPOSITE_VARIABLES:
         assert np.all(columns[name] == EXPECTED_FILL), name
+
+
+def test_the_composited_statistics_are_written_when_the_track_carries_them():
+    """R22. The tracker does not produce these yet; generate_ew_stats_f.m does, and it is
+    not ported. Hard-wiring them to fill would mean that when it IS ported its output is
+    silently discarded here, which is the worst kind of defect: a file that looks complete
+    and is missing exactly the data the new stage exists to produce.
+
+    The field names are read from version 1's own write loop and are not guessable. The
+    brightness-temperature variables read `meanclaus` and `stdclaus`, the precipitable
+    water reads `meanvapor`, and every area fraction reads a `_cover` field.
+    """
+    with_stats = dict(track(5))
+    with_stats["meanolr"] = [220.0] * 5
+    with_stats["meanclaus"] = [235.0] * 5
+    with_stats["meanvapor"] = [45.0] * 5
+    with_stats["rain_cover"] = [0.6] * 5
+    _, columns = R.ragged_arrays([with_stats])
+    assert columns["meanolr"] == pytest.approx([220.0] * 5)
+    assert columns["meanctb"] == pytest.approx([235.0] * 5)
+    assert columns["meantpw"] == pytest.approx([45.0] * 5)
+    assert columns["rain_area_fraction"] == pytest.approx([0.6] * 5)
+    # the ones it still does not carry stay missing rather than becoming zero
+    assert np.all(columns["meancloud"] == EXPECTED_FILL)
+
+
+def test_a_track_with_no_basin_says_what_is_wrong(tmp_path):
+    """R23. A bare KeyError on 'region_name' tells a caller nothing about why the tracker's
+    own output cannot be filed."""
+    with pytest.raises(ValueError, match="region_name"):
+        R.write_year(str(tmp_path), [track(4)], 2005, 700, "ERA-Int")
 
 
 def test_a_track_field_of_the_wrong_length_is_refused():

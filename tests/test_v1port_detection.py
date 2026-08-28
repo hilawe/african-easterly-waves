@@ -15,7 +15,7 @@ tests/mutations_v1port_detection.py.
     D8   the fields are not smoothed before contouring
     D9   only one merge pass runs instead of coarse then fine
     D10  the merge passes run fine first and coarse second
-    D11  a candidate centre is the first vertex of its contour rather than the mean
+    D11  a candidate center is the first vertex of its contour rather than the mean
     D12  contours are parsed by searching for the level in the x-coordinate, the original's
          ambiguous scheme, which on this domain also matches vertices at longitude zero
 """

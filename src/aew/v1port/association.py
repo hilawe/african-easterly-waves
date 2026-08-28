@@ -99,6 +99,20 @@ def _hull_polygon(lons, lats):
     inflated polygon match. `scipy.spatial.ConvexHull.vertices` is open, so the first index
     is appended here.
 
+    A THIRD DIVERGENCE, NOT ESTABLISHED, recorded because it is reachable and its size is
+    known. Closing the ring makes WHICH vertex is doubled depend on where the cycle starts,
+    and neither MATLAB's `convhull` nor scipy's `ConvexHull` documents its starting vertex.
+    Both wrap Qhull, so they may well agree, and that cannot be checked here because MATLAB
+    cannot run. If they disagree the inflation center moves by (v_first - mean) / (n + 1),
+    which on random eight-point hulls measures up to about 1.3 degrees, and the search
+    polygons are only a few degrees across, so this is not a rounding-level concern. It
+    goes on the M3 validation list: a systematic offset between the port's search polygons
+    and version 1's is what it would look like in a track comparison.
+
+    One half of the same question IS settled. MATLAB passes `'simplify',true`, which drops
+    collinear points from the hull, and scipy drops them too; `test_the_hull_drops_
+    collinear_points` measures that rather than assuming it.
+
     The original wraps `convhull` in a try and falls back to a seven-point diamond built
     from the wave's extreme latitudes when it fails.
     """
@@ -353,7 +367,7 @@ def associate_step(tracks, states, waves, step, u_median, v_median, exclusive=Fa
     return tracks, states
 
 
-def prune_stale_tracks(tracks, states, step, now,
+def prune_stale_tracks(tracks, states, step, now, waves,
                        lifetime_steps=LIFETIME_STEPS, recent_days=RECENT_DAYS):
     """The in-loop lifetime prune, from lines 441-466.
 
@@ -364,9 +378,21 @@ def prune_stale_tracks(tracks, states, step, now,
     on observation COUNT and on RECENCY, not on the span between first and last
     observation, and a track pruned here never reaches the speed filter at all.
 
+    `waves` IS REQUIRED, and it is the whole reason this signature is not simpler. Version
+    1's no-wave paths are `continue` statements in the middle of the timestep loop, and
+    that loop does not close until line 467, AFTER this prune at 441-466. So a `continue`
+    skips the prune along with the association. Reproducing the skip in `associate_step`
+    alone is not enough: a caller that pruned on every step would still diverge, because
+    version 1 does not prune on a wave-free one, and at the end of a run that is the
+    difference between a short stale track reaching the speed filter and never getting
+    there. Passing the same wave list both functions saw is what keeps the pair honest,
+    and it has no default for the same reason `days_since_1900` has no default epoch.
+
     `now` is the current timestep's time in the same units as the track times, which for
     this record is days. Returns the surviving tracks and their states.
     """
+    if not waves:
+        return tracks, states
     if step + 1 < lifetime_steps:
         # `ct_time` counts timesteps from one, so the prune starts at the eighth.
         return tracks, states
