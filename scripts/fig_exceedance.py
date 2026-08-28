@@ -61,9 +61,12 @@ def main():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    plt.rcParams.update({"axes.unicode_minus": False})
     fig, ax = plt.subplots(figsize=(7, 5))
-    ax.plot(nd, np.linspace(0, 1, nd.size), color="tab:blue", label=f"{Q} (n={nd.size})")
-    ax.plot(dv, np.linspace(0, 1, dv.size), color="tab:red", label=f"{A} (n={dv.size})")
+    ax.plot(nd, np.linspace(0, 1, nd.size), color="tab:blue", lw=1.8,
+            label=f"{Q} (n={nd.size})")
+    ax.plot(dv, np.linspace(0, 1, dv.size), color="tab:red", lw=1.8, ls="--",
+            label=f"{A} (n={dv.size})")
     ax.axvline(thr, color="k", lw=1, ls="--")
     # Low on the axis, in the clear space below both curves. At the threshold the two
     # cumulative curves sit near 0.65 and 0.75 by construction (they are 1 minus the
@@ -79,7 +82,6 @@ def main():
             transform=ax.transAxes, fontsize=9, va="top")
     ax.set_xlabel("700 hPa RH along the inflow, 72 h prior to trough passage (%)")
     ax.set_ylabel("cumulative fraction of troughs")
-    ax.set_title("Inflow-moisture distributions, 1983-2007")
     ax.legend(fontsize=9, loc="lower right")
     ax.grid(alpha=0.3)
     fig.tight_layout()

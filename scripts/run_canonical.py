@@ -100,7 +100,7 @@ def main():
     # PROMOTE the regenerated images into docs/paper/figures before checking. The
     # scripts above write to ~/Downloads and the REPO copy is what the PDF embeds, so
     # without this the sequence could finish green over stale repo figures: exactly the
-    # gap was found still open on 2026-07-25 after the previous round
+    # gap was found still open on 2026-07-25 after an earlier change
     # moved figure regeneration into this driver. The builders own copy_figure(), so
     # running them here is the promotion.
     run("promote_paper", [PY_, "tools/build_pandoc_paper.py"])

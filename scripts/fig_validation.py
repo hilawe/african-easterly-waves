@@ -41,8 +41,16 @@ def main():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig = plt.figure(figsize=(12.5, 6.2))
-    gs = fig.add_gridspec(2, 2, width_ratios=[1.0, 1.25], hspace=0.42, wspace=0.22)
+    # Axis-name and tick-label sizes taken from the alternate styling pass, applied to
+    # this (original-layout) figure. Panel titles are set to 16 individually below.
+    plt.rcParams.update({
+        "axes.labelsize": 14.5,
+        "xtick.labelsize": 14.5,
+        "ytick.labelsize": 14.5,
+    })
+
+    fig = plt.figure(figsize=(12.5, 8.2))
+    gs = fig.add_gridspec(2, 2, width_ratios=[1.0, 1.25], hspace=0.70, wspace=0.24)
     axa = fig.add_subplot(gs[:, 0])
     axb = fig.add_subplot(gs[0, 1])
     axc = fig.add_subplot(gs[1, 1])
@@ -54,7 +62,7 @@ def main():
               title=None, shaded_label="MCS count anomaly", ax=axa)
     axa.set_title("Published composite reproduced\n"
                   f"{int(pa['n_dates'])} base dates, threshold "
-                  f"{float(pa['thr']):.5f} m/s", fontsize=10)
+                  f"{float(pa['thr']):.5f} m/s", fontsize=16, pad=14)
     panel_label(axa, "a", 20)
 
     # ---- (b) the wave series rebuilt from public ERA5 ----
@@ -71,10 +79,8 @@ def main():
     import matplotlib.dates as mdates
     axb.xaxis.set_major_locator(mdates.MonthLocator())
     axb.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
-    axb.tick_params(axis="x", labelsize=7.5)
-    axb.set_title(f"Wave series from public data, full-record "
-                  f"r = {float(pb['r']):.2f} (n = {int(pb['n'])}; JAS 2000 shown)",
-                  fontsize=10)
+    axb.tick_params(axis="x", labelsize=14.5)
+    axb.set_title("ERA5 and ERA-Interim wave series", fontsize=16)
     panel_label(axb, "b", 20)
 
     # ---- (c) the open tracker against the legacy record, 12 JAS months ----
@@ -88,15 +94,15 @@ def main():
     axc.plot(x, rh, "s:", color="tab:blue", alpha=0.8,
              label=f"Huang et al. (2018), full grid (mean {np.nanmean(rh):.2f})")
     axc.set_xticks(x)
-    axc.set_xticklabels(pc["ym"], rotation=55, fontsize=7)
+    axc.set_xticklabels(pc["ym"], rotation=55, fontsize=14.5)
     axc.set_ylabel("pattern r vs legacy record")
     axc.set_ylim(0.55, 1.0)
     axc.legend(fontsize=7.5, loc="lower left")
     axc.grid(alpha=0.3)
-    axc.set_title("Open GridSat-B1 tracker vs legacy ISCCP record", fontsize=10)
+    axc.set_title("Open GridSat-B1 tracker vs legacy ISCCP record (by month)",
+                  fontsize=16, pad=18)
     panel_label(axc, "c", 20)
 
-    fig.suptitle("Pipeline validation", fontsize=12, color=CHAR)
     fig.savefig(a.out, dpi=300, bbox_inches="tight")
     print("wrote", a.out)
 

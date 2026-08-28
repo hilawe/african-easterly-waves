@@ -318,38 +318,49 @@ def main():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
+    plt.rcParams.update({
+        "axes.unicode_minus": False,
+        "font.size": 15,
+        "axes.titlesize": 16,
+        "axes.labelsize": 15,
+        "xtick.labelsize": 15,
+        "ytick.labelsize": 15,
+        "legend.fontsize": 15,
+    })
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 6.5))
 
     colors = {"eastern Sahel": "tab:red", "central": "tab:green", "west": "tab:blue"}
+    styles = {"eastern Sahel": "-", "central": "--", "west": ":"}
+    markers = {"eastern Sahel": "o", "central": "s", "west": "^"}
     for name in ("eastern Sahel", "central", "west"):
         if name in rep_curves:
             lh, R, lam = rep_curves[name]
-            ax1.plot(lh, R, color=colors[name], label=f"{name} ({lam:.0f}E)")
-    ax1.axvline(0, color="k", lw=0.8)
-    ax1.axhline(0, color="k", lw=0.4)
+            ax1.plot(lh, R, color=colors[name], lw=2.2,
+                     label=f"{name.title()} ({lam:.0f}E)")
+    ax1.axvline(0, color="k", lw=1.2, zorder=0.5)
+    ax1.axhline(0, color="k", lw=1.2, zorder=0.5)
     ax1.set_xlabel("lag of convection relative to trough (h; + = convection later)")
     ax1.set_ylabel("band-passed cross-correlation")
     ax1.set_title("AEW trough vs convection lead-lag (2-6 day band)")
-    panel_label(ax1, "a", 24)
-    ax1.legend(fontsize=8); ax1.grid(alpha=0.3)
+    panel_label(ax1, "a", 16)
+    ax1.legend(fontsize=15, loc="upper right", framealpha=0.9); ax1.grid(alpha=0.3)
 
-    ax2.axhline(0, color="k", lw=0.8)
+    ax2.axhline(0, color="k", lw=1.2, zorder=0.5)
     rel = r_at_peak >= R_MIN
     ax2.fill_between(meridians[rel], (peak_h - peak_sd)[rel], (peak_h + peak_sd)[rel],
                      color="grey", alpha=0.25, label="+/- 1 sigma across years")
-    ax2.plot(meridians[rel], peak_h[rel], "o-", color="tab:purple",
-             label=f"reliable (R>={R_MIN:.2f})")
+    ax2.plot(meridians[rel], peak_h[rel], "o-", color="tab:purple", lw=2.2,
+             ms=6, label=f"Reliable (R >= {R_MIN:.2f})")
     if (~rel).any():
         ax2.plot(meridians[~rel], peak_h[~rel], "x", color="lightgrey",
                  label="wave too weak")
-    ax2.set_ylim(-36, 36)
+    ax2.set_ylim(-24, 6)
+    ax2.set_yticks([-24, -18, -12, -6, 0, 6])
     ax2.set_xlabel("longitude (deg E)")
     ax2.set_ylabel("peak lag (h); + = wave leads, - = convection leads")
     ax2.set_title("Lead-lag along the corridor")
-    panel_label(ax2, "b", 24)
-    ax2.text(0.02, 0.04, "above 0: wave leads convection\nbelow 0: convection leads wave",
-             transform=ax2.transAxes, fontsize=8, va="bottom")
-    ax2.legend(fontsize=8); ax2.grid(alpha=0.3)
+    panel_label(ax2, "b", 16)
+    ax2.legend(fontsize=15); ax2.grid(alpha=0.3)
 
     fig.tight_layout(); fig.savefig(a.out, dpi=150)
     print("\nwrote", a.out)

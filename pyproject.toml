@@ -16,6 +16,10 @@ dependencies = [
   "pandas>=2.0",
   "netCDF4>=1.6",
   "cftime>=1.6",
+  # aew.v1port.detection contours the advection field with contourpy. It arrives as a
+  # matplotlib transitive in most environments, which is exactly why it has to be declared:
+  # a public clone that installs only the core would resolve it privately or not at all.
+  "contourpy>=1.0",
 ]
 
 [project.optional-dependencies]

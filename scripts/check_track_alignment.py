@@ -112,18 +112,21 @@ def main():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    plt.rcParams.update({"axes.unicode_minus": False})
     fig, ax = plt.subplots(figsize=(7, 4.6))
-    ax.axvline(0, color="k", lw=0.8, ls="--")
-    ax.plot(off_deg, prof * 1e6, "o-", color="#5e3c99")
-    ax.axvline(centroid, color="#e08214", lw=1.2)
+    ax.axvline(0, color="k", lw=0.8, ls="--", zorder=0.5)
+    ax.axvline(centroid, color="#e08214", lw=1.2, zorder=0.5)
+    ax.plot(off_deg, prof * 1e6, "o-", color="#5e3c99", zorder=3)
     ax.text(0.02, 0.97,
+            f"n={n_matched:,}\n"
             f"peak {off_deg[ipk]:+.1f} deg\n"
             f"positive-lobe centroid {centroid:+.2f} deg\n"
             f"median per-trough argmax {med_argmax:+.1f} deg",
             transform=ax.transAxes, fontsize=8.5, va="top", color="#333333")
     ax.set_xlabel("longitude offset from the AEWC trough center (deg)")
-    ax.set_ylabel("mean ERA5 700 hPa curvature vorticity (1e-6 s$^{-1}$)")
-    ax.set_title(f"Cross-reanalysis alignment ({n_matched} trough observations)")
+    ax.set_ylabel("mean ERA5 700 hPa curvature vorticity "
+                  r"($10^{-6}$ s$^{-1}$)")
+    ax.set_title("Cross-reanalysis alignment")
     ax.grid(alpha=0.3)
     fig.tight_layout()
     fig.savefig(a.out, dpi=300)

@@ -126,6 +126,18 @@ def hovmoller(
 
     cb = fig.colorbar(cf, ax=ax, orientation="horizontal", pad=0.09,
                       fraction=0.05, aspect=40)
+    # Round-number colorbar ticks. The default locator on a data-derived symmetric range
+    # labels the bar at the maximum divided into thirds (e.g. -161.4, -107.6, -53.8),
+    # which reads as arbitrary. Pick the smallest step from the round-number family that
+    # gives at most three labeled intervals per side, so a ~161 range prints -150..150
+    # in steps of 50.
+    _amax = float(np.nanmax(np.abs(shaded)))
+    if np.isfinite(_amax) and _amax > 0:
+        _nice = np.array([0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250, 500,
+                          1000, 2500, 5000, 10000], dtype=float)
+        _step = float(_nice[int(np.argmax(np.floor(_amax / _nice) <= 3))])
+        _tmax = np.floor(_amax / _step) * _step
+        cb.set_ticks(np.arange(-_tmax, _tmax + _step * 0.5, _step))
     cb.set_label(shaded_label)
 
     if provenance:

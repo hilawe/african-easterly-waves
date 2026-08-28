@@ -114,37 +114,50 @@ def main():
     import matplotlib.pyplot as plt
     from aew.plotting import panel_label
 
-    lab_all = f"all first cold-cloud detections (n={len(allg)})"
-    lab_deep = f"already deep (<200 K) at first detection (n={len(deep)})"
-    fig, (axa, axb) = plt.subplots(1, 2, figsize=(12, 5))
+    plt.rcParams.update({
+        "axes.unicode_minus": False,
+        "font.size": 14,
+        "axes.titlesize": 14,
+        "axes.labelsize": 14,
+        "xtick.labelsize": 14,
+        "ytick.labelsize": 14,
+        "legend.fontsize": 14,
+    })
+
+    lab_all = f"All detections (n={len(allg):,})"
+    lab_deep = f"Already deep (<200 K) at detection (n={len(deep):,})"
+    fig, (axa, axb) = plt.subplots(1, 2, figsize=(12, 5.8))
 
     # (a) where first detections fall, in counts. The two curves are NOT comparable
     # for shape here, only for how many detections each set contributes.
-    axa.plot(REL_C, obs["all"], color="tab:red", label=lab_all)
-    axa.plot(REL_C, obs["deep_at_detection"], color="tab:purple", label=lab_deep)
-    axa.axvline(0, color="green", lw=2)
+    axa.axvline(0, color="green", lw=1.5, zorder=0.5)
+    axa.plot(REL_C, obs["all"], color="tab:red", lw=2.0, zorder=3, label=lab_all)
+    axa.plot(REL_C, obs["deep_at_detection"], color="tab:purple", lw=2.0,
+             ls="--", zorder=3, label=lab_deep)
     axa.set_xlabel("Longitude relative to trough (deg; east positive)")
     axa.set_ylabel("first-detection count, 5-15N mean")
     axa.set_title("Where first detections fall (counts)")
-    axa.legend(fontsize=8)
     axa.grid(alpha=0.3)
-    panel_label(axa, "a", 17)
+    panel_label(axa, "a", 15)
 
     # (b) the shape comparison, each curve normalized by its own total so the
     # born-deep subset's smaller sample does not read as a narrower distribution
     for k, c, lab in (("all", "tab:red", lab_all),
                       ("deep_at_detection", "tab:purple", lab_deep)):
         f = obs[k] / obs[k].sum()
-        axb.plot(REL_C, 100.0 * f, color=c, label=lab)
-    axb.axvline(0, color="green", lw=2)
+        axb.plot(REL_C, 100.0 * f, color=c, lw=2.0,
+                 ls="--" if k == "deep_at_detection" else "-", zorder=3, label=lab)
+    axb.axvline(0, color="green", lw=1.5, zorder=0.5)
     axb.set_xlabel("Longitude relative to trough (deg; east positive)")
-    axb.set_ylabel("share of the set's binned trough matches (% per 2-deg bin)")
+    axb.set_ylabel("Share of binned matches (% per 2-deg bin)")
     axb.set_title("Each curve normalized by its own binned total")
-    axb.legend(fontsize=8)
     axb.grid(alpha=0.3)
-    panel_label(axb, "b", 17)
+    panel_label(axb, "b", 15)
 
-    fig.tight_layout()
+    handles, labels = axb.get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=2, frameon=False,
+               fontsize=14, bbox_to_anchor=(0.5, 0.01))
+    fig.tight_layout(rect=(0, 0.10, 1, 1), w_pad=2.0)
     fig.savefig(a.out, dpi=150)
     print("wrote", a.out)
 

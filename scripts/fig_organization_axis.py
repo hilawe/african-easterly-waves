@@ -38,13 +38,13 @@ def panel(ax, rows, labels, color, unit, title):
     d = [r["diff"] for r in rows]
     lo = [r["diff"] - r.ci_lo for r in rows]
     hi = [r.ci_hi - r["diff"] for r in rows]
-    ax.axhline(0, color="k", lw=0.8)
+    ax.axhline(0, color="k", lw=1.2)
     ax.errorbar(x, d, yerr=[lo, hi], fmt="o-", color=color, ms=6, lw=1.6,
-                elinewidth=1.1, capsize=3)
+                elinewidth=1.5, capsize=3)
     ax.set_xticks(x)
-    ax.set_xticklabels(labels, fontsize=8.5)
+    ax.set_xticklabels(labels, fontsize=13)
     ax.set_ylabel(f"MCS-active minus MCS-quiet ({unit})")
-    ax.set_title(title, fontsize=10)
+    ax.set_title(title, fontsize=13)
     ax.grid(alpha=0.25, axis="y")
 
 
@@ -60,25 +60,32 @@ def main():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.4))
+    plt.rcParams.update({
+        "axes.unicode_minus": False,
+        "font.size": 13,
+        "axes.titlesize": 13,
+        "axes.labelsize": 13,
+        "xtick.labelsize": 13,
+        "ytick.labelsize": 13,
+    })
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.8))
     shear = [get(df, a.tier, None, "shear_box"),
              get(df, a.tier, None, "shear_box_L-5"),
              get(df, a.tier, None, "shear_box_L-8"),
              get(df, a.tier, None, "shear_wave_level")]
     panel(ax1, shear, ["meridian\nbox", "box at\nL-5", "box at\nL-8", "wave\nlevel"],
-          C_SHEAR, "m/s", "600-925 hPa shear, shrinks upstream and is unresolved at wave level")
-    panel_label(ax1, "a", 20)
+          C_SHEAR, "m/s", "600-925 hPa shear contrast")
+    panel_label(ax1, "a", 14)
     moist = [get(df, a.tier, 700, "eulerian_box", -24),
              get(df, a.tier, 700, "lagrangian_rh", -48),
              get(df, a.tier, 700, "lagrangian_rh", -72),
              get(df, a.tier, 700, "lagrangian_rh_wave_level", -72)]
     panel(ax2, moist, ["meridian\nbox (-24 h)", "inflow\nat -48 h", "inflow\nat -72 h",
                        "wave\nlevel"],
-          C_MOIST, "%", "700 hPa moisture, grows along the inflow and survives")
-    panel_label(ax2, "b", 20)
-    fig.suptitle("The shear control against the moisture contrast, 1983-2007",
-                 fontsize=11)
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
+          C_MOIST, "%", "700 hPa moisture contrast")
+    panel_label(ax2, "b", 14)
+    fig.tight_layout()
     fig.savefig(a.out, dpi=300)
     print("wrote", a.out)
 

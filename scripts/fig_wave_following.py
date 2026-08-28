@@ -177,6 +177,14 @@ def main():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    plt.rcParams.update({
+        "axes.unicode_minus": False,
+        "font.size": 10.5,
+        "axes.labelsize": 10.5,
+        "xtick.labelsize": 10.5,
+        "ytick.labelsize": 10.5,
+        "legend.fontsize": 10.5,
+    })
     from mpl_toolkits.axes_grid1 import make_axes_locatable
     fig, (ax1, ax2, ax3) = plt.subplots(
         3, 1, figsize=(8, 11), sharex=True, gridspec_kw={"height_ratios": [1.5, 1, 1]})
@@ -192,11 +200,11 @@ def main():
     levels = np.arange(-vmax, vmax + fill_step * 0.5, fill_step)
     ticks = np.arange(-tmax, tmax + tick_step * 0.5, tick_step)
     pc = ax1.contourf(rel_c, lat_c, anom, levels=levels, cmap="RdBu_r", extend="both")
-    ax1.axvline(0, color="green", lw=2)
+    ax1.axvline(0, color="green", lw=1.5, zorder=3)   # above the filled contours
     ax1.set_ylabel("Latitude (N)")
     ax1.set_title("MCS excess over the anchor-permutation null, "
                   "relative to the moving AEW trough")
-    panel_label(ax1, "a", 15)
+    panel_label(ax1, "a", 12)
     cax = make_axes_locatable(ax1).append_axes("right", size="3%", pad=0.15)
     fig.colorbar(pc, cax=cax, label="MCS count minus null mean", ticks=ticks)
     make_axes_locatable(ax2).append_axes("right", size="3%", pad=0.15).set_axis_off()
@@ -206,23 +214,26 @@ def main():
     r = tests["all"]
     ax2.fill_between(rel_c, r["point_lo"], r["point_hi"], color="grey", alpha=0.25,
                      label="null 2.5-97.5% pointwise envelope")
-    ax2.axhline(r["simult_half_width"], color="grey", lw=0.9, ls="--",
-                label="simultaneous 95% half-width")
-    ax2.axhline(-r["simult_half_width"], color="grey", lw=0.9, ls="--")
-    ax2.plot(rel_c, r["excess"], color="tab:red", label="observed minus null mean")
-    ax2.axvline(0, color="green", lw=2)
-    ax2.axhline(0, color="k", lw=0.6)
+    ax2.axhline(r["simult_half_width"], color="grey", lw=1.2, ls="--",
+                label="Simultaneous 95% bound")
+    ax2.axhline(-r["simult_half_width"], color="grey", lw=1.2, ls="--")
+    ax2.plot(rel_c, r["excess"], color="tab:red", lw=1.8, zorder=3,
+             label="Observed excess")
+    ax2.axvline(0, color="green", lw=1.5, zorder=0.5)
+    ax2.axhline(0, color="k", lw=1.0)
     ax2.set_ylabel("MCS excess, 5-15N mean")
     ax2.set_title(f"All troughs  (peak {r['peak_excess']:.0f} at "
                   f"{r['peak_rel_lon']:+.0f} deg, ratio {r['peak_ratio']:.2f}, "
                   f"p = {r['p_value']:.3g})", fontsize=10)
-    panel_label(ax2, "b", 15)
+    panel_label(ax2, "b", 12)
     # Same treatment as panel (c): the excess peak sits just left of centre and reached
     # into a "best"-placed legend. Headroom plus a fixed upper-right corner, with the
     # upper left reserved for the panel label.
     _lo2, _hi2 = ax2.get_ylim()
     ax2.set_ylim(_lo2, _hi2 + 0.45 * (_hi2 - _lo2))
-    ax2.legend(fontsize=8, loc="upper right", framealpha=0.9)
+    handles, labels = ax2.get_legend_handles_labels()
+    labels[0] = "Pointwise 95% envelope"
+    ax2.legend(handles, labels, fontsize=10.5, loc="upper right", framealpha=0.9)
     ax2.grid(alpha=0.3)
 
     # (c) tercile split under the same assignment matrix; the weak tercile's pointwise
@@ -233,31 +244,30 @@ def main():
     ax3.fill_between(rel_c, rs["point_lo"], rs["point_hi"], color="tab:red",
                      alpha=0.12)
     for rr, col in ((rw, "tab:blue"), (rs, "tab:red")):
-        ax3.axhline(rr["simult_half_width"], color=col, lw=0.8, ls="--", alpha=0.7)
-        ax3.axhline(-rr["simult_half_width"], color=col, lw=0.8, ls="--", alpha=0.7)
-    ax3.plot(rel_c, rw["excess"], color="tab:blue",
-             label=f"weak-amplitude troughs (n={int(masks['weak'].sum())}, "
-                   f"peak {rw['peak_excess']:.0f}, p = {rw['p_value']:.3g})")
-    ax3.plot(rel_c, rs["excess"], color="tab:red",
-             label=f"strong-amplitude troughs (n={int(masks['strong'].sum())}, "
-                   f"peak {rs['peak_excess']:.0f}, p = {rs['p_value']:.3g})")
-    ax3.axvline(0, color="green", lw=2)
-    ax3.axhline(0, color="k", lw=0.6)
+        ax3.axhline(rr["simult_half_width"], color=col, lw=1.2, ls="--", alpha=0.7)
+        ax3.axhline(-rr["simult_half_width"], color=col, lw=1.2, ls="--", alpha=0.7)
+    ax3.plot(rel_c, rw["excess"], color="tab:blue", lw=1.8, zorder=3,
+             label=f"Weak amplitude (n={int(masks['weak'].sum()):,})")
+    ax3.plot(rel_c, rs["excess"], color="tab:red", lw=1.8, ls="--", zorder=3,
+             label=f"Strong amplitude (n={int(masks['strong'].sum()):,})")
+    ax3.axvline(0, color="green", lw=1.5, zorder=0.5)
+    ax3.axhline(0, color="k", lw=1.0)
     ax3.set_xlabel("Longitude relative to trough (deg; east positive)")
     ax3.set_ylabel("MCS excess, 5-15N mean")
     ax3.set_title("Stratified by wave amplitude (curvature-vorticity terciles)",
                   fontsize=10)
-    panel_label(ax3, "c", 15)
+    panel_label(ax3, "c", 12)
     # Headroom first, then a fixed corner. loc="best" put this legend on the central
     # excess peak, which is the one part of the panel a reader needs to see. Adding
     # headroom rather than shrinking the legend keeps the curves at full size, and the
     # upper RIGHT corner is used because the panel label owns the upper left.
     _lo3, _hi3 = ax3.get_ylim()
     ax3.set_ylim(_lo3, _hi3 + 0.45 * (_hi3 - _lo3))
-    ax3.legend(fontsize=8, loc="upper right", framealpha=0.9)
+    handles, labels = ax3.get_legend_handles_labels()
+    labels[0] = "Pointwise 95% envelopes"
+    ax3.legend(handles, labels, fontsize=10.5, loc="upper right", framealpha=0.9)
     ax3.grid(alpha=0.3)
 
-    fig.suptitle(f"Wave-following composite  ({n} trough obs, JAS)", fontsize=12)
     fig.tight_layout()
     fig.savefig(a.out, dpi=150)
     print("wrote", a.out)

@@ -34,13 +34,24 @@ def main():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 4.6),
+    plt.rcParams.update({
+        "axes.unicode_minus": False,
+        "font.size": 13.5,
+        "axes.titlesize": 13.5,
+        "axes.labelsize": 13.5,
+        "xtick.labelsize": 13.5,
+        "ytick.labelsize": 13.5,
+        "legend.fontsize": 13.5,
+    })
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 5.4),
                                    gridspec_kw={"width_ratios": [1.05, 1.0]})
 
     # panel a: the control ladder for the inflow-moisture IRR
     y = np.arange(len(lad))[::-1]
-    ax1.axvline(1.0, color="k", lw=0.8, ls="--")
+    ax1.axvline(1.0, color="k", lw=1.2, ls="--")
     for yi, (_, r) in zip(y, lad.iterrows()):
         sig = r.pvalue < 0.05
         col = "#5e3c99" if sig else "#999999"
@@ -48,17 +59,22 @@ def main():
                  solid_capstyle="round")
         ax1.plot(r.irr, yi, "o", color=col, ms=7)
     ax1.set_yticks(y)
-    ax1.set_yticklabels(lad.step, fontsize=9)
-    ax1.set_xlabel("inflow-moisture incidence-rate ratio per standard deviation")
-    ax1.set_title("Moisture effect as controls are added", fontsize=10)
-    panel_label(ax1, "a", 21)
+    ax1.set_yticklabels(lad.step, fontsize=13.5)
+    ax1.set_title("Moisture effect by adjustment", fontsize=13.5)
+    ax1.text(0.97, 0.96, "(a)", transform=ax1.transAxes, fontsize=15,
+             fontweight="bold", va="top", ha="right",
+             bbox=dict(boxstyle="round,pad=0.15", facecolor="white",
+                       alpha=0.75, edgecolor="none"))
+    ax1.set_xlabel("inflow-moisture incidence-rate ratio\nper standard deviation",
+                   fontsize=13.5)
+    ax1.set_ylim(-0.6, len(lad) - 1 + 0.85)
     ax1.grid(alpha=0.25, axis="x")
 
     # panel b: the full standardized panel
     order = ["antecedent", "amplitude", "tcwv", "inflow_rh", "shear"]
     pan = pan.set_index("predictor").loc[order].reset_index()
     yb = np.arange(len(pan))[::-1]
-    ax2.axvline(1.0, color="k", lw=0.8, ls="--")
+    ax2.axvline(1.0, color="k", lw=1.2, ls="--")
     for yi, (_, r) in zip(yb, pan.iterrows()):
         sig = r.pvalue < 0.05
         col = "#1b7837" if sig else "#999999"
@@ -66,15 +82,30 @@ def main():
                  solid_capstyle="round")
         ax2.plot(r.irr, yi, "o", color=col, ms=7)
     ax2.set_yticks(yb)
-    ax2.set_yticklabels([LABELS[p] for p in pan.predictor], fontsize=9)
-    ax2.set_xlabel("incidence-rate ratio per standard deviation")
-    ax2.set_title("Full standardized panel (pooled)", fontsize=10)
-    panel_label(ax2, "b", 21)
+    ax2.set_yticklabels([LABELS[p] for p in pan.predictor], fontsize=13.5)
+    ax2.set_title("Pooled predictor effects", fontsize=13.5)
+    ax2.text(0.97, 0.96, "(b)", transform=ax2.transAxes, fontsize=15,
+             fontweight="bold", va="top", ha="right",
+             bbox=dict(boxstyle="round,pad=0.15", facecolor="white",
+                       alpha=0.75, edgecolor="none"))
+    ax2.set_xlabel("incidence-rate ratio\nper standard deviation", fontsize=13.5)
+    ax2.set_ylim(-0.6, len(pan) - 1 + 0.85)
     ax2.grid(alpha=0.25, axis="x")
 
-    fig.suptitle("Regime control model for the moisture-conditioning claim, 1983-2007",
-                 fontsize=11)
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    # Every colour the figure uses is named. Panel (a) marks a resolved moisture
+    # effect in purple and panel (b) a resolved predictor in green, so a two-entry
+    # "coloured vs gray" key left the green unexplained.
+    key = [
+        Line2D([0], [0], color="#5e3c99", marker="o", lw=2.2,
+               label="(a) moisture effect, p < 0.05"),
+        Line2D([0], [0], color="#1b7837", marker="o", lw=2.2,
+               label="(b) predictor effect, p < 0.05"),
+        Line2D([0], [0], color="#999999", marker="o", lw=2.2,
+               label="p >= 0.05 (either panel)"),
+    ]
+    fig.legend(handles=key, loc="lower center", ncol=3, frameon=False,
+               bbox_to_anchor=(0.5, 0.005), fontsize=13.5)
+    fig.tight_layout(rect=(0, 0.12, 1, 0.98))
     fig.savefig(a.out, dpi=300)
     print("wrote", a.out)
 
