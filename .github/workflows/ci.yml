@@ -1,0 +1,89 @@
+# This file is copied to .github/workflows/ci.yml by the project's export script.
+# Edit it in the source repository, never in the published one.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor declared in pyproject (requires-python >= 3.10) and a current
+        # release. Testing only one would let the declared floor rot untested.
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      # A CLEAN INSTALL FROM THE DECLARED METADATA, which is the whole point of this
+      # workflow. The author's machine has a virtual environment accumulated over the
+      # life of the project, so a dependency that is undeclared but present there
+      # passes locally and cannot resolve for anyone who clones this repository. Only
+      # an install that starts from nothing can tell the two apart, so this deliberately
+      # does NOT use requirements-lock.txt: the lock file records the exact environment
+      # that produced the published record, while this checks that the declared ranges
+      # are sufficient on their own.
+      - name: Install from declared dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[plot,stats,dev]"
+
+      - name: Run the suite
+        run: pytest -q
+
+  # A separate job, because "the package installs with no extras" is a different claim
+  # from "the suite passes", and the first is the one a library consumer depends on.
+  # The core install is what a reader gets from `pip install .`, and the tracker has to
+  # import under it: an earlier defect had the association stage importing matplotlib
+  # inside its matching loop, which would have failed part-way through a first run for
+  # anyone who installed only the core.
+  core-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install the core only
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+      - name: Import every library module under the core install
+        # Run from a directory that is not the checkout, so this imports the INSTALLED
+        # package rather than the source tree sitting in the working directory.
+        run: |
+          mkdir -p /tmp/not-the-checkout
+          cd /tmp/not-the-checkout
+          python -c "
+          import importlib, pkgutil, sys
+          import aew.v1port
+          failed = []
+          for module in pkgutil.walk_packages(aew.v1port.__path__, 'aew.v1port.'):
+              try:
+                  importlib.import_module(module.name)
+              except Exception as exc:
+                  failed.append(f'{module.name}: {exc}')
+          if failed:
+              print('modules that do not import under a core install:')
+              print('\n'.join(failed))
+              sys.exit(1)
+          print('every aew.v1port module imports under a core install')
+          "
