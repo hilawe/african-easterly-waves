@@ -144,6 +144,16 @@ def _reject(msgs, needle):
     assert any(needle in m for m in msgs), f"expected {needle!r} among {msgs}"
 
 
+def _reject_all(msgs, *needles):
+    """One refusal message carrying all of `needles`.
+
+    Separate from `_reject` because a check spread across two messages would pass
+    while the guard named the wrong column for the wrong reason.
+    """
+    assert any(all(n in m for n in needles) for m in msgs), \
+        f"expected one message with all of {needles}, among {msgs}"
+
+
 # ---------------------------------------------------------------- accepting rows
 # The predicate table's accepting rows. A guard that refuses these is a guard that
 # gets bypassed, which is worse than no guard at all.
@@ -748,7 +758,13 @@ def test_string_typed_year_is_rejected(deposit):
     # a CSV round-trip parses it back to int, so the defect needs the frame directly
     ok, msgs = validate_design_cache(bad, cache, str(tmp))
     assert not ok
-    _reject(msgs, "year is str, not a numeric column")
+    # THE DTYPE'S SPELLING IS PANDAS-VERSION-DEPENDENT and is not what this test is
+    # about. A string column reports `object` on the pandas that resolves for Python
+    # 3.10 and `str` on newer releases, so pinning the word made the suite pass on the
+    # author's environment and fail on the declared floor. Public CI caught it on its
+    # first run. What the guard actually claims is the column and the reason, so bind
+    # those and let the interpolated dtype vary.
+    _reject_all(msgs, "year", "not a numeric column")
 
 
 def test_longitude_below_deposited_precision_is_an_ACCEPTED_residual(deposit):
