@@ -6,7 +6,7 @@ AEW Hovmoller analysis the "points" are individual convective systems located at
 ``z`` is usually an array of ones so the binned sum is a count.
 
 Two variants, because the published figures and the legacy code use different ones
-and we need to compare them (see docs/VALIDATION_TARGETS.md, the bin_sum hazard):
+and we need to compare them (note the bin_sum hazard):
 
 - ``variant="fixed"``  -> DATABINSUM3, the corrected Fortran routine (bindata_ncl.f)
   that the Hovmoller scripts actually call via ``bin_sum_so``. It bounds-checks each

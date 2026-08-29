@@ -11,8 +11,8 @@ Seasons: 1988, 1995, 2000, 2005, 2006, 2010, 2015, 2020, 2022 (nine, spanning
 the archives' overlap; 2006 included as a season with a known Ethiopian
 Highlands origin case in the literature). Both archives' files hold exactly
 the June-October window (612 six-hourly steps), which is asserted per file.
-All 18 input files are pinned by SHA-256. Every value published in
-docs/aewc_v2/EAST_CHECK_MULTISEASON.md, per-season table rows included, is
+All 18 input files are pinned by SHA-256. Every value this check publishes,
+per-season table rows included, is
 asserted against the EXPECTED_ROWS block, and the 2005 TRACK metrics are
 additionally bound to the reviewed pilot values (the object-layer metrics are
 new here and have no pilot counterpart).

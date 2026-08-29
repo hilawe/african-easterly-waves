@@ -16,7 +16,7 @@ This adapter flattens to one row per valid (track, time) cloud-system point -- t
 the equivalent radius R = sqrt(area/pi) and attaching track_id and duration. Apply the
 ISCCP-style size cut (e.g. 90 km radius) via ``min_radius_km``.
 
-See docs/GRIDSAT_CT_PLAN.md. Tested against a synthetic file shaped like PyFLEXTRKR output.
+Tested against a synthetic file shaped like PyFLEXTRKR output.
 """
 
 from __future__ import annotations

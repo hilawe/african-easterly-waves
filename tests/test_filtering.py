@@ -34,7 +34,7 @@ def test_weights_close_to_ncl_reference():
     # for bit. This is enough to reproduce composite-date COUNTS (peaks above
     # n*sigma are robust to a 0.05% weight change) but NOT to match the printed
     # filtered-v700 thresholds (e.g. 3.26136 m/s) to 6 figures. Bit-exact NCL
-    # parity is deferred to the data-validation stage; see docs/VALIDATION_TARGETS.md.
+    # parity is deferred to the data-validation stage.
     # When exact parity is needed, use NCL-generated weights from tests/data/.
     ref = np.loadtxt(REF)
     w = filwgts_lanczos(61, 2, 0.1, 0.5, 1)

@@ -89,7 +89,7 @@ EXC_PCTL = 70.0
 # Replicate count for every canonical cluster bootstrap. This was left at the
 # cluster_bootstrap_diff default of 2,000 while the manuscript stated 20,000, so the
 # published per-observation intervals did not come from the described procedure
-# (found in round 6). It is named here, passed explicitly, and recorded in
+# (found in checking). It is named here, passed explicitly, and recorded in
 # every contrast row so the two can never drift apart again. Changing it changes the
 # random-stream consumption of every downstream call, so it invalidates the whole
 # deposit and requires a full canonical rerun.
@@ -321,7 +321,7 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp, low_s,
     # STRATIFIED attrition. The aggregate count alone cannot show whether the terrain
     # mask removes cases evenly, and at 850 hPa it does not: the loss concentrates in
     # the eastern highlands and falls harder on MCS-quiet cases, which is why that
-    # level carries a west-of-25E sensitivity (round 6 asked for this ledger).
+    # level carries a west-of-25E sensitivity (this ledger was asked for in checking).
     # dep.point consumes no random numbers, so these rows do not perturb any stream.
     lon_case = tr.lon[sel_idx]
     dep.point(tier, level, "env_lost_east30", -72, "count",
@@ -434,7 +434,7 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp, low_s,
 
     if level == 850:
         # The terrain-safe restriction applied to the THERMODYNAMIC endpoint, which the
-        # route sensitivity above did not cover. Round 6 showed the 850 hPa vapor
+        # route sensitivity above did not cover. Checking showed the 850 hPa vapor
         # excess does not survive it while relative humidity does, so both are deposited
         # rather than left for a reader to assume they behave alike.
         wl = tr.lon[sel_idx] < WEST_LON_CUT
@@ -508,7 +508,7 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp, low_s,
     # The MATCHED-LEAD ratio, against the two Eulerian control boxes read at the same
     # -72 h lead rather than at the -24 h seed box. Figure 6 computed this inline and
     # the prose said "about two", so a published quantity sat outside the registry and
-    # evaded the number audit (round 6). It is derived here, from rows already
+    # evaded the number audit. It is derived here, from rows already
     # deposited, and consumes no random stream.
     ctl = [r for r in dep.rows
            if r["tier"] == tier and r["level"] == level and r["time_rel_h"] == -72
@@ -750,7 +750,7 @@ def main():
                      "terrain_masked_box_fraction", "env_cases_under5_valid",
                      "route_cases_under5_valid", "parcels_lost_fraction",
                      # the stratified ledger, which the export list omitted so it
-                     # reached the registry but not attrition_<tier>.csv (round 7)
+                     # reached the registry but not attrition_<tier>.csv
                      "env_lost_east30", "env_lost_pct_quiet", "env_lost_pct_active")
         att = [r for r in dep.rows
                if r["tier"] == tier and r["statistic"] in att_stats]

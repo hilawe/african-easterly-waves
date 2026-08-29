@@ -128,7 +128,7 @@ def panel(ax, active):
         ax.text(5.35, 3.4, "drier\nmonsoon layer", fontsize=9.2,
                 color="#7f4909", ha="center", va="center", zorder=7)
 
-    # theta-e glyph between the layers, the round-14 wording
+    # theta-e glyph between the layers, the revised wording
     if active:
         ax.add_patch(FancyBboxPatch((1.15, 4.65), 4.3, 0.75,
                                     boxstyle="round,pad=0.12", fc="white", ec=CHAR,

@@ -10,7 +10,7 @@ Reproduces the basepoint composite-date selection from daily-mean ERA5 v700:
 Published target (West Africa 10N/0E, 2 sigma): 272 dates, filtered-v700 threshold
 3.26136 m/s. NOTE: that target is from ERA-Interim; ERA5 will give close but not
 identical numbers (different reanalysis). A count near ~272 and threshold near ~3.3
-confirms the engine; exact match is not expected. See docs/VALIDATION_TARGETS.md.
+confirms the engine; exact match is not expected.
 
 Usage:
     python scripts/validate_basepoint.py --file data/era5/era5_v700_1984-2007_daily.nc

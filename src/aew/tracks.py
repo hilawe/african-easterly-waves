@@ -12,7 +12,7 @@ region filter. It feeds ``aew.composites.hovmoller_event_counts`` (which wants
 
 The original data is not on hand, so the loader is written to the documented layout and
 is exercised in tests against a synthetic dataset. When the real CS/CT (or a substitute
-like TOOCAN / GridSat+PyFLEXTRKR; see docs/DATA_SOURCES.md) is in hand, point the loader
+like TOOCAN / GridSat+PyFLEXTRKR) is in hand, point the loader
 at it and map the variable names.
 """
 

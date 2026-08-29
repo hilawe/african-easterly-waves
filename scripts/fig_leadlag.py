@@ -42,7 +42,7 @@ MAX_LAG = 8              # +/- 8 samples = +/- 48 h (the R6 frozen lag grid)
 PEAK_WIN = 48.0          # the R6 frozen estimator searches the FULL +/-48 h grid
 JAS = (7, 8, 9)
 # Year-block bootstrap replicates. This was 500 while the manuscript stated 20,000
-# for its cluster bootstraps, so the two disagreed (round 6). The lead-lag
+# for its cluster bootstraps, so the two disagreed. The lead-lag
 # resamples YEARS rather than waves, which is a different unit, so the manuscript
 # now says so explicitly; the count is matched here to remove the second discrepancy.
 N_BOOT = 20_000

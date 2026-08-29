@@ -1,4 +1,4 @@
-"""Tests for the common-sample within-between decomposition (round 9).
+"""Tests for the common-sample within-between decomposition.
 
 The model is the formal replacement for the exclusive/mixed cohort comparison, so it
 gets the write-time discipline: a synthetic record with a KNOWN between-wave signal and
@@ -69,7 +69,7 @@ def test_no_planted_signal_resolves_nothing(tmp_path):
 
 
 def test_branched_table_is_refused(tmp_path):
-    # the round-9 defect shape: one wave, two rows at the same timestamp
+    # the defect shape: one wave, two rows at the same timestamp
     d = synth()
     dup = d.iloc[[0]].copy()
     dup["inflow_rh"] += 5.0

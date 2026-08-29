@@ -108,19 +108,19 @@ ALLOW_RES = [re.compile(p) for p in (
     r"\b95\s*percent\b",                                  # the confidence level
     # HYPHENATED adjectival use only ("a 20,000-replicate bootstrap"). The spaced form
     # ("20,000 replicates") is a bare count and must be tagged, because that is exactly
-    # the claim that silently drifted from the code in round 6.
+    # the claim that silently drifted from the code.
     r"\b\d{1,3}(?:,\d{3})*-(?:observation|wave|parcel|season|replicate|draw)s?\b",
     r"\b\d{1,3}(?:,\d{3})*\s(?:observation|wave|parcel|season)s?\b",
     r"\b\d+th\b",                                          # percentile ordinals
     r"\bpart\s+[IVX\d]+\b",
     # Patterns below cover forms that occur mainly in FIGURE CAPTIONS. The lint used to
-    # stop at the first table heading and so never reached them (round 6); they
+    # stop at the first table heading and so never reached them; they
     # are structural or design constants, not estimands.
     r"\b\d+(?:\.\d+)?[-\s]\d+(?:\.\d+)?\s*(?:N|S|E|W)\b",   # "5-15 N" band form
     r"\b\d{2}(?:,\s*\d{2})*(?:,?\s*and\s*\d{2})?\s*UTC\b",   # "00, 06, 12, and 18 UTC"
     r"(?<![\d.])-(?:24|36|48|60|72)(?:,\s*(?:and\s*)?-?(?:24|36|48|60|72))*\s*h\b",
     # replicate and draw counts are NOT allowlisted: they are exactly the class of
-    # claim that drifted from the code in round 6 (manuscript said 20,000, the driver
+    # claim that drifted from the code (manuscript said 20,000, the driver
     # ran 2,000) and an allowlist would let it recur unnoticed. Tag them.
 )]
 
@@ -136,7 +136,7 @@ def lint_untagged(text, skip_headings=("## References",)):
     Only the reference list is excluded. "## Table" used to truncate here too, which
     silently ended the lint at the first table and left EVERY figure caption unchecked,
     since the captions sit after it. That is how "about two" and an untagged 1,000-draw
-    caption reached the manuscript (round 6). Table design constants are covered
+    caption reached the manuscript. Table design constants are covered
     by the allowlist instead of by skipping the rest of the document.
     """
     for h in skip_headings:

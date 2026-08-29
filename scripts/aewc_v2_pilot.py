@@ -12,7 +12,7 @@ intersection of the three records' stated or observed domains. East-of-40E count
 are measured OUTSIDE that common domain and say so. The script is specific to
 season 2005; the input files are pinned by SHA-256.
 
-Every number published in docs/aewc_v2/ARCHIVE_PILOT_2005.md is guarded by a named
+Every number this pilot publishes is guarded by a named
 check in the EXPECTED block or by a named relational check. Checks run through a
 harness that records every outcome, so a mutation reports every failed check
 rather than only the first assertion raised.

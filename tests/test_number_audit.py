@@ -71,7 +71,7 @@ def test_load_canonical_flags_duplicates(tmp_path):
 def test_replicate_count_claim_is_audited():
     """Claiming a replicate count the deposit did not use must fail the audit.
 
-    Round 6 found the manuscript claiming 20,000 bootstrap replicates while the driver
+    Checking found the manuscript claiming 20,000 bootstrap replicates while the driver
     ran 2,000, and nothing caught it: the count sat in prose with no canonical row, and
     the lint allowlisted bare replicate counts. This pins both halves of that fix.
     """

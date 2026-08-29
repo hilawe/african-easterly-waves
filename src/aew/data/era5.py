@@ -264,8 +264,8 @@ def load_region_6h(var_key, path_glob=None, years=None):
         ts.append(pd.DatetimeIndex(ds[tname].values))
         # VALIDATE rather than overwrite. These were reassigned every iteration with no
         # cross-file check, so equal-shaped but shifted or reversed grids would have
-        # concatenated silently and corrupted every trajectory built on them (round-7
-        # found later). fig_leadlag's loader already checks this; this one did not.
+        # concatenated silently and corrupted every trajectory built on them (found
+        # later, in checking). fig_leadlag's loader already checks this; this one did not.
         lat_i = np.asarray(ds["latitude"].values, float)
         lon_i = np.asarray(ds["longitude"].values, float)
         if lat is None:

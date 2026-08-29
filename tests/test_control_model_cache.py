@@ -1,15 +1,15 @@
 """Failure-injection tests for the control-model design-cache guard.
 
 The guard decides whether a precomputed design matrix may be reused instead of rebuilt.
-Its specification is docs/DESIGN_CACHE_SPEC.md, written before the fourth repair because
+Its specification was written before the fourth repair because
 the unit had been repaired three times and each repair introduced the defect the next
 pass found.
 
-WHY THE PREVIOUS SUITE DID NOT BIND THE BEHAVIOUR, which is the finding that produced
+WHY THE PREVIOUS SUITE DID NOT BIND THE BEHAVIOR, which is the finding that produced
 this file. Its thirteen tests all mutated the cache while leaving the freshness record
 STALE. A validator that checked only the record therefore rejected all thirteen while
-performing no join, no cohort comparison and no value comparison, and the round-10
-exactly that validator was written to prove the suite was vacuous. Every corruption
+performing no join, no cohort comparison and no value comparison, and a later check
+wrote exactly that validator to prove the suite was vacuous. Every corruption
 test below therefore RE-WRITES the freshness record after mutating, with
 ``resign_after_mutation``, so a record-only validator accepts the corrupted input and
 the test fails. Each test also asserts the SPECIFIC rejection reason, because a test
@@ -279,7 +279,7 @@ def test_missing_fixed_effect_is_rejected(deposit, col):
 @pytest.mark.parametrize("col", ["inflow_rh", "box_rh", "antecedent", "response"])
 def test_permuted_checkable_column_is_rejected(deposit, col):
     # binds: [R-CASES-06] [R-TROUGH-06]
-    """Round 8 checked three of seven columns and shipped. These four have a deposited
+    """An earlier pass checked three of seven columns and shipped. These four have a deposited
     counterpart, so a permutation must be caught even with the record re-signed."""
     tmp, cache, design = deposit
     bad = design.copy()
@@ -360,7 +360,7 @@ def test_sub_tolerance_edit_is_accepted(deposit):
 
 def test_changed_deposit_is_rejected(deposit):
     # binds: [R-TROUGH-05]
-    """The round-7 failure mode, deposit rebuilt and cache left behind, caught by the
+    """The failure mode where the deposit is rebuilt and the cache left behind, caught by the
     digest because the record is NOT re-signed here."""
     tmp, cache, design = deposit
     t = pd.read_csv(tmp / "troughs_pooled.csv")
@@ -986,7 +986,7 @@ def test_smallest_and_largest_valid_configurations_are_accepted(
 
 def test_freshness_record_carries_only_sources(deposit):
     """The record's narrowness is the design. A row count or a digest of the cache
-    would be self-authored and is exactly what round 10 defeated."""
+    would be self-authored and is exactly what a later check defeated."""
     tmp, cache, design = deposit
     rec = json.load(open(cache + ".sources.json"))
     assert set(rec) == {"sources"}

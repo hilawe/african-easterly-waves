@@ -58,7 +58,7 @@ def main():
     # a strict subset of, and every deposited trough outside it would read as missing.
     run("control_model", [PY_, "scripts/control_model.py",
                           "--cache", "deposit/control_model_design_eligible.csv"])
-    # the common-sample within-between decomposition (round 9); consumes the design
+    # the common-sample within-between decomposition; consumes the design
     # table control_model just wrote, so it must follow that step
     run("within_between", [PY_, "scripts/within_between_model.py"])
     run("wave_estimands", [PY_, "scripts/wave_estimands.py"])
@@ -66,7 +66,7 @@ def main():
     # feeds the registry's yearstrat_* rows, which the abstract and section 2d quote.
     # It sat OUTSIDE this sequence, so a canonical rerun regenerated everything around
     # it and merged its previous-generation CSV: the mixed-generation state this
-    # orchestrator exists to prevent (found while folding round 6).
+    # orchestrator exists to prevent (found while folding an earlier revision).
     run("yearstrat_sens", [PY_, "scripts/sensitivity_yearstrat.py"])
     # reads the canonical and tie-rule deposits and writes the comparison; skipped
     # cleanly when --skip-sensitivities meant the variant was never built
@@ -97,8 +97,9 @@ def main():
             ("figS3_control", "scripts/fig_control_model.py",
              "aew_fig_control_model.png")):
         run(label, [PY_, script, "--out", f"{DL}/{out}"])
-    # PROMOTE the regenerated images into docs/paper/figures before checking. The
-    # scripts above write to ~/Downloads and the REPO copy is what the PDF embeds, so
+    # PROMOTE the regenerated images into the manuscript's figure directory before
+    # checking. The scripts above write to a delivery directory and the REPO copy is
+    # what the PDF embeds, so
     # without this the sequence could finish green over stale repo figures: exactly the
     # gap was found still open on 2026-07-25 after an earlier change
     # moved figure regeneration into this driver. The builders own copy_figure(), so

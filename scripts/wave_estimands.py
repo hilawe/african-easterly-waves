@@ -71,7 +71,7 @@ def main():
     out = os.path.join(a.outdir, "wave_estimands.csv")
     for r in rows:
         # the count that actually RAN. Recording the module default here meant a
-        # --n-boot override was silently mislabelled (round 8).
+        # --n-boot override was silently mislabeled.
         r["n_boot"] = a.n_boot
     pd.DataFrame(rows).to_csv(out, index=False, float_format="%.6f")
     print(f"wrote {out}")

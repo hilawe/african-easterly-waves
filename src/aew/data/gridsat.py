@@ -3,7 +3,7 @@
 Fetches whole 3-hourly global files from the anonymous NOAA S3 bucket (fast static
 files, ~30 MB each) and crops to a lat/lon box locally, saving small per-timestep files.
 (NCEI's NCSS subset endpoint was unreliable/slow; S3 + local crop is robust, as the
-GridSat research recommended.) See docs/GRIDSAT_CT_PLAN.md.
+GridSat research recommended.)
 
 irwin_cdr: Int16, physical K = raw*0.01 + 200, fill -31999. xarray's mask_and_scale
 applies the scale/offset and turns the fill into NaN on open.

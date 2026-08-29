@@ -13,8 +13,8 @@ surviving source on the host:
 
 So composite dates are the LOCAL MAXIMA (peaks) of the filtered base series that
 exceed the threshold, NOT every day above threshold. This is what makes the event
-counts modest (e.g. 272 peaks above 2*sigma over 24 JAS seasons at 10N/0E); see
-docs/VALIDATION_TARGETS.md. The usual threshold is ``thresh = n_sigma * std(baseData)``.
+counts modest (e.g. 272 peaks above 2*sigma over 24 JAS seasons at 10N/0E).
+The usual threshold is ``thresh = n_sigma * std(baseData)``.
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ def std_threshold(base_data, n_sigma):
     """Convenience: ``n_sigma * np.std(base_data)`` matching NCL ``stddev`` (population, ddof=0).
 
     NOTE: NCL's ``stddev`` ignores missing values and uses N-1 (sample) normalization.
-    This is a PARITY HOTSPOT (docs/VALIDATION_TARGETS.md): verify ddof against the
+    This is a PARITY HOTSPOT: verify ddof against the
     target thresholds before trusting counts. Default here is ddof=1 to match NCL.
     """
     base = np.asarray(base_data, dtype=float)

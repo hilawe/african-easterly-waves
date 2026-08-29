@@ -2,7 +2,7 @@
 """Common-sample within-between decomposition of the inflow-moisture association.
 
 The paper's title rests on the claim that the moisture contrast separates whole waves
-rather than passages of the same wave. Until round 9 that claim leaned on two cohort
+rather than passages of the same wave. Until a later revision that claim leaned on two cohort
 summaries that are not a formal decomposition: the exclusively-active against
 exclusively-quiet contrast (190 and 284 waves) and the paired contrast in a DIFFERENT
 cohort of 514 mixed waves. Exclusive classification selects for track length, so the two
@@ -44,7 +44,7 @@ def main():
     d = pd.read_csv(a.design)
     d = d[np.isfinite(d[["inflow_rh", *CONTROLS]]).all(axis=1)].reset_index(drop=True)
 
-    # the estimand needs one observation per wave per time; the round-9 deduplication
+    # the estimand needs one observation per wave per time; the deduplication
     # repair guarantees this upstream, and this guard keeps the model honest if it is
     # ever run against a pre-repair table
     dup = int(d.duplicated(["wave", "time"]).sum())

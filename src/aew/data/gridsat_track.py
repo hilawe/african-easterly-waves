@@ -6,7 +6,7 @@ shield, with an embedded Tb <= 220 K convective core), sized by equivalent radiu
 R = sqrt(area/pi) with the 90 km cut, then area-overlap linking across consecutive
 3-hourly frames (link to the maximum-overlap candidate above a continuity threshold).
 
-This is the PROTOTYPE the plan calls for (docs/GRIDSAT_CT_PLAN.md). It is intentionally
+This is the PROTOTYPE the cloud-tracking plan calls for. It is intentionally
 small and dependency-light (scipy.ndimage) so the whole GridSat -> tracks -> Hovmoller
 chain runs end to end; PyFLEXTRKR remains the production tracker, and its output is read
 by the same adapter. The tracker emits the PyFLEXTRKR trackstats schema so

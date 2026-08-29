@@ -54,7 +54,7 @@ def _one_position_per_wave_time(out):
 
 
 def test_deduplicate_diverging_branches_keep_only_the_longest_fragment():
-    # THE ROUND-9 DEFECT, as a fixture. Two fragments share three points then diverge,
+    # THE DEDUPLICATION DEFECT, as a fixture. Two fragments share three points then diverge,
     # so they merge into one wave; the old rule kept BOTH divergent endpoints and the
     # merged wave occupied two positions at the final timestamp. The repaired rule keeps
     # only the longest fragment, so the wave has one position at every time.

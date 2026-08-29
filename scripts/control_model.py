@@ -119,7 +119,7 @@ def write_freshness_record(cache, dep_dir):
     counts, column lists and a digest of the cache all lived here before and none was
     load-bearing once the cohort is checked against a table this program does not write.
 
-    See docs/DESIGN_CACHE_SPEC.md for what the guard establishes and what it does not.
+    The cache specification states what the guard establishes and what it does not.
     """
     import json
     rec = dict(sources={name: _file_digest(os.path.join(dep_dir, name))
@@ -302,7 +302,7 @@ class _Refuse(Exception):
     """A check that could not be performed. It is never a pass.
 
     Every path that cannot establish what it is supposed to establish raises this, so
-    the guard has no branch that reports success over an unperformed check. Round 10
+    the guard has no branch that reports success over an unperformed check. Checking
     found four fail-open shapes in the previous version, where an absent cases file
     recorded a null digest and validation then accepted with zero predictors compared,
     and where malformed JSON raised out of the guard entirely instead of refusing.
@@ -490,10 +490,10 @@ def validate_design_cache(df, cache, dep_dir=None):
     subsample, which is 3,099 of 11,457. And it does not detect deliberate tampering,
     which is declared out of scope rather than half-attempted: any reference value this
     program writes can be rewritten by running this program again. The guard is built
-    against STALENESS, which is what has actually gone wrong in rounds 7, 8 and 10.
+    against STALENESS, which is what has actually gone wrong repeatedly.
 
-    The full statement is docs/DESIGN_CACHE_SPEC.md, written before this repair because
-    the unit had been repaired three times and each repair introduced the next defect.
+    The full statement was written before this repair because the unit had been
+    repaired three times and each repair introduced the next defect.
     """
     dep = dep_dir or os.path.dirname(cache) or "."
     msgs, notes = [], []
@@ -572,7 +572,7 @@ def validate_design_cache(df, cache, dep_dir=None):
         # already changed the key and been caught as an orphan. It would be a check that
         # cannot fail, which is worse than no check because it draws the eye of the next
         # reader. The residual it appears to cover is irreducible against this deposit
-        # and is stated in docs/DESIGN_CACHE_SPEC.md.
+        # and is stated in the cache specification.
 
         # VALUES. Every quantity the deposit also carries, on every shared row. No
         # dropna, because the previous version's dropna turned an injected NaN into a
@@ -634,7 +634,7 @@ def validate_design_cache(df, cache, dep_dir=None):
               f"at all, so a stale value in those three is NOT detectable either. Within the "
               f"checked cohort and the checked columns this detects stale generations; "
               f"it does not detect deliberate tampering "
-              f"(docs/DESIGN_CACHE_SPEC.md)."
+              f"(see the cache specification)."
               + ("".join(f" NOTE: {n}." for n in notes)), flush=True)
     return (not msgs), msgs
 
@@ -665,8 +665,8 @@ def plan_cache_reuse(cache_path, outdir):
     # VALIDATE against the current deposit rather than trusting that the file exists.
     # run_canonical rebuilds the deposit and then reruns this driver from the cache, and
     # the fresh OUTPUT mtimes then satisfy the checker, so a stale design could ride
-    # through a green run. That was the round-7 blocker, and rounds 8 and 10 each
-    # defeated the repair for it. See docs/DESIGN_CACHE_SPEC.md.
+    # through a green run. That was a blocker found in checking, and two later passes
+    # each defeated the repair for it. See the cache specification.
     ok, msgs = validate_design_cache(df, cache_path, outdir)
     if not ok:
         print(f"cache {cache_path} REJECTED ({'; '.join(msgs)}); "
