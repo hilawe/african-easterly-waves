@@ -65,8 +65,17 @@ MUTATIONS = {
         "    smoothed = np.stack([convolve2d(step, kernel, mode=\"same\") for step in field])",
         "    smoothed = field"),
     # C16 both thresholds taken from the fine grid
+    # C17 the decimation's filter width is derived from the stride, which is right only
+    # when the ratio divides exactly and wrong for ERA-Interim's own 2.5 over 0.75
+    "filter_width_derived_from_the_stride": _sub(
+        "    width = stride + 1 if np.isclose(np.floor(ratio), ratio) else stride",
+        "    width = stride + 1"),
+    # C17 the coordinate vectors are smoothed like the data instead of being subsampled
+    "coordinates_smoothed_like_data": _sub(
+        "    return np.asarray(values)[::stride]",
+        "    return np.asarray(values)[::max(stride - 1, 1)]"),
     "both_thresholds_from_the_fine_grid": _sub(
-        "    coarse_field = gaussian_decimate(anomaly_fine, decimation_factor)\n"
+        "    coarse_field = gaussian_decimate(anomaly_fine, 1.0, decimation_factor)\n"
         "    lat_coarse = np.asarray(lat_fine, dtype=float)[::decimation_factor]\n"
         "    coarse = anomaly_threshold(coarse_field, lat_coarse, COARSE_PERCENTILE)",
         "    coarse = anomaly_threshold(anomaly_fine, lat_fine, COARSE_PERCENTILE)"),

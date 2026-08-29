@@ -206,15 +206,64 @@ def southern_hemisphere_sign(field, lat_values):
     return out
 
 
-def gaussian_decimate(field, factor):
+def decimation_shape(input_resolution, output_resolution):
+    """The filter width and the subsampling stride, which are NOT the same number.
+
+    decimate_f.m computes them separately and they differ whenever the target resolution
+    is an exact multiple of the input:
+
+        if floor(reso/resi) == reso/resi;  num = reso/resi + 1;  else  num = floor(reso/resi);
+        ...
+        xo = xi(1:floor(reso/resi):end);
+
+    So the stride is always `floor(reso/resi)`, while the FILTER is one wider than that
+    when the ratio divides exactly. An earlier version of this function took a single
+    factor and derived the width from it as `factor + 1` always, which is right for the
+    exact-multiple case and wrong otherwise. It went unnoticed because every test used an
+    exact multiple; the first non-exact ratio in real use is ERA-Interim's own, 2.5 over
+    0.75, where the width should be 3 and that version used 4.
+
+    Returns (width, stride).
+    """
+    ratio = output_resolution / input_resolution
+    stride = int(np.floor(ratio))
+    if stride < 1:
+        raise ValueError(
+            "the output resolution %r is finer than the input %r; decimate_f coarsens and "
+            "has no path that refines" % (output_resolution, input_resolution))
+    width = stride + 1 if np.isclose(np.floor(ratio), ratio) else stride
+    return width, stride
+
+
+def gaussian_kernel(width):
+    """`fspecial('gaussian', width, width/5)`, normalized, as decimate_f.m builds it."""
+    sigma = width / 5.0
+    axis = np.arange(width) - (width - 1) / 2.0
+    gx, gy = np.meshgrid(axis, axis)
+    kernel = np.exp(-(gx ** 2 + gy ** 2) / (2.0 * sigma ** 2))
+    return kernel / kernel.sum()
+
+
+def subsample_coordinates(values, stride):
+    """Coarse coordinates, taken by STRIDE and never smoothed.
+
+    decimate_f.m filters the DATA and plain-subsamples the coordinate vectors. Running a
+    coordinate array through the smoother instead distorts it at the edges, where the
+    convolution has nothing to average against, and the resulting grid is not monotonic.
+    A first version of the pipeline did exactly that and the spacing came out negative.
+    """
+    return np.asarray(values)[::stride]
+
+
+def gaussian_decimate(field, input_resolution, output_resolution):
     """Coarsen by Gaussian smoothing then subsampling, ported from decimate_f.m.
 
-    The original builds `fspecial('gaussian', num, num/5)` and applies `conv2(..., 'same')`
-    before taking every `factor`-th point. `num` is `factor + 1` when the target
-    resolution is an exact multiple of the input, and `factor` otherwise.
+    Takes the two RESOLUTIONS rather than a factor, because the filter width and the
+    subsampling stride are computed differently from them and cannot be recovered from
+    each other. See `decimation_shape`.
 
-    This is the one Image Processing Toolbox call in the version 1 source. The kernel is
-    a normalized isotropic Gaussian, which numpy reproduces exactly.
+    This is one of the three toolbox calls in the version 1 source. The kernel is a
+    normalized isotropic Gaussian, which numpy reproduces exactly.
     """
     field = np.asarray(field, dtype=float)
     if field.ndim == 2:
@@ -222,22 +271,12 @@ def gaussian_decimate(field, factor):
         squeeze = True
     else:
         squeeze = False
-    if factor < 1:
-        raise ValueError("decimation factor must be at least 1, got %r" % (factor,))
-    if factor == 1:
-        out = field
-        return (out[0] if squeeze else out)
-
-    size = factor + 1
-    sigma = size / 5.0
-    axis = np.arange(size) - (size - 1) / 2.0
-    gx, gy = np.meshgrid(axis, axis)
-    kernel = np.exp(-(gx ** 2 + gy ** 2) / (2.0 * sigma ** 2))
-    kernel /= kernel.sum()
+    width, stride = decimation_shape(input_resolution, output_resolution)
 
     from scipy.signal import convolve2d
+    kernel = gaussian_kernel(width)
     smoothed = np.stack([convolve2d(step, kernel, mode="same") for step in field])
-    out = smoothed[:, ::factor, ::factor]
+    out = smoothed[:, ::stride, ::stride]
     return (out[0] if squeeze else out)
 
 
@@ -277,7 +316,7 @@ def detection_thresholds(anomaly_fine, lat_fine, decimation_factor):
     Returns ``(coarse, fine)``: the coarse value is the 55th percentile of the decimated
     anomaly and the fine value is the 66th percentile of the input-resolution anomaly.
     """
-    coarse_field = gaussian_decimate(anomaly_fine, decimation_factor)
+    coarse_field = gaussian_decimate(anomaly_fine, 1.0, decimation_factor)
     lat_coarse = np.asarray(lat_fine, dtype=float)[::decimation_factor]
     coarse = anomaly_threshold(coarse_field, lat_coarse, COARSE_PERCENTILE)
     fine = anomaly_threshold(anomaly_fine, lat_fine, FINE_PERCENTILE)

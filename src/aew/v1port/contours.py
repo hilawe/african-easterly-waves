@@ -51,10 +51,12 @@ def connected_region(mask, seed):
         end
 
     so when MATLAB's recursion limit is reached the error is swallowed and the function
-    returns whatever it had found so far. The default limit is 500, and one recursive call
-    is made per cell, so a region larger than a few hundred cells could be SILENTLY
-    TRUNCATED. On a 1-degree grid the 25-degree extent this very function tests for is
-    625 cells, so the truncation is reachable in normal use rather than pathological.
+    returns whatever it had found so far. The default limit is 500 and the walk's depth
+    grows with region size in a strongly shape-dependent way, measured at about half
+    the cell count for a dense rectangular blob and around a sixth for the real
+    components of one worked timestep (880 cells reached depth 140), so a large region
+    COULD be SILENTLY TRUNCATED, while whether the limit is actually reached on real
+    fields is not established in either direction.
 
     This port computes the complete region. Reproducing the truncation is not possible in
     any principled way, because what gets returned depends on MATLAB's stack depth and on

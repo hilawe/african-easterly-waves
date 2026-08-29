@@ -178,20 +178,18 @@ GEOMETRY_MUTATIONS = {
     # A26 an edge point is excluded, which is where MATLAB's inpolygon and the obvious
     # library substitutes disagree
     "edge_points_excluded": _sub(
-        "        if np.any((np.abs(cross) <= tol) & within):\n"
-        "            inside[i] = True\n"
-        "            continue",
-        "        pass"),
+        "        on_edge = np.any((np.abs(cross) <= tol) & within, axis=1)",
+        "        on_edge = np.zeros(px.shape, dtype=bool)"),
     # A25 and A27 the polygon is replaced by its bounding box, so a concave notch admits
     # points and the ray cast is not exercised at all
     "polygon_treated_as_its_bounding_box": _sub(
-        "        inside[i] = bool(np.count_nonzero(straddles & (x < x_at_y)) % 2)",
-        "        inside[i] = bool(poly_x.min() <= x <= poly_x.max() and\n"
-        "                         poly_y.min() <= y <= poly_y.max())"),
+        "    return on_edge | (crossings % 2 == 1)",
+        "    return ((poly_x.min() <= px) & (px <= poly_x.max())\n"
+        "            & (poly_y.min() <= py) & (py <= poly_y.max()))"),
     # A25 non-straddling edges are counted as crossings
     "non_straddling_edges_counted_as_crossings": _sub(
-        "        inside[i] = bool(np.count_nonzero(straddles & (x < x_at_y)) % 2)",
-        "        inside[i] = bool(np.count_nonzero(x < x_at_y) % 2)"),
+        "        crossings = np.count_nonzero(straddles & (x < x_at_y), axis=1)",
+        "        crossings = np.count_nonzero(x < x_at_y, axis=1)"),
     # a non-finite polygon silently admits points instead of containing nothing, which is
     # what makes version 1's divide-by-zero inflation strand a track
     "non_finite_polygon_not_refused": _sub(

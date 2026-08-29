@@ -24,7 +24,7 @@ import pytest
 
 from aew.v1port.geometry import (
     ADVECTION_EDGE_WIDTH, advection_of_vorticity, great_circle_distance,
-    meters_to_degrees, wavelength_along_ray,
+    meters_to_degrees, points_in_polygon, wavelength_along_ray,
 )
 from aew.v1port.vorticity import EARTH_RADIUS_M, MATLAB_FILL, grid_spacing_m
 
@@ -265,3 +265,88 @@ def test_wavelength_refuses_a_mesh_that_does_not_match_the_field():
     with pytest.raises(ValueError, match="mesh"):
         wavelength_along_ray(0.0, 5.0, 0.0, 0.0, latgrid, longrid, crv[:2],
                              threshold=1e-6, resolution=1.0, max_threshold=1e9)
+
+
+# --- the polygon test, and the loop it replaced ---------------------------------------
+
+def _point_at_a_time(poly_x, poly_y, lons, lats, tol=1e-9):
+    """The implementation `points_in_polygon` replaced, kept as an oracle.
+
+    Deliberately a transcription rather than a tidy rewrite: its value is that it is the
+    version whose behavior was reviewed, mutation-checked and measured against MATLAB's
+    `inpolygon` semantics, so agreeing with it is the strongest available statement that
+    the faster form changed only the speed.
+    """
+    poly_x = np.asarray(poly_x, dtype=float).ravel()
+    poly_y = np.asarray(poly_y, dtype=float).ravel()
+    px = np.asarray(lons, dtype=float).ravel()
+    py = np.asarray(lats, dtype=float).ravel()
+    inside = np.zeros(px.shape, dtype=bool)
+    if poly_x.size < 3 or not (np.all(np.isfinite(poly_x))
+                               and np.all(np.isfinite(poly_y))):
+        return inside
+    x1, y1 = poly_x, poly_y
+    x2, y2 = np.roll(poly_x, -1), np.roll(poly_y, -1)
+    for i in range(px.size):
+        x, y = px[i], py[i]
+        if not (np.isfinite(x) and np.isfinite(y)):
+            continue
+        cross = (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1)
+        within = ((np.minimum(x1, x2) - tol <= x) & (x <= np.maximum(x1, x2) + tol) &
+                  (np.minimum(y1, y2) - tol <= y) & (y <= np.maximum(y1, y2) + tol))
+        if np.any((np.abs(cross) <= tol) & within):
+            inside[i] = True
+            continue
+        straddles = (y1 > y) != (y2 > y)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            x_at_y = np.where(straddles, x1 + (y - y1) * (x2 - x1) / (y2 - y1), np.inf)
+        inside[i] = bool(np.count_nonzero(straddles & (x < x_at_y)) % 2)
+    return inside
+
+
+def test_the_vectorized_form_agrees_with_a_point_at_a_time_loop():
+    """The polygon test was 84 percent of the tracker's runtime because it looped over
+    points in Python, and vectorizing it made a year of tracking take three minutes instead
+    of fifty-seven. An optimisation on a hot path is only worth having if it changed nothing
+    else, so this compares the two forms over random polygons rather than asserting it.
+
+    A FIFTH OF THE CASES ARE SNAPPED TO A GRID, because that is where the two could
+    plausibly differ: the boundary. Version 1's polygons are hulls of grid points and the
+    points tested lie on the same grid, so exact edge and vertex hits are the ordinary case
+    here and not a corner of it.
+    """
+    rng = np.random.default_rng(17)
+    mismatches = 0
+    compared = 0
+    with np.errstate(all="ignore"):
+        for trial in range(400):
+            k = rng.integers(3, 12)
+            angles = np.sort(rng.uniform(0, 2 * np.pi, k))
+            radii = rng.uniform(1.0, 6.0, k)
+            poly_x, poly_y = radii * np.cos(angles), radii * np.sin(angles)
+            points = rng.uniform(-8.0, 8.0, size=(rng.integers(1, 40), 2))
+            if trial % 5 == 0:
+                poly_x, poly_y = np.round(poly_x), np.round(poly_y)
+                points = np.round(points)
+            if trial % 11 == 0:
+                points[0] = [np.nan, 0.0]
+            expected = _point_at_a_time(poly_x, poly_y, points[:, 0], points[:, 1])
+            got = points_in_polygon(poly_x, poly_y, points[:, 0], points[:, 1])
+            mismatches += int(np.count_nonzero(expected != got))
+            compared += expected.size
+    assert compared > 5000, "the sweep must actually cover a lot of cases"
+    assert mismatches == 0
+
+
+def test_the_two_forms_agree_on_vertices_and_edges():
+    """The grid-aligned half of the case above, stated explicitly so a failure names it."""
+    poly_x = np.array([0.0, 4.0, 4.0, 0.0])
+    poly_y = np.array([0.0, 0.0, 4.0, 4.0])
+    probes = np.array([[0, 0], [4, 0], [4, 4], [0, 4],      # vertices
+                       [2, 0], [4, 2], [2, 4], [0, 2],      # edge midpoints
+                       [2, 2], [-1, 0], [-1, 4], [5, 5]],   # interior and outside
+                      dtype=float)
+    expected = _point_at_a_time(poly_x, poly_y, probes[:, 0], probes[:, 1])
+    got = points_in_polygon(poly_x, poly_y, probes[:, 0], probes[:, 1])
+    assert np.array_equal(expected, got)
+    assert expected[:8].all(), "vertices and edges are inside, as inpolygon reports"

@@ -30,6 +30,7 @@ import pytest
 
 from aew.v1port.climatology import (
     COARSE_PERCENTILE, FINE_PERCENTILE, anomaly_threshold, calendar_key,
+    SMOOTH_P, SMOOTH_Q, decimation_shape, subsample_coordinates,
     curvature_anomaly, curvature_climatology, detection_thresholds, gaussian_decimate,
     smooth9, southern_hemisphere_sign,
 )
@@ -269,24 +270,81 @@ def test_threshold_refuses_an_all_missing_field():
         anomaly_threshold(np.full((1, 3, 3), np.nan), lat, 55.0, smooth=False)
 
 
+def test_the_cardinal_and_diagonal_weights_are_different_numbers():
+    """C12, bound properly at last. smth9_f weights the four EDGE-ADJACENT neighbours by
+    p/4 and the four DIAGONAL ones by q/4, and version 1 always calls it with p = 0.5 and
+    q = 0.25, so the two are not interchangeable. A catalogue mutation setting q to p
+    survived until this test existed: nothing else in the suite could tell a smoother that
+    treats all eight neighbours alike from one that does not.
+
+    Each weight is isolated by a field that is zero everywhere except one neighbour, so the
+    centre's new value is that weight alone.
+    """
+    cardinal = np.zeros((3, 3))
+    cardinal[0, 1] = 1.0                       # due north of the centre
+    assert smooth9(cardinal)[1, 1] == pytest.approx(SMOOTH_P / 4.0)
+
+    diagonal = np.zeros((3, 3))
+    diagonal[0, 0] = 1.0                       # northwest of the centre
+    assert smooth9(diagonal)[1, 1] == pytest.approx(SMOOTH_Q / 4.0)
+
+    assert SMOOTH_P == 0.5 and SMOOTH_Q == 0.25
+    assert SMOOTH_P != SMOOTH_Q, "the whole point of the two-term form"
+
+
+def test_the_filter_width_and_the_stride_are_computed_separately():
+    """P2 and P3, and the defect that made this test worth writing.
+
+    decimate_f.m computes the filter width and the subsampling stride from the two
+    resolutions by DIFFERENT rules, and they differ whenever the ratio divides exactly. A
+    version of the decimation that took one factor and used `factor + 1` as the width was
+    right for every exact ratio the unit tests used and wrong for the first real one:
+    ERA-Interim's own 2.5 over 0.75 is 3.33, where the width is 3 and that version used 4.
+    """
+    assert decimation_shape(0.75, 2.5) == (3, 3), "a non-exact ratio: width equals stride"
+    assert decimation_shape(0.5, 1.0) == (3, 2), "an exact ratio: width is one wider"
+    assert decimation_shape(2.5, 2.5) == (2, 1), "ratio one still filters"
+    with pytest.raises(ValueError, match="finer than the input"):
+        decimation_shape(2.5, 1.0)
+
+
+def test_coarse_coordinates_are_subsampled_not_smoothed():
+    """P2. Running a coordinate array through the data filter distorts it at the edges,
+    where the convolution has nothing to average against, and the grid stops being evenly
+    spaced. A first version of the pipeline did that and produced a negative spacing."""
+    lat = np.arange(-35.0, 35.1, 0.75)
+    coarse = subsample_coordinates(lat, 3)
+    spacing = np.diff(coarse)
+    assert np.allclose(spacing, 2.25), "evenly spaced at exactly stride times the input"
+    assert coarse[0] == pytest.approx(lat[0]), "and starting where the fine grid starts"
+
+
 # --- decimation, and the two thresholds coming from two different grids ---------------
 
-def test_decimation_shrinks_the_grid_by_the_factor():
+def test_decimation_shrinks_the_grid_by_the_stride():
     field = np.zeros((2, 21, 41))
-    out = gaussian_decimate(field, 3)
+    out = gaussian_decimate(field, 1.0, 3.0)
     assert out.shape == (2, 7, 14)
 
 
-def test_decimation_by_one_is_a_no_op():
+def test_decimation_at_the_same_resolution_still_smooths():
+    """NOT A NO-OP, which an earlier version of this test asserted and decimate_f.m does
+    not do. When the ratio divides exactly the filter is one wider than the stride, so a
+    ratio of one gives a two-by-two filter and a stride of one: the grid keeps its shape
+    and the values change. Reproducing that matters because the width and the stride are
+    computed by different rules, and a version that derived one from the other was wrong
+    for every ratio that does not divide exactly, including ERA-Interim's own."""
     rng = np.random.default_rng(6)
     field = rng.normal(size=(1, 9, 9))
-    assert np.array_equal(gaussian_decimate(field, 1), field)
+    out = gaussian_decimate(field, 2.5, 2.5)
+    assert out.shape == field.shape
+    assert not np.array_equal(out, field)
 
 
 def test_decimation_preserves_a_constant_field_in_the_interior():
     """A normalized kernel must not change a flat field away from the zero-padded edge."""
     field = np.full((1, 15, 15), 4.0)
-    out = gaussian_decimate(field, 3)
+    out = gaussian_decimate(field, 1.0, 3.0)
     assert out[0, 2, 2] == pytest.approx(4.0)
 
 
@@ -295,14 +353,16 @@ def test_decimation_smooths_before_subsampling():
     reduce it, which is the whole reason decimate_f convolves first."""
     rng = np.random.default_rng(7)
     field = rng.normal(size=(1, 61, 61))
-    smoothed_then_taken = gaussian_decimate(field, 3)[0][1:-1, 1:-1]
+    smoothed_then_taken = gaussian_decimate(field, 1.0, 3.0)[0][1:-1, 1:-1]
     plainly_taken = field[0, ::3, ::3][1:-1, 1:-1]
     assert np.var(smoothed_then_taken) < 0.6 * np.var(plainly_taken)
 
 
-def test_decimation_refuses_a_factor_below_one():
-    with pytest.raises(ValueError, match="at least 1"):
-        gaussian_decimate(np.zeros((1, 4, 4)), 0)
+def test_decimation_refuses_to_refine():
+    """decimate_f coarsens and has no path that refines, so asking it to is a caller error
+    rather than something to interpolate around."""
+    with pytest.raises(ValueError, match="finer than the input"):
+        gaussian_decimate(np.zeros((1, 4, 4)), 2.5, 1.0)
 
 
 def test_the_two_thresholds_come_from_two_different_grids():
@@ -319,7 +379,7 @@ def test_the_two_thresholds_come_from_two_different_grids():
     assert coarse != pytest.approx(same_grid_coarse), (
         "the coarse threshold was taken from the fine grid")
 
-    expected = anomaly_threshold(gaussian_decimate(anomaly, 2), lat[::2],
+    expected = anomaly_threshold(gaussian_decimate(anomaly, 1.0, 2), lat[::2],
                                  COARSE_PERCENTILE)
     assert coarse == pytest.approx(expected)
     assert fine == pytest.approx(anomaly_threshold(anomaly, lat, FINE_PERCENTILE))
