@@ -2,7 +2,13 @@
 
 MUTATION LIST, written before the assertions: drop the missing-cell refusal; drop the
 case_id check; drop the mixed-source-version refusal; drop the expected-block check;
-render a missing row without the INCOMPLETE title; format the difference unsigned.
+render a missing row without the INCOMPLETE title; format the difference unsigned;
+drop the current-source-hash comparison; drop the registry settings check.
+
+A review found the first version passed a synthetic set with arbitrary hashes and
+settings, so the fixtures now carry the CURRENT tree's fingerprint and the registry's
+settings, and the two new refusals are watched firing on a stale hash and a settings
+mismatch.
 """
 import importlib.util
 import json
@@ -20,9 +26,23 @@ sys.modules["report_threshold_matrix"] = rep
 _spec.loader.exec_module(rep)
 
 
-def synthetic(cid, coarse=5.0e-7, fine=2.5e-6, version="a"):
+CURRENT_HASHES = rep._cli_module().source_hashes()
+
+
+def synthetic(cid, coarse=5.0e-7, fine=2.5e-6, version=None):
+    case = rep.T.matrix_case(cid)
+    hashes = dict(CURRENT_HASHES) if version is None else {
+        k: version * 64 for k in CURRENT_HASHES}
     return {"case_id": cid, "estimator": "exact",
-            "source_sha256": {"m.py": version * 64},
+            "source_sha256": hashes,
+            "climatology_years": list(case["climatology_years"]),
+            "population_years": list(case["population_years"]),
+            "transformation": {"id": case["transformation"], "smoothing_passes": 1,
+                               "coarse_scale": None},
+            "domain": {"lat_range": list(case["lat_range"]),
+                       "lon_range": list(case["lon_range"])},
+            "coarse_resolution": case["coarse_resolution"],
+            "subsample_stride": case["subsample"], "prefix": case["prefix"],
             "grids": {"timesteps": 46752},
             "coarse": {"threshold": coarse}, "fine": {"threshold": fine},
             "expected": {"coarse": 7.16e-7, "fine": 2.8e-6,
@@ -83,3 +103,28 @@ def test_an_artifact_without_the_expected_block_is_refused(full, tmp_path):
     with open(os.path.join(full, "thresholds_P1-T1.json"), "w") as fh:
         json.dump(a, fh)
     assert rep.main(["--artifact-dir", full, "--out", str(tmp_path / "r.md")]) == 2
+
+
+def test_a_consistent_set_from_old_code_is_refused(tmp_path):
+    """Twelve artifacts that AGREE with each other but fingerprint code no longer in
+    the tree: the mixed-version refusal cannot see this, only the comparison against
+    the current files can. A first version of this test staled one artifact and was
+    caught by the mixed-version check instead, so it bound nothing."""
+    for cid in rep.cell_ids():
+        with open(tmp_path / f"thresholds_{cid}.json", "w") as fh:
+            json.dump(synthetic(cid, version="0"), fh)
+    assert rep.main(["--artifact-dir", str(tmp_path),
+                     "--out", str(tmp_path / "r.md")]) == 2
+
+
+def test_settings_that_contradict_the_case_id_are_refused(full, tmp_path):
+    """A P2-T3 artifact recording P1's population years, or the wrong transformation,
+    is a mislabeled run whatever its filename says."""
+    for field, value in (("population_years", [1979, 2010]),
+                         ("transformation", {"id": "T2", "smoothing_passes": 1,
+                                             "coarse_scale": "up"})):
+        a = synthetic("P2-T3")
+        a[field] = value
+        with open(os.path.join(full, "thresholds_P2-T3.json"), "w") as fh:
+            json.dump(a, fh)
+        assert rep.main(["--artifact-dir", full, "--out", str(tmp_path / "r.md")]) == 2, field

@@ -13,7 +13,12 @@ WHAT IT REFUSES, because a partial or mixed report reads as a complete one:
   - an artifact whose case_id disagrees with its filename;
   - artifacts produced by different source versions (their source_sha256 sets differ),
     since a table mixing code versions is not one experiment;
-  - an artifact without the `expected` block, since the report is about the criterion.
+  - an artifact without the `expected` block, since the report is about the criterion;
+  - an artifact whose recorded source hashes differ from the files now in the tree, so
+    the table cannot describe code that no longer exists (the suite's provenance gate
+    checks the same thing, and the generator must not rely on it having run);
+  - an artifact whose recorded settings differ from what its case id claims in the
+    frozen matrix registry, checked with the same validate_case_settings the CLI uses.
 
     .venv/bin/python scripts/report_threshold_matrix.py --out <report path>
 
@@ -21,9 +26,42 @@ The project writes the report beside the contract it serves, under the same docs
 directory as the artifacts.
 """
 import argparse
+import importlib.util
 import json
 import os
 import sys
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_ROOT, "src"))
+
+from aew.v1port import thresholds as T  # noqa: E402
+
+
+def _cli_module():
+    """scripts/compute_thresholds.py, for its SOURCE_FILES and source_hashes(), so the
+    generator checks the same fingerprint the producer wrote."""
+    spec = importlib.util.spec_from_file_location(
+        "compute_thresholds_for_report",
+        os.path.join(_ROOT, "scripts", "compute_thresholds.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def artifact_settings(a):
+    """The settings an artifact records, in the shape validate_case_settings compares."""
+    return {"climatology_years": tuple(a.get("climatology_years", ())),
+            "population_years": tuple(a.get("population_years", ())),
+            "transformation": (a.get("transformation") or {}).get("id"),
+            "estimator": a.get("estimator"),
+            "lat_range": tuple((a.get("domain") or {}).get("lat_range", ())),
+            "lon_range": tuple((a.get("domain") or {}).get("lon_range", ())),
+            "coarse_resolution": a.get("coarse_resolution"),
+            "subsample": a.get("subsample_stride"),
+            "prefix": a.get("prefix"),
+            "expect": ((a.get("expected") or {}).get("coarse"),
+                       (a.get("expected") or {}).get("fine")),
+            "out": "recorded"}
 
 PERIODS = ("P1", "P2")
 TRANSFORMATIONS = ("T0", "T1", "T2", "T3", "T4", "T5")
@@ -41,6 +79,7 @@ def cell_ids():
 def load_matrix(artifact_dir, allow_missing=False):
     """The twelve artifacts keyed by id, or a refusal string in `problems`."""
     cells, problems = {}, []
+    current_hashes = _cli_module().source_hashes()
     for cid in cell_ids():
         path = os.path.join(artifact_dir, f"thresholds_{cid}.json")
         if not os.path.exists(path):
@@ -55,6 +94,14 @@ def load_matrix(artifact_dir, allow_missing=False):
             problems.append(f"{cid}: artifact says case_id {a.get('case_id')!r}")
         if not isinstance(a.get("expected"), dict):
             problems.append(f"{cid}: no expected block, the report is about the criterion")
+        recorded = a.get("source_sha256") or {}
+        for rel, digest in current_hashes.items():
+            if recorded.get(rel) != digest:
+                problems.append(f"{cid}: {rel} differs from the file now in the tree")
+        for rel in set(recorded) - set(current_hashes):
+            problems.append(f"{cid}: fingerprints {rel}, which the producer does not")
+        for violation in T.validate_case_settings(T.matrix_case(cid), artifact_settings(a)):
+            problems.append(f"{cid}: {violation}")
         cells[cid] = a
     present = [a for a in cells.values() if a is not None]
     if present:
