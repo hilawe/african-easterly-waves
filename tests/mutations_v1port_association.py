@@ -15,6 +15,22 @@ def _sub(old, new):
 
 
 MUTATIONS = {
+    # A1-A4 the hull's STARTING VERTEX, added 2026-08-30 when MATLAB was finally run and
+    # showed its cycle begins one place earlier than scipy's. Closing the ring doubles the
+    # first vertex and the inflation centers on the mean of that closed list, so before the
+    # rotation the port doubled a different vertex from version 1 on 72 percent of real
+    # wave footprints, shifting the center a median of 0.50 degrees against a 2 degree grid.
+    "hull_rotation_dropped": _sub(
+        "        vertices = np.roll(vertices, -int(np.argmin(vertices)))\n", ""),
+    "hull_rotated_the_wrong_way": _sub(
+        "np.roll(vertices, -int(np.argmin(vertices)))",
+        "np.roll(vertices, int(np.argmin(vertices)))"),
+    "hull_starts_at_the_largest_index": _sub(
+        "np.roll(vertices, -int(np.argmin(vertices)))",
+        "np.roll(vertices, -int(np.argmax(vertices)))"),
+    # (closing the ring at all is already bound by the pre-existing `hull_left_open`
+    # below, which was re-anchored when this rotation reworded the line it names)
+
     # A1 the exclusivity flag does nothing, so the repair silently fails to repair
     "exclusivity_flag_is_inert": _sub(
         "            pool = [i for i in available if i not in claimed] if exclusive "
@@ -97,8 +113,7 @@ MUTATIONS = {
         "    if area <= 0 or area > minimum_area:\n        return lons, lats"),
     # A15 the convex hull is left open, moving the inflation center onto the centroid
     "hull_left_open": _sub(
-        "        order = np.append(hull.vertices, hull.vertices[0])",
-        "        order = hull.vertices"),
+        "        order = np.append(vertices, vertices[0])", "        order = vertices"),
     # A16 a wave-free timestep clears predictions instead of being skipped whole
     "wave_free_timestep_not_skipped": _sub(
         "    if not waves:\n        return tracks, states",

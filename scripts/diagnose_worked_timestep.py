@@ -40,78 +40,13 @@ from aew.v1port import climatology as clim  # noqa: E402
 from aew.v1port import load as L  # noqa: E402
 from aew.v1port import pipeline as P  # noqa: E402
 from aew.v1port import validate as V  # noqa: E402
+from aew.v1port.climo_cache import load_or_build  # noqa: E402
 from aew.v1port.contours import merge_contours  # noqa: E402
 from aew.v1port.detection import (MAX_ZONAL_WIND, _prepare,  # noqa: E402
                                   detect_troughs, trough_axes)
 from aew.v1port.geometry import great_circle_distance  # noqa: E402
 
 
-def _climatology_fingerprint(years, directory, prefix):
-    """A digest of everything that determines the cached values.
-
-    The years, the input files' size and modification time, and the SOURCE of every
-    module in the chain that computes them, because the first version of this cache
-    checked years alone and would have silently served a climatology computed by the
-    defective curvature code this diagnostic exists to investigate. File metadata, not
-    contents, since hashing gigabytes per run would defeat the cache; a replaced input
-    with an identical size and mtime slips this. `short_steps` is not stored either, so
-    the loaded dict carries it empty rather than claiming to be byte-identical to a
-    fresh build.
-    """
-    import hashlib
-    import aew.v1port.climatology
-    import aew.v1port.load
-    import aew.v1port.pipeline
-    import aew.v1port.vorticity
-    h = hashlib.sha256()
-    h.update(repr((sorted(years), os.path.abspath(directory), prefix)).encode())
-    for year in sorted(years):
-        for var in ("u700", "v700"):
-            path = os.path.join(directory, f"{prefix}_{var}_{year}_6h_region.nc")
-            try:
-                st = os.stat(path)
-                h.update(repr((os.path.basename(path), st.st_size,
-                               st.st_mtime_ns)).encode())
-            except OSError:
-                h.update(repr((os.path.basename(path), "absent")).encode())
-    for module in (aew.v1port.vorticity, aew.v1port.climatology,
-                   aew.v1port.load, aew.v1port.pipeline):
-        with open(module.__file__, "rb") as fh:
-            h.update(fh.read())
-    return h.hexdigest()
-
-
-def load_or_build_climatology(years, directory, prefix, cache):
-    """The climatology dict, from a cache file when one exists.
-
-    The cache is a convenience for iterating on this diagnostic. It REFUSES a cache
-    whose fingerprint (years, inputs, and the source of the computing modules) does not
-    match, rather than silently serving values another code version produced.
-    """
-    years = sorted(years)
-    fingerprint = _climatology_fingerprint(years, directory, prefix)
-    if cache and os.path.exists(cache):
-        with np.load(cache, allow_pickle=False) as z:
-            if "fingerprint" not in z or str(z["fingerprint"]) != fingerprint:
-                raise SystemExit(
-                    f"{cache} was built over different years, inputs, or code than this "
-                    f"run would use (the curvature chain's source is part of the "
-                    f"fingerprint). Delete it and let it rebuild.")
-            keys = [tuple(int(x) for x in row) for row in z["keys"]]
-            climatology = {"keys": keys, "mean": z["mean"], "counts": z["counts"],
-                           "short_steps": []}
-        print(f"climatology read from {cache}", flush=True)
-        return climatology
-    print(f"building climatology over {len(years)} years "
-          f"({years[0]}-{years[-1]})", flush=True)
-    climatology = L.build_climatology(years, directory, prefix)
-    if cache:
-        np.savez_compressed(
-            cache, years=np.asarray(years), fingerprint=np.asarray(fingerprint),
-            keys=np.asarray(climatology["keys"], dtype=int),
-            mean=climatology["mean"], counts=climatology["counts"])
-        print(f"climatology cached at {cache}", flush=True)
-    return climatology
 
 
 def v1_observations_at(year, time_days, directory="data/aewc"):
@@ -153,8 +88,8 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     have = L.available_years(args.directory, args.prefix)
-    climatology = load_or_build_climatology(have, args.directory, args.prefix,
-                                            args.climatology_cache)
+    climatology = load_or_build(have, args.directory, args.prefix,
+                                args.climatology_cache)
 
     times, latgrid, longrid, u, v = L.load_year(args.year, args.directory, args.prefix)
     step = int(np.argmin(np.abs(times - args.time)))

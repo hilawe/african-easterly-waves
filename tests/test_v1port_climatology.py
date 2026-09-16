@@ -387,3 +387,63 @@ def test_the_two_thresholds_come_from_two_different_grids():
 
 def test_the_two_percentiles_are_the_ones_the_source_names():
     assert (COARSE_PERCENTILE, FINE_PERCENTILE) == (55.0, 66.0)
+
+
+def test_the_even_kernel_window_matches_matlab_not_scipy():
+    """The decimation's convolution window, anchored to version 1's own output.
+
+    MUTATIONS THIS BINDS, listed before the assertions:
+      D1 the offset reverts to scipy's convention, `(width - 1) // 2`
+      D2 the offset is applied to rows but not columns
+      D3 the window is taken from the wrong end, `-offset` rather than `offset`
+      D4 mode="same" is used again instead of an explicit window
+
+    WHY IT EXISTS. For an EVEN-width kernel the "same" window of a convolution is ambiguous
+    by one cell, and MATLAB and scipy resolve it in opposite corners. Version 1's
+    `decimate_f.m` calls MATLAB `conv2(...,'same')`; the port called scipy's
+    `convolve2d(mode='same')`, so every decimated field was shifted one cell. Running the
+    archived function under Octave on a real 1990 field, the two differed at every cell,
+    median 1.0 against a field rms of 9.8.
+
+    IT WAS UNREACHABLE UNTIL RECENTLY. `decimation_shape` gives an ODD width of 3 for the
+    0.75 degree tree this project used for most of its life, and odd kernels are
+    unambiguous. Version 1's own one-degree input gives width 2. No test caught the
+    difference because none bound the decimated VALUES, only shapes and invariants.
+
+    THE EXPECTED VALUES ARE COMPUTED FROM THE DEFINITION, not copied from a run: the full
+    convolution's offset-(1,1) window, which is what Octave's conv2 was measured to return.
+    """
+    from aew.v1port import climatology as clim
+
+    rng = np.random.default_rng(11)
+    field = rng.normal(size=(2, 9, 11))
+    got = clim.gaussian_decimate(field, 1.0, 2.5)
+
+    width, stride = clim.decimation_shape(1.0, 2.5)
+    assert width == 2 and width % 2 == 0, "this case must have an EVEN kernel to bind"
+
+    from scipy.signal import convolve2d
+    kernel = clim.gaussian_kernel(width)
+    offset = width // 2
+    want = np.stack([
+        convolve2d(step, kernel, mode="full")[offset:offset + 9, offset:offset + 11]
+        for step in field])[:, ::stride, ::stride]
+    assert np.allclose(got, want), "the decimation must take MATLAB's even-kernel window"
+
+    # and it must NOT be scipy's window, which is the defect this replaced
+    scipy_same = np.stack([convolve2d(step, kernel, mode="same") for step in field]
+                          )[:, ::stride, ::stride]
+    assert not np.allclose(got, scipy_same), \
+        "scipy's mode='same' window is the wrong corner for an even kernel"
+
+    # an ODD kernel must be unaffected, because there the two conventions agree
+    odd_width, _ = clim.decimation_shape(0.75, 2.5)
+    assert odd_width % 2 == 1
+    odd_field = rng.normal(size=(2, 12, 12))
+    odd_got = clim.gaussian_decimate(odd_field, 0.75, 2.5)
+    ok = clim.gaussian_kernel(odd_width)
+    _, odd_stride = clim.decimation_shape(0.75, 2.5)
+    odd_same = np.stack([convolve2d(s, ok, mode="same") for s in odd_field]
+                        )[:, ::odd_stride, ::odd_stride]
+    assert np.allclose(odd_got, odd_same), \
+        "for an odd kernel the two conventions agree and nothing should change"

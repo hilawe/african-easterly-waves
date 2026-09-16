@@ -62,12 +62,24 @@ def trough_axes(latgrid, longrid, advection, level=TROUGH_LEVEL):
     contour ended. Those reject many spurious hits but not all, since a vertex at
     longitude zero and a whole-number latitude above one passes the first guard.
 
-    This port walks the contours properly, so the ambiguity does not arise. Whether the
-    original actually admitted spurious candidates in the published record is NOT
-    established here: it depends on exact vertex coordinates and would need the MATLAB to
-    settle. What is established is that the parse is ambiguous by construction on the
-    domain it was used on. Recorded as an item for the eventual comparison, alongside the
-    region-truncation divergence.
+    This port walks the contours properly, so the ambiguity does not arise.
+
+    MEASURED 2026-08-30, AND IT DOES NOT FIRE ON VERSION 1'S OWN GRID. The parser was
+    transcribed and run under Octave over 75 timesteps of 1990 and 8,512 contours: every
+    column matching `find(ch(1,:) == 0)` was a real header, none was a vertex, and no
+    real contour was lost. The reason is the grid. Version 1 retrieves ONE DEGREE data
+    and decimates with a stride of two, so its tracking longitudes are ODD, zero is not
+    a grid line, and no vertex interpolated exactly onto it.
+
+    THE MECHANISM IS REAL AND A CONTROL SHOWS IT, because a measurement that returns
+    zero may be measuring nothing. Repeating it with the longitudes shifted one degree,
+    so zero becomes a grid line, gives 173 spurious matches and 121 real contours lost,
+    1.4 percent. The ambiguity is genuine and this configuration avoids it, which is not
+    the same as the parse being sound.
+
+    An earlier version of this note said the domain runs on a 2.5 degree grid, on which
+    zero IS a grid line. That rested on the pre-2026-08-29 belief about the input
+    resolution: the decimation gives 2.0 degrees from one degree input, not 2.5.
     """
     from contourpy import contour_generator
     lat_values = latgrid[:, 0]
@@ -88,7 +100,7 @@ def trough_axes(latgrid, longrid, advection, level=TROUGH_LEVEL):
 def detect_troughs(time, latgrid_coarse, longrid_coarse, u_coarse,
                    curvature_anomaly_coarse, advection_anomaly_coarse,
                    latgrid_fine, longrid_fine, curvature_anomaly_fine,
-                   coarse_threshold, fine_threshold):
+                   coarse_threshold, fine_threshold, absorb=False):
     """One timestep of version 1 trough detection.
 
     Parameters mirror what find_ews_f.m has in hand inside its time loop: the coarse grid
@@ -96,7 +108,8 @@ def detect_troughs(time, latgrid_coarse, longrid_coarse, u_coarse,
     the curvature anomaly again at input resolution.
 
     Returns the merged wave list from `merge_contours`, which is what the association
-    stage consumes.
+    stage consumes. `absorb=True` enables the first-pass absorption version 1's own code
+    attempts and never completes; see `contours.merge_contours`.
     """
     lat_c = np.asarray(latgrid_coarse, dtype=float)[:, 0]
     lat_f = np.asarray(latgrid_fine, dtype=float)[:, 0]
@@ -133,9 +146,12 @@ def detect_troughs(time, latgrid_coarse, longrid_coarse, u_coarse,
                    "lon_mean": float(np.mean(lons))}
                   for lats, lons in axes]
 
+    # BOTH passes take the flag. Version 1 runs the same merge twice and its absorption
+    # is broken in both, so honouring it in one and not the other would be neither
+    # version 1 nor the repair.
     coarse = merge_contours(candidates, latgrid_coarse, longrid_coarse,
-                            curvature_c, coarse_threshold)
+                            curvature_c, coarse_threshold, absorb=absorb)
     if not coarse:
         return []
     return merge_contours(coarse, latgrid_fine, longrid_fine,
-                          curvature_f, fine_threshold)
+                          curvature_f, fine_threshold, absorb=absorb)

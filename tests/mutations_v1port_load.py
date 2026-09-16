@@ -88,7 +88,8 @@ MUTATIONS = {
     "sampler_draws_with_replacement": _sub(
         "    return flat[rng.choice(flat.size, size=count, replace=False)]",
         "    return flat[rng.choice(flat.size, size=count, replace=True)]"),
-    # L12 the sampling error is reported as a constant, so a noisy estimate looks solid
+    # L12 the half-sample range is reported as a constant, so it stops responding to
+    # sample size and an unstable estimate looks solid
     "sampling_error_is_a_constant": _sub(
         "    spread = (max(draws) - min(draws)) / abs(estimate) if estimate else "
         'float("inf")',
@@ -97,6 +98,45 @@ MUTATIONS = {
     "estimate_is_not_the_percentile": _sub(
         "    estimate = float(np.percentile(sample, percentile))",
         "    estimate = float(np.mean(sample))"),
+    # L16 the FINE grid is smoothed before it is cropped, where the tracker crops first
+    "fine_smoothed_before_crop": _sub(
+        "        fine = southern_hemisphere_sign(smooth9(cropped)[np.newaxis, ...], "
+        "fine_lats)[0]",
+        "        whole = southern_hemisphere_sign(smooth9(anomaly[step])[np.newaxis, ...],\n"
+        "                                         np.asarray(lat_values))[0]\n"
+        "        fine = crop(whole, fine_rows, fine_cols)"),
+    # L16 the COARSE grid is smoothed before it is cropped. This one SURVIVED the first
+    # version of the regression, which never passed a coarse resolution and so never
+    # exercised the path at all. A review found it by mutation-testing directly.
+    "coarse_smoothed_before_crop": _sub(
+        "            coarse_cropped = crop(coarse_field, coarse_rows, coarse_cols)",
+        "            coarse_cropped = crop(smooth9(coarse_field), coarse_rows, "
+        "coarse_cols)"),
+    # L16 the crop is dropped on the fine path, so the whole buffered field is sampled
+    "fine_crop_ignored": _sub(
+        "        cropped = crop(anomaly[step], fine_rows, fine_cols)",
+        "        cropped = anomaly[step]"),
+    # L16 the crop is dropped on the coarse path
+    "coarse_crop_ignored": _sub(
+        "            coarse_cropped = crop(coarse_field, coarse_rows, coarse_cols)",
+        "            coarse_cropped = coarse_field"),
+    # L17 the exact branch is removed, so a per_step at the finite-cell count permutes the
+    # whole field instead of returning it. The SET is identical, so only the generator being
+    # consumed distinguishes them, and consuming it shifts every later timestep's draw.
+    "exact_draw_branch_removed": _sub(
+        "    if flat.size <= count:\n        return flat",
+        "    if flat.size < count:\n        return flat"),
+    # L17 the boundary is loosened by one, so a sample one short of the field returns all of
+    # it and a run believes it sampled when it took the exact percentile
+    "exact_draw_boundary_loosened": _sub(
+        "    if flat.size <= count:\n        return flat",
+        "    if flat.size <= count + 1:\n        return flat"),
+    # L17 there is no exact branch at all, so the draw always consumes randomness
+    "draw_always_resamples": _sub(
+        "    if flat.size <= count:\n        return flat\n"
+        "    return flat[rng.choice(flat.size, size=count, replace=False)]",
+        "    return flat[rng.choice(flat.size, size=min(count, flat.size), "
+        "replace=False)]"),
     # the short-step report stops excluding 29 February, which never has a full count
     "leap_day_reported_as_a_short_step": _sub(
         "                if (self._counts[k] != expected_years\n"

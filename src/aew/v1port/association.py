@@ -99,19 +99,30 @@ def _hull_polygon(lons, lats):
     inflated polygon match. `scipy.spatial.ConvexHull.vertices` is open, so the first index
     is appended here.
 
-    A THIRD DIVERGENCE, NOT ESTABLISHED, recorded because it is reachable and its size is
-    known. Closing the ring makes WHICH vertex is doubled depend on where the cycle starts,
-    and neither MATLAB's `convhull` nor scipy's `ConvexHull` documents its starting vertex.
-    Both wrap Qhull, so they may well agree, and that cannot be checked here because MATLAB
-    cannot run. If they disagree the inflation center moves by (v_first - mean) / (n + 1),
-    which on random eight-point hulls measures up to about 1.3 degrees, and the search
-    polygons are only a few degrees across, so this is not a rounding-level concern. It
-    goes on the M3 validation list: a systematic offset between the port's search polygons
-    and version 1's is what it would look like in a track comparison.
+THE STARTING VERTEX IS ROTATED TO THE LOWEST INDEX, and that is a repair rather than a
+    detail. Closing the ring doubles whichever vertex comes first, so where the cycle starts
+    changes the mean the inflation centers on. MATLAB and scipy start it in different
+    places, which was recorded as an unresolved divergence until MATLAB was finally run on
+    2026-08-30. On a real 200-point wave footprint:
 
-    One half of the same question IS settled. MATLAB passes `'simplify',true`, which drops
-    collinear points from the hull, and scipy drops them too; `test_the_hull_drops_
-    collinear_points` measures that rather than assuming it.
+        MATLAB  convhull(...,'simplify',true) -> [1 3 187 200 116 40 26 2 1]
+        scipy   ConvexHull(...).vertices      -> [3 187 200 116 40 26 2 1]
+
+    The same cycle in the same direction, rotated by one. Without the rotation below the
+    port doubles a DIFFERENT vertex from version 1 on 72 percent of real wave footprints,
+    moving the inflation center by a median of 0.50 degrees, past 0.5 for half of them and
+    up to 4.0, on a grid whose spacing is 2 degrees. That is not a rounding-level concern.
+
+    THE RULE IS INFERRED FROM TWO OBSERVATIONS and should be read that way. Both MATLAB
+    answers began at the lowest-index hull vertex, and in both the lowest happened to be
+    index 1, so "start at the lowest index" fits the evidence without being strongly tested
+    by it. What would falsify it is a hull whose lowest index is not 1 starting somewhere
+    else. `test_the_hull_starts_at_the_lowest_index` pins the behavior either way.
+
+    The vertex SET half of the question is settled and the port already matched. MATLAB
+    passes `'simplify',true`, which drops collinear points, and scipy drops them too;
+    measured 2026-08-30 as 5 indices against plain convhull's 9 on a square with a midpoint
+    on every edge. `test_the_hull_drops_collinear_points` covers it.
 
     The original wraps `convhull` in a try and falls back to a seven-point diamond built
     from the wave's extreme latitudes when it fails.
@@ -121,7 +132,10 @@ def _hull_polygon(lons, lats):
     try:
         from scipy.spatial import ConvexHull
         hull = ConvexHull(np.column_stack([lons, lats]))
-        order = np.append(hull.vertices, hull.vertices[0])
+        vertices = np.asarray(hull.vertices)
+        # rotate so the cycle begins where MATLAB's does, preserving direction
+        vertices = np.roll(vertices, -int(np.argmin(vertices)))
+        order = np.append(vertices, vertices[0])
         return lons[order], lats[order]
     except Exception:                                    # noqa: BLE001
         return None

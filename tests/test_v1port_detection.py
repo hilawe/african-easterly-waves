@@ -18,6 +18,9 @@ tests/mutations_v1port_detection.py.
     D11  a candidate center is the first vertex of its contour rather than the mean
     D12  contours are parsed by searching for the level in the x-coordinate, the original's
          ambiguous scheme, which on this domain also matches vertices at longitude zero
+    D13  the absorption flag reaches the coarse merge and not the fine one, so the two
+         halves of the same merge disagree about which behaviour they reproduce (added
+         2026-08-30 with the flag; the list was written before the assertion)
 """
 
 import numpy as np
@@ -228,3 +231,38 @@ def test_no_axes_gives_no_waves():
                          latgrid, longrid, flat,
                          coarse_threshold=1e-6, fine_threshold=1e-6)
     assert out == []
+
+
+def test_the_absorption_flag_reaches_BOTH_merge_passes():
+    """D13.
+
+    WHAT THIS BINDS AND WHAT IT DOES NOT. It checks that the flag is FORWARDED to both
+    calls, not that absorption changes any particular field, because version 1 runs the
+    same merge twice and honouring the flag in one pass and not the other would be
+    neither version 1 nor the repair. A physical fixture would have to arrange for the
+    fine pass specifically to absorb, which binds the geometry rather than the wiring
+    that the mutation attacks. Recorded plainly so a reader does not take this for a
+    behavioural test.
+    """
+    from unittest.mock import patch
+
+    import aew.v1port.detection as detection
+
+    latgrid, longrid = np.meshgrid(np.arange(0.0, 21.0), np.arange(0.0, 21.0))[::-1]
+    curvature = np.zeros(latgrid.shape)
+    curvature[(np.abs(latgrid - 10) <= 2) & (np.abs(longrid - 10) <= 2)] = 5e-6
+    advection = (longrid - 10.0) * 1e-9        # a zero contour down the middle
+    wind = np.full(latgrid.shape, -8.0)
+
+    for flag in (False, True):
+        with patch.object(detection, "merge_contours",
+                          side_effect=lambda c, *a, **k: list(c)) as spy:
+            detection.detect_troughs(0.0, latgrid, longrid, wind, curvature, advection,
+                                     latgrid, longrid, curvature,
+                                     coarse_threshold=1e-6, fine_threshold=1e-6,
+                                     absorb=flag)
+        assert spy.call_count == 2, "the coarse pass and the fine pass"
+        for call in spy.call_args_list:
+            assert call.kwargs.get("absorb") is flag, (
+                f"both merges must be told absorb={flag}, got "
+                f"{call.kwargs.get('absorb')!r}")

@@ -434,9 +434,19 @@ def test_the_advection_gives_the_same_answer_in_either_row_order():
     lat = np.arange(-20.0, 20.1, 2.5)
     lon = np.arange(-30.0, 30.1, 2.5)
     longrid, latgrid = np.meshgrid(lon, lat)
-    rv = np.exp(-((latgrid - 5.0) / 6.0) ** 2)[None, ...]
+    # A PRODUCTION-SHAPED STACK, MORE TIMESTEPS THAN EITHER SPATIAL AXIS, and
+    # nonidentical. A single timestep left this open to the same relative-shape gate that
+    # defeated the curvature fixture next door: with `rv` of shape (1, 17, 25), a mutant
+    # reading `latitude_descends(latgrid) and u.shape[0] <= u.shape[1]` is satisfied
+    # either way and survives, and so is the `shape[2]` form. Found by mutating this
+    # branch after a review found the sibling one, rather than by waiting for the same
+    # finding to be reported twice.
+    steps = np.arange(30, dtype=float)
+    rv = np.stack([np.exp(-((latgrid - 5.0 - 0.2 * s) / 6.0) ** 2) for s in steps])
     u = np.zeros_like(rv)
-    v = np.full_like(rv, 5.0)                      # northward, so the flipped term matters
+    # northward, so the flipped meridional term matters, and varying so no timestep is a
+    # copy of another
+    v = np.stack([np.full(latgrid.shape, 5.0 - 0.1 * s) for s in steps])
     middle = lat.size // 2
 
     ascending = P._advection(latgrid, longrid, u, v, rv)
@@ -478,13 +488,16 @@ def test_curvature_gives_the_same_answer_in_either_row_order():
     lon = np.arange(-30.0, 30.1, 2.5)
     longrid, latgrid = np.meshgrid(lon, lat)
     # a cyclonic vortex off-center in latitude, so the meridional term matters and a
-    # reversal is detectable. A PRODUCTION-SHAPED STACK of twelve NONIDENTICAL
-    # timesteps, because two outside-chosen mutations in a row defeated smaller fixtures by
-    # gating the orientation on the stack size (`u.shape[0] == 1`, then `<= 2`). Twelve
-    # matches this file's other fixtures; a gate tuned above it stops reading as a lazy
-    # implementation and starts reading as sabotage, which is outside what a mutation
-    # catalog can bind.
-    steps = np.arange(12, dtype=float)
+    # reversal is detectable. A PRODUCTION-SHAPED STACK of NONIDENTICAL timesteps,
+    # because outside-chosen mutations have repeatedly defeated smaller fixtures by
+    # gating the orientation on the stack's shape (`u.shape[0] == 1`, then `<= 2`, then
+    # `u.shape[0] <= u.shape[1]`). MORE TIMESTEPS THAN EITHER SPATIAL AXIS, which is the
+    # property that kills every relative-shape variant rather than one of them: a later
+    # review defeated a 20-step stack with `u.shape[0] <= u.shape[2]`, since 20 is under
+    # the 25 longitudes. A real year is 1460 timesteps against 71 latitudes and 181
+    # longitudes, so the time axis being the LONGEST is the production ordering, and
+    # matching it is what closes the family. It is not a count chosen to be large.
+    steps = np.arange(30, dtype=float)
     u = np.stack([-(1.5 - 0.05 * s) * (latgrid - 5.0 - 0.3 * s) for s in steps])
     v = np.stack([(1.5 - 0.03 * s) * (longrid + 0.4 * s) for s in steps])
 
@@ -533,6 +546,136 @@ def test_curvature_of_a_cyclonic_vortex_matches_the_hand_derived_value():
         got = float(np.median(curv[0][ring]))
         assert got == pytest.approx(expected, rel=0.35), \
             f"curvature over the vortex ring is {got:.3e}, expected about {expected:.3e}"
+
+
+@pytest.mark.parametrize("orient", ["ascending", "descending"])
+@pytest.mark.parametrize("lat_step", [2.5, 6.0])
+def test_orientation_does_not_depend_on_how_many_timesteps_are_batched(orient, lat_step):
+    """P6 and P13, and the END of an arms race rather than another round of it.
+
+    Three successive reviews defeated the row-order fixtures with orientation gates
+    written against the STACK'S SHAPE: `u.shape[0] == 1`, then `<= 2`, then
+    `u.shape[0] <= u.shape[1]`, then the longitude form, and then the mirror image,
+    orienting only when the time axis is the longest. Each was answered by making the
+    fixture a shape the gate did not admit, and each time a new shape existed. That game
+    has no end, because a fixture is one shape and the family is infinite.
+
+    The property this checks is that a timestep's curvature does not depend on what else
+    was batched with it: the routine is a per-timestep operation over a stack, so one
+    timestep computed alone must equal that timestep computed inside a long stack. The
+    same holds for the advection.
+
+    THIS SAMPLES THE PROPERTY, IT DOES NOT PROVE IT, and an earlier version of this
+    docstring claimed otherwise. It said every condition reading `u.shape` must send the
+    two calls down different branches, and that is false: a threshold ABOVE both sampled
+    sizes, `u.shape[0] < 100` for instance, leaves them on the same branch so they agree
+    with each other while a real year does not. A review found exactly that. Two other
+    things carry the weight instead. The curvature's orientation now lives in
+    `_curvature_one_timestep`, where no stack is in scope, so the family's natural site is
+    gone. And `test_orientation_holds_at_the_batch_sizes_this_code_actually_runs` binds
+    the three batch sizes this program produces, which is a closed set even though the
+    space of shapes is not.
+
+    Both row orders are exercised, because a gate combined with `latitude_descends` only
+    misbehaves on one of them.
+
+    TWO GRID SIZES AND A ROW-ORDER CHECK AT EACH, because the stack-shape family has a
+    spatial twin that the batching check alone CANNOT see. A gate reading
+    `latgrid.shape[0] > 10` does not vary with how many timesteps are batched, so both
+    calls above take the same branch, agree with each other, and the check passes while
+    the orientation is wrong. What catches it is comparing the two ROW ORDERS at a grid
+    the gate excludes, so the row-order equality below runs at 17 rows and at 7. The two
+    assertions are different instruments for one property, that neither array's SIZE may
+    change the orientation and only the row order may.
+    """
+    lat = np.arange(-20.0, 20.1, lat_step)
+    lon = np.arange(-30.0, 30.1, lat_step)
+    longrid, latgrid = np.meshgrid(lon, lat)
+    steps = np.arange(30, dtype=float)
+    u = np.stack([-(1.5 - 0.02 * s) * (latgrid - 5.0 - 0.2 * s) for s in steps])
+    v = np.stack([(1.5 - 0.01 * s) * (longrid + 0.3 * s) for s in steps])
+    anomaly = np.stack([np.exp(-((latgrid - 5.0 - 0.2 * s) / 6.0) ** 2) for s in steps])
+    grid_in = latgrid if orient == "ascending" else latgrid[::-1]
+    if orient == "descending":
+        u, v, anomaly = u[:, ::-1], v[:, ::-1], anomaly[:, ::-1]
+
+    # The LAST timestep, not the first, so a gate that special-cases the head of a stack
+    # is caught too.
+    one = slice(-1, None)
+    whole_curv = P.curvature_from_winds(grid_in, longrid, u, v)
+    alone_curv = P.curvature_from_winds(grid_in, longrid, u[one], v[one])
+    assert np.allclose(whole_curv[-1], alone_curv[0], equal_nan=True), \
+        "a timestep's curvature changed with the size of the stack it was batched in"
+
+    whole_adv = P._advection(grid_in, longrid, u, v, anomaly)
+    alone_adv = P._advection(grid_in, longrid, u[one], v[one], anomaly[one])
+    assert np.allclose(whole_adv[-1], alone_adv[0], equal_nan=True), \
+        "a timestep's advection changed with the size of the stack it was batched in"
+
+    # THE SAME PHYSICAL FIELD IN THE OTHER ROW ORDER, at this grid size. This is what
+    # catches a gate on the GRID's shape, which the batching check above cannot, and it
+    # is the reason the grid size is parametrized rather than merely large.
+    flipped_grid = grid_in[::-1]
+    other_curv = P.curvature_from_winds(flipped_grid, longrid,
+                                        u[:, ::-1], v[:, ::-1])[:, ::-1]
+    assert np.allclose(whole_curv, other_curv, equal_nan=True), \
+        f"curvature depends on row order at {latgrid.shape[0]} rows"
+    other_adv = P._advection(flipped_grid, longrid, u[:, ::-1], v[:, ::-1],
+                             anomaly[:, ::-1])[:, ::-1]
+    assert np.allclose(whole_adv, other_adv, equal_nan=True), \
+        f"advection depends on row order at {latgrid.shape[0]} rows"
+
+    # and the fixture must be able to SHOW a reversal at this grid size, or the two
+    # assertions above pass on a field that is symmetric in latitude
+    inside = np.isfinite(whole_curv[0])
+    assert not np.allclose(whole_curv[0][inside], whole_curv[0][inside][::-1]), \
+        "the fixture is latitude-symmetric here, so a reversal would be undetectable"
+
+
+@pytest.mark.parametrize("batch", [1, 60, 1460])
+def test_orientation_holds_at_the_batch_sizes_this_code_actually_runs(batch):
+    """P6 and P13, and the honest end of the batching argument.
+
+    The neighbouring test samples two batch sizes, and a review pointed out that this
+    cannot bind the universal claim its docstring first made: a condition like
+    `u.shape[0] < 100` leaves both of those calls on the same branch, so they agree with
+    each other while a real year does not. Moving the curvature's orientation into a
+    per-timestep helper removed the natural place to write that, but a caller could
+    reintroduce it, and no number of sampled shapes proves a statement about all shapes.
+
+    What CAN be settled is the set of shapes this program actually produces, which is
+    small and known: one timestep in the diagnostics, sixty in the oracle window, and
+    1460 in a six-hourly year. A batch condition is only a defect if it changes the
+    answer on data the code sees, so binding those three closes the question for this
+    codebase rather than in general. On the coarse grid a year-length stack costs about a
+    tenth of a second, which is why this is affordable and was not the arms race's
+    answer earlier.
+    """
+    lat = np.arange(-20.0, 20.1, 6.0)
+    lon = np.arange(-30.0, 30.1, 6.0)
+    longrid, latgrid = np.meshgrid(lon, lat)
+    steps = np.arange(batch, dtype=float)
+    u = np.stack([-(1.5 - 0.0002 * s) * (latgrid - 5.0 - 0.002 * s) for s in steps])
+    v = np.stack([(1.5 - 0.0001 * s) * (longrid + 0.003 * s) for s in steps])
+    anomaly = np.stack([np.exp(-((latgrid - 5.0 - 0.002 * s) / 6.0) ** 2) for s in steps])
+
+    # the same physical field stored both ways must give the same answer, AT THIS BATCH
+    # SIZE, which is what a threshold between two sampled sizes slips through
+    curv_up = P.curvature_from_winds(latgrid, longrid, u, v)
+    curv_down = P.curvature_from_winds(latgrid[::-1], longrid,
+                                       u[:, ::-1], v[:, ::-1])[:, ::-1]
+    assert np.allclose(curv_up, curv_down, equal_nan=True), \
+        f"curvature depends on row order at a batch of {batch}"
+
+    adv_up = P._advection(latgrid, longrid, u, v, anomaly)
+    adv_down = P._advection(latgrid[::-1], longrid, u[:, ::-1], v[:, ::-1],
+                            anomaly[:, ::-1])[:, ::-1]
+    assert np.allclose(adv_up, adv_down, equal_nan=True), \
+        f"advection depends on row order at a batch of {batch}"
+
+    inside = np.isfinite(curv_up[0])
+    assert not np.allclose(curv_up[0][inside], curv_up[0][inside][::-1]), \
+        "the fixture is latitude-symmetric, so a reversal would be undetectable"
 
 
 def test_curvature_refuses_a_2d_field_the_same_way_in_either_row_order():

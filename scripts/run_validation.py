@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the ported tracker on ERA-Interim and compare it against version 1's own record.
 
-THIS IS THE MEASUREMENT THE PORT EXISTS TO SURVIVE. MATLAB cannot run here, so version 1
+THIS IS THE MEASUREMENT THE PORT EXISTS TO SURVIVE. Version 1's published record is what
 cannot be executed on a test case, and repeated independent checking found twenty-three places the
 port's reading of its source was wrong. Every other check in this repository compares the
 port against that same reading. This one compares it against what version 1 actually
@@ -66,7 +66,14 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--years", nargs="+", type=int, required=True,
                     help="years to track and compare; the published record covers 1983-2007")
-    ap.add_argument("--directory", default="data/eraint/v1port")
+    # THE BUFFERED ONE-DEGREE TREE IS THE DEFAULT, and the old one has to be asked for by
+    # name. `data/eraint/v1port` is the original unbuffered 0.75 degree retrieval, which
+    # this project has since MEASURED to be the wrong configuration: version 1 ran at one
+    # degree with a buffered domain, and the coarse tracking grid follows from the input
+    # spacing through `decimate_f`'s floor, so 0.75 gives a 2.25 degree mesh where version
+    # 1 had 2.0. A review found this default able to recreate a disproven configuration in
+    # silence, which is the failure mode a default is worst at announcing.
+    ap.add_argument("--directory", default="data/eraint/v1port_buffered")
     ap.add_argument("--published", default=PUBLISHED_DIR)
     ap.add_argument("--exclusive", action="store_true",
                     help="apply the duplication repair; the default reproduces version 1")

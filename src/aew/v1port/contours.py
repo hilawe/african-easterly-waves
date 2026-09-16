@@ -33,10 +33,16 @@ THRESHOLD_LADDER = (1.0, 1.5, 2.0, 2.5, 3.0, 3.5)
 
 
 def connected_region(mask, seed):
-    """The 8-connected region of True cells containing `seed`, replacing isolate_region_f.
+    """Version 1's region search, replacing isolate_region_f.
 
-    Returns a boolean array of the same shape. An empty region comes back all False, which
-    is what a seed on a False cell gives.
+    Returns a boolean array of the same shape and dtype as `mask`.
+
+    WHAT COMES BACK depends on the seed, and the below-threshold case is not the obvious
+    one. A seed on a True cell gives the 8-connected component containing it. A seed on a
+    FALSE cell gives that cell PLUS the above-threshold components touching it, which is
+    a single cell only when nothing touches it, because the original marks its seed
+    before testing anything. An out-of-bounds seed gives an empty region, since the
+    original returns before marking. The block in the body carries the source for that.
 
     A DELIBERATE DIVERGENCE, and the reason matters more than the change.
 
@@ -71,12 +77,46 @@ def connected_region(mask, seed):
     mask = np.asarray(mask, dtype=bool)
     row, col = int(seed[0]), int(seed[1])
     if not (0 <= row < mask.shape[0] and 0 <= col < mask.shape[1]):
-        return np.zeros_like(mask)
-    if not mask[row, col]:
+        # The original returns BEFORE marking anything when the seed is out of bounds,
+        # so nothing is visited and the region really is empty here.
         return np.zeros_like(mask)
     # 8-connected, matching the original's eight explicit neighbour tests
     labels, _ = ndimage.label(mask, structure=np.ones((3, 3), dtype=int))
-    return labels == labels[row, col]
+    if mask[row, col]:
+        return labels == labels[row, col]
+
+    # A SEED BELOW THRESHOLD IS STILL MARKED, and the port returned nothing here until
+    # 2026-08-30. `isolate_region_f.m` marks the seed with no test that it qualifies,
+    #
+    #     Zn(pos(1),pos(2)) = 2;
+    #     output = pos;
+    #
+    # and only THEN tests the eight neighbours against the original field, recursing
+    # into each one that is above threshold. So the region is the seed cell plus the
+    # above-threshold components touching it, which is a single cell only when nothing
+    # touches it. Subject to the recursion caveat above: version 1 can return a PARTIAL
+    # component for a large fill, so this describes what it sets out to collect rather
+    # than a guarantee about what it returns.
+    #
+    # It is reachable in normal use rather than pathological: `_select_region` seeds
+    # every level of the threshold ladder with the same cell, and a region large enough
+    # to trigger escalation is often seeded by a cell that does not survive the stricter
+    # level. Measured BEFORE this fix, on the 0.75 and the buffered runs alike, that path
+    # emptied the region for 15.2 percent of the observations where an axis reached a
+    # wave version 1 found and the merge produced none.
+    region = np.zeros_like(mask)
+    region[row, col] = True
+    touching = set()
+    for delta_row in (-1, 0, 1):
+        for delta_col in (-1, 0, 1):
+            if delta_row == 0 and delta_col == 0:
+                continue
+            r, c = row + delta_row, col + delta_col
+            if 0 <= r < mask.shape[0] and 0 <= c < mask.shape[1] and mask[r, c]:
+                touching.add(int(labels[r, c]))
+    for label in touching:
+        region |= labels == label
+    return region
 
 
 def _binary_masks(curvature, threshold):
@@ -146,8 +186,31 @@ def _hull_contains(lons, lats, points_lon, points_lat):
         return np.zeros(len(points_lon), dtype=bool)
 
 
-def merge_contours(candidates, latgrid, longrid, curvature, threshold):
+def merge_contours(candidates, latgrid, longrid, curvature, threshold, absorb=False):
     """Merge trough candidates belonging to one wave, from merge_contours_f.m.
+
+    THE FIRST PASS ABSORBS NOTHING BY DEFAULT, BECAUSE VERSION 1'S DOES NOT. Its
+    absorption test is
+
+        if inpolygon(pot_wv(idd(j)).lon_mean,pot_wv(idd(j)).lat_mean,tlon(k),tlat(k),
+                     'simplify',true) == 1;
+
+    and `inpolygon` takes four arguments in both MATLAB and Octave. The two extra ones
+    raise, the whole block sits inside a `try ... catch err ... end` whose catch is
+    empty, and `check` is therefore never set. Every candidate becomes its own wave and
+    the count is brought down entirely by the five-degree pass and the minimum extent.
+
+    ESTABLISHED BY EXECUTION, not by reading. Version 1's own merge_contours_f was run
+    under Octave on six real timesteps of the buffered 1990 record: convhull succeeded
+    417 times, the absorption loop ran to completion 6 times, and the catch was reached
+    411 times with "inpolygon: function called with too many inputs". The 6 completions
+    are the iterations where no other candidate remained to test. Against the same
+    arrays the archived source returns 34, 28, 28, 29, 25 and 29 waves while the source
+    with the call repaired returns 33, 28, 27, 29, 25 and 29.
+
+    `absorb=True` performs the absorption the code was written to do. It is not version
+    1 and its record is not version 1's, which is the same shape as `exclusive=True` in
+    the association stage: the defect is reproduced by default and the repair is a flag.
 
     Parameters
     ----------
@@ -198,14 +261,19 @@ def merge_contours(candidates, latgrid, longrid, curvature, threshold):
         lats, lons = latgrid[region], longrid[region]
 
         absorbed = []
-        if others:
+        if absorb and others:
+            # Only reachable with the flag set. Version 1 computes the hull and then
+            # fails before it can use it, so this is what its code describes rather than
+            # what it does.
             inside = _hull_contains(lons, lats,
                                     np.array([candidates[i]["lon_mean"] for i in others]),
                                     np.array([candidates[i]["lat_mean"] for i in others]))
             absorbed = [others[i] for i in np.flatnonzero(inside)]
 
         # FAITHFUL: when candidates are absorbed the original takes the TIME of the first
-        # absorbed one rather than of the candidate being processed.
+        # absorbed one rather than of the candidate being processed. With absorption
+        # disabled nothing is ever absorbed, so a wave always carries its own candidate's
+        # time and this branch is unreachable.
         time_source = candidates[absorbed[0]]["time"] if absorbed else here["time"]
         merged.append({
             "time": time_source,

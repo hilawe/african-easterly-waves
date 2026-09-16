@@ -723,6 +723,54 @@ def test_the_hull_drops_collinear_points():
     assert len(hull_lon) == 5, "four corners plus the closing repeat"
 
 
+def test_the_hull_starts_at_the_lowest_index():
+    """The starting vertex, pinned against MATLAB's own answer.
+
+    MUTATIONS THIS BINDS, listed before the assertions were written:
+      A1 the rotation is dropped, so the cycle starts wherever scipy left it
+      A2 the rotation goes the wrong way (np.roll with +argmin rather than -)
+      A3 the rotation starts at the LARGEST index instead of the smallest
+      A4 the closing repeat is dropped, so no vertex is doubled at all
+
+    WHY IT MATTERS, and it is not cosmetic. Closing the ring doubles the first vertex, and
+    version 1 feeds that closed list into an inflation that centers on its mean, so the
+    starting vertex moves the whole search polygon. Before the rotation the port doubled a
+    different vertex from version 1 on 72 percent of real wave footprints, shifting the
+    center by a median of 0.50 degrees and up to 4.0, against a 2 degree grid.
+
+    THE EXPECTED VALUE IS MATLAB'S, not a reimplementation's. Run in MATLAB R2026a on this
+    exact 200-point footprint's parent case, `convhull(lon,lat,'simplify',true)` returns
+    [1 3 187 200 116 40 26 2 1]. The eight points below are that hull's vertices, kept in
+    their original relative order and renumbered, so the same rule has to produce the same
+    cycle starting at the lowest index.
+
+    The rule itself is inferred from two MATLAB observations, both of which began at the
+    lowest-index hull vertex and in both of which that index was 1. This test pins the
+    port's behavior; it does not prove MATLAB's rule.
+    """
+    # a hull whose lowest index is deliberately NOT the first point scipy would pick,
+    # so the assertion fails if the rotation is absent
+    lons = np.array([-139.0, -138.0, -140.0, -124.0, -123.0, -127.0, -125.0, -140.0])
+    lats = np.array([-16.0, -21.0, -17.0, -21.0, -21.0, -35.0, -35.0, -35.0])
+    hull_lon, hull_lat = _hull_polygon(lons, lats)
+
+    assert hull_lon[0] == hull_lon[-1] and hull_lat[0] == hull_lat[-1], \
+        "the ring must close, because version 1's convhull returns a closed list"
+
+    order = [int(np.where((lons == a) & (lats == b))[0][0])
+             for a, b in zip(hull_lon, hull_lat)]
+    assert order[0] == min(order), \
+        f"the cycle must start at the lowest hull index, got {order}"
+    assert order[0] == 0, f"point 0 is on this hull and is the lowest, got {order}"
+
+    # and the direction must be preserved by the rotation, not reversed
+    from scipy.spatial import ConvexHull
+    scipy_cycle = ConvexHull(np.column_stack([lons, lats])).vertices.tolist()
+    k = scipy_cycle.index(order[0])
+    assert order[:-1] == scipy_cycle[k:] + scipy_cycle[:k], \
+        "rotating must preserve the winding, only move where it begins"
+
+
 def test_the_doubled_vertex_is_what_makes_the_start_position_matter():
     """The divergence `_hull_polygon` records as NOT ESTABLISHED, measured so its size is
     on record rather than asserted away.

@@ -135,40 +135,60 @@ MUTATIONS = {
         'RECORD_EPOCH = np.datetime64("1900-01-01T00:00:00", "ns")',
         'RECORD_EPOCH = np.datetime64("1970-01-01T00:00:00", "ns")'),
     # P13 the curvature is computed in the file's own row order, which is exactly the
-    # defect the orientation branch was added to fix
+    # defect the orientation branch was added to fix. ALL THE CURVATURE ENTRIES BELOW
+    # ANCHOR ON `_curvature_one_timestep`, where the orientation now lives.
     "curvature_row_order_taken_on_trust": _sub(
         "    if latitude_descends(latgrid):\n"
-        "        oriented = curvature_from_winds(",
+        "        return _curvature_one_timestep(",
         "    if False:\n"
-        "        oriented = curvature_from_winds("),
+        "        return _curvature_one_timestep("),
     # P13 the orientation test points the wrong way, so both storage orders are wrong
     "curvature_oriented_for_the_wrong_order": _sub(
         "    if latitude_descends(latgrid):\n"
-        "        oriented = curvature_from_winds(",
+        "        return _curvature_one_timestep(",
         "    if not latitude_descends(latgrid):\n"
-        "        oriented = curvature_from_winds("),
+        "        return _curvature_one_timestep("),
     # P13 the result is never flipped back, so the output rows are reversed
     "curvature_orientation_not_restored": _sub(
-        "        return oriented[:, ::-1, :]",
-        "        return oriented"),
+        "                                       u2d[::-1, :], v2d[::-1, :])[::-1, :]",
+        "                                       u2d[::-1, :], v2d[::-1, :])"),
     # P13 the grid is flipped and the winds are not
     "curvature_grid_flipped_without_the_winds": _sub(
-        "        oriented = curvature_from_winds(latgrid[::-1, :], longrid,\n"
-        "                                        u[:, ::-1, :], v[:, ::-1, :])",
-        "        oriented = curvature_from_winds(latgrid[::-1, :], longrid, u, v)"),
-    # P13 the orientation only runs for a single-timestep stack, an outside-chosen
-    # mutation that defeated the single-timestep version of the row-order fixture
-    "curvature_oriented_only_for_one_timestep": _sub(
+        "        return _curvature_one_timestep(latgrid[::-1, :], longrid,\n"
+        "                                       u2d[::-1, :], v2d[::-1, :])[::-1, :]",
+        "        return _curvature_one_timestep(latgrid[::-1, :], longrid,\n"
+        "                                       u2d, v2d)[::-1, :]"),
+    # P13 a gate on the GRID's size, which is the one shape condition still writable at
+    # the orientation site now that no stack is in scope there. Caught by running the
+    # row-order comparison at two grid sizes, 17 rows and 7.
+    "curvature_oriented_only_on_a_tall_grid": _sub(
         "    if latitude_descends(latgrid):\n"
-        "        oriented = curvature_from_winds(",
-        "    if latitude_descends(latgrid) and u.shape[0] == 1:\n"
-        "        oriented = curvature_from_winds("),
-    # P13 the same chooser's second try, gated on a small stack instead of exactly one
-    "curvature_oriented_only_for_short_stacks": _sub(
-        "    if latitude_descends(latgrid):\n"
-        "        oriented = curvature_from_winds(",
-        "    if latitude_descends(latgrid) and u.shape[0] <= 2:\n"
-        "        oriented = curvature_from_winds("),
+        "        return _curvature_one_timestep(",
+        "    if latitude_descends(latgrid) and latgrid.shape[0] > 10:\n"
+        "        return _curvature_one_timestep("),
+    # P13 THE BATCH-SIZE FAMILY, now writable only in the CALLER, because
+    # `_curvature_one_timestep` has no stack in scope. That is the point of moving the
+    # orientation there: five reviews in a row wrote a condition on `u.shape[0]` at the
+    # orientation site, and the site no longer has one. This entry keeps the family bound
+    # from where it CAN still be written, by orienting the stack in the caller and
+    # skipping it for long stacks, which is the shape of every one of those five.
+    # Retired with the refactor, because their anchor text no longer exists and
+    # re-expressing each at the caller would be five copies of this one:
+    # `curvature_oriented_only_for_one_timestep`, `..._for_short_stacks`,
+    # `..._when_time_is_the_short_axis`, `..._when_time_is_under_the_longitude_axis`,
+    # and `..._when_time_is_the_longest_axis`.
+    "curvature_batch_size_reintroduced_in_the_caller": _sub(
+        "    out = np.empty(np.shape(u), dtype=float)\n"
+        "    for t in range(np.shape(u)[0]):\n"
+        "        out[t] = _curvature_one_timestep(latgrid, longrid, u[t], v[t])",
+        "    out = np.empty(np.shape(u), dtype=float)\n"
+        "    flip = latitude_descends(latgrid) and np.shape(u)[0] < 100\n"
+        "    for t in range(np.shape(u)[0]):\n"
+        "        if flip:\n"
+        "            out[t] = component_vorticity(latgrid[::-1, :], longrid,\n"
+        "                                         u[t][::-1, :], v[t][::-1, :])[2][::-1, :]\n"
+        "        else:\n"
+        "            out[t] = component_vorticity(latgrid, longrid, u[t], v[t])[2]"),
     # the stack-shape refusal is dropped, so a 2-D caller fails differently by row order
     "curvature_accepts_a_2d_field": _sub(
         "    if u.ndim != 3 or v.ndim != 3:",

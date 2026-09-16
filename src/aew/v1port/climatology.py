@@ -16,6 +16,14 @@ SMOOTHED, SIGN-ADJUSTED ANOMALY, not of raw curvature vorticity. `anomaly_thresh
 below reproduces that recipe. Getting this wrong is the easiest way to produce a v2 that
 detects a different population than v1 did, which is why it is spelled out here.
 
+ONE DECLARED DIVERGENCE FROM THE ORIGINAL, in the mean. p1_data_eraint_climate.m line
+116 takes `mean`, which propagates NaN, so one masked sample poisons that calendar step's
+climatology at that cell. `curvature_climatology` below sums `nan_to_num(..., 0)` and
+divides by the full sample count, so a NaN sample LOWERS the mean instead. No ERA-Interim
+input in this project carries a masked cell (every primary cell's finite count equals its
+bound), so no committed number is affected, but a reanalysis with a masked cell would
+give a different anomaly than version 1 would, and this paragraph is the record of that.
+
 Ported from:
     p1_data_eraint_climate.m    the mean field and its leap-day treatment
     smth9_f.m                   the nine-point smoother
@@ -264,6 +272,22 @@ def gaussian_decimate(field, input_resolution, output_resolution):
 
     This is one of the three toolbox calls in the version 1 source. The kernel is a
     normalized isotropic Gaussian, which numpy reproduces exactly.
+
+    THE EVEN-KERNEL WINDOW IS TAKEN MATLAB'S WAY, NOT SCIPY'S, and that is a repair. For an
+    even-width kernel the "same" window of a convolution is ambiguous by one cell, and the
+    two libraries resolve it in OPPOSITE corners: MATLAB's `conv2(...,'same')` takes the
+    offset-(1,1) window of the full convolution, scipy's `convolve2d(mode='same')` takes
+    offset (0,0). Using scipy's shifted every decimated field one cell against version 1's.
+
+    MEASURED, not reasoned: running the archived `decimate_f.m` under Octave on a real
+    1990 field and comparing, the two differed at EVERY cell, median 1.0 against a field
+    rms of 9.8, until this offset was corrected, at which point they agree exactly.
+
+    IT COULD NOT HAVE APPEARED BEFORE THIS YEAR'S REGRIDDING, which is why it survived so
+    long. `decimation_shape` gives width 3 for the 0.75 degree tree the project used for
+    most of its life, and an odd kernel has no ambiguity. Version 1's own one-degree input
+    gives width 2. The defect is reachable only in the configuration that was established
+    as correct most recently.
     """
     field = np.asarray(field, dtype=float)
     if field.ndim == 2:
@@ -275,7 +299,15 @@ def gaussian_decimate(field, input_resolution, output_resolution):
 
     from scipy.signal import convolve2d
     kernel = gaussian_kernel(width)
-    smoothed = np.stack([convolve2d(step, kernel, mode="same") for step in field])
+    # `full` then an explicit window, rather than mode="same", so the convention is
+    # visible and testable instead of inherited from whichever library is underneath.
+    # floor(width / 2) is MATLAB's choice and agrees with scipy's for odd widths.
+    offset = width // 2
+    rows, cols = field.shape[1], field.shape[2]
+    smoothed = np.stack([
+        convolve2d(step, kernel, mode="full")[offset:offset + rows,
+                                              offset:offset + cols]
+        for step in field])
     out = smoothed[:, ::stride, ::stride]
     return (out[0] if squeeze else out)
 

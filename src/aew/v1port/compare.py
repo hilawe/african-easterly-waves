@@ -1,6 +1,6 @@
 """Compare a port-produced record against version 1's published one.
 
-THIS IS THE INSTRUMENT THE WHOLE PORT IS BUILT TOWARD. MATLAB cannot run here, so version 1
+THIS IS THE INSTRUMENT THE WHOLE PORT IS BUILT TOWARD. Version 1's published record is
 cannot be executed on a test case, and repeated independent checking found twenty-three places the
 port's reading of its source was wrong. Every check in the repository up to now compares
 the port against that same reading. This one compares it against what version 1 actually

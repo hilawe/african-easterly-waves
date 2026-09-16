@@ -192,14 +192,16 @@ def track_year(times, latgrid, longrid, u, v, curvature_anomaly,
                coarse_threshold, fine_threshold,
                coarse_resolution_deg=COARSE_RESOLUTION_DEG,
                lat_range=DOMAIN_LAT, lon_range=DOMAIN_LON,
-               exclusive=False, progress=None):
+               exclusive=False, absorb=False, progress=None):
     """One year of tracking, from prepared fine-grid fields to finished tracks.
 
     `u`, `v` and `curvature_anomaly` are (time, lat, lon) on the native grid, already
     anomalies where that applies. `times` are in days, the units the record stores.
 
-    Returns the finished tracks. `exclusive=True` applies the duplication repair; the
-    default reproduces version 1.
+    Returns the finished tracks. Two flags, both defaulting to version 1's own
+    behaviour: `exclusive=True` applies the duplication repair, and `absorb=True`
+    enables the first-pass hull absorption version 1's merge attempts and never
+    completes. See `association.associate_step` and `contours.merge_contours`.
     """
     u = np.asarray(u, dtype=float)
     v = np.asarray(v, dtype=float)
@@ -247,7 +249,8 @@ def track_year(times, latgrid, longrid, u, v, curvature_anomaly,
             float(times[step]), latgrid_c, longrid_c, u_c[step],
             anomaly_c[step], advection_c[step],
             latgrid_f, longrid_f, anomaly_f[step],
-            coarse_threshold=coarse_threshold, fine_threshold=fine_threshold)
+            coarse_threshold=coarse_threshold, fine_threshold=fine_threshold,
+            absorb=absorb)
         # The smoothed fine winds, computed once per timestep as version 1 does, and used
         # only for the median that predicts where each wave goes next.
         u_median = _median_over(clim.smooth9(u_f[step]))
@@ -332,12 +335,32 @@ def curvature_from_winds(latgrid, longrid, u, v):
         # IndexError in the flip above it, so the failure depended on row order.
         raise ValueError("curvature_from_winds takes (time, lat, lon) stacks; got "
                          "u with %d and v with %d dimensions" % (u.ndim, v.ndim))
-    if latitude_descends(latgrid):
-        oriented = curvature_from_winds(latgrid[::-1, :], longrid,
-                                        u[:, ::-1, :], v[:, ::-1, :])
-        return oriented[:, ::-1, :]
     out = np.empty(np.shape(u), dtype=float)
     for t in range(np.shape(u)[0]):
-        _, _, curvature = component_vorticity(latgrid, longrid, u[t], v[t])
-        out[t] = curvature
+        out[t] = _curvature_one_timestep(latgrid, longrid, u[t], v[t])
     return out
+
+
+def _curvature_one_timestep(latgrid, longrid, u2d, v2d):
+    """One timestep's curvature, oriented to ascending latitude.
+
+    THE ORIENTATION LIVES HERE, WHERE NO STACK IS IN SCOPE, and that placement is the
+    point rather than tidiness. Five successive reviews defeated the row-order tests with
+    orientation conditions written against the stack's shape (`u.shape[0] == 1`, `<= 2`,
+    `<= u.shape[1]`, `<= u.shape[2]`, the mirror image, and finally a plain `< 100`, which
+    no fixture can catch without guessing the threshold). Each was answered by testing
+    another shape, and a fixture is one shape while the family is infinite.
+
+    Deciding the orientation per timestep removes the information instead of testing for
+    its misuse. There is no `u.shape[0]` at this point in the program, so the whole family
+    of batch-size conditions cannot be written here at all. `test_orientation_does_not_
+    depend_on_how_many_timesteps_are_batched` still samples the property from outside,
+    because the caller could in principle reintroduce it, but the natural place to write
+    the defect no longer exists.
+    """
+    latgrid = np.asarray(latgrid, dtype=float)
+    if latitude_descends(latgrid):
+        return _curvature_one_timestep(latgrid[::-1, :], longrid,
+                                       u2d[::-1, :], v2d[::-1, :])[::-1, :]
+    _, _, curvature = component_vorticity(latgrid, longrid, u2d, v2d)
+    return curvature

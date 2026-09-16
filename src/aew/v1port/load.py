@@ -188,25 +188,63 @@ class ClimatologyAccumulator:
                 "short_steps": sorted(short_steps)}
 
 
-def curvature_for_year(year, directory="data/eraint/v1port", prefix="eraint"):
-    """Curvature vorticity for one year, with its times and grid."""
+def curvature_for_year(year, directory="data/eraint/v1port", prefix="eraint",
+                       subsample=1):
+    """Curvature vorticity for one year, with its times and grid.
+
+    `subsample` takes every Nth grid point, and IT IS APPLIED TO THE WINDS, before the
+    derivative rather than after it. That ordering is the whole point of the parameter
+    living here instead of in the caller. Curvature vorticity is built from spatial
+    derivatives, so striding a curvature field computed at half a degree gives a different
+    quantity from the curvature a whole-degree wind field would have produced: measured on
+    eight real ERA5 timesteps the two disagree at every finite cell, by 45.8 percent of the
+    field's own root-mean-square. Striding the winds is what a coarser retrieval request
+    would have done, so it is the operation this reproduces.
+
+    An earlier arrangement had the caller stride the returned curvature, which was both the
+    wrong operation and a crash: the climatology was still built on the full grid, so the
+    anomaly subtraction met mismatched shapes.
+    """
     from .pipeline import curvature_from_winds
 
     times, latgrid, longrid, u, v = load_year(year, directory, prefix)
+    latgrid, longrid, u, v = _stride(subsample, latgrid, longrid, u, v)
     return times, latgrid, longrid, curvature_from_winds(latgrid, longrid, u, v)
 
 
+def _stride(subsample, latgrid, longrid, u, v):
+    """Every Nth point of a wind field and its grid, refusing a stride that cannot work."""
+    subsample = int(subsample)
+    if subsample < 1:
+        raise ValueError(f"subsample must be at least 1, got {subsample}")
+    if subsample == 1:
+        return latgrid, longrid, u, v
+    # A stride that leaves too few rows to differentiate produces a field the tracker
+    # cannot use, and it would otherwise surface much later as an empty or degenerate
+    # result rather than here where the cause is legible.
+    if min(latgrid.shape[0], longrid.shape[1]) < 3 * subsample:
+        raise ValueError(
+            f"a stride of {subsample} leaves fewer than three points on a grid of "
+            f"{latgrid.shape}, which cannot carry a spatial derivative")
+    return (latgrid[::subsample, ::subsample], longrid[::subsample, ::subsample],
+            u[:, ::subsample, ::subsample], v[:, ::subsample, ::subsample])
+
+
 def build_climatology(years, directory="data/eraint/v1port", prefix="eraint",
-                      progress=None):
+                      progress=None, subsample=1):
     """The 1981-2010 style climatological mean, accumulated year by year.
 
     `progress` is called with (year, index, total) after each year, because this reads and
     differentiates thirty years of wind and a silent hour is hard to tell from a hang.
+
+    `subsample` is passed straight to `curvature_for_year`, so THE CLIMATOLOGY IS BUILT ON
+    THE SAME GRID the yearly fields will be sampled on. A caller that strides one and not
+    the other gets shapes that cannot be subtracted, which is how this was found.
     """
     accumulator = ClimatologyAccumulator()
     years = list(years)
     for n, year in enumerate(years, start=1):
-        times, _, _, curvature = curvature_for_year(year, directory, prefix)
+        times, _, _, curvature = curvature_for_year(year, directory, prefix, subsample)
         accumulator.add(curvature, times)
         del curvature
         if progress is not None:
@@ -216,15 +254,30 @@ def build_climatology(years, directory="data/eraint/v1port", prefix="eraint",
 
 def sample_anomaly_values(curvature, times_days, climatology, lat_values,
                           decimation_factor=None, native_resolution=None,
-                          coarse_resolution=None, per_step=400, rng=None):
+                          coarse_resolution=None, per_step=400, rng=None,
+                          lon_values=None, lat_range=None, lon_range=None):
     """A random sample of the anomaly values a threshold would be taken over.
+
+    THE SPATIAL BOX IS AN ARGUMENT, not a fixed whole-domain draw, so that the region
+    travels with any number computed here instead of being implied by a default. The
+    archive DOES record the sample, in src_readme.docx, as the full period of each
+    reanalysis over the tracking domain, and running that sample does not reproduce the
+    published pair. An African box reproduces the fine threshold more closely, but it was
+    chosen because it did so, which is selecting the sample on the answer, and it is
+    retired as a justification. The project's threshold notes record that finding.
+
+    `lat_range` and `lon_range` are inclusive (low, high) pairs in degrees. Passing either
+    requires `lon_values`, since a longitude box cannot be applied to a latitude axis
+    alone. Omitting both samples the whole retrieved grid, which is what earlier runs did.
 
     WHY A SAMPLE. The thresholds are percentiles of the anomaly over the whole climatology
     period, and thirty years of it at ERA5's resolution is about eighteen gigabytes. A
     percentile of a large random sample estimates the percentile of the population, and
     unlike a per-year percentile averaged afterwards it estimates the right quantity.
-    `threshold_sampling_error` measures how much precision that costs rather than assuming
-    it is enough.
+    `threshold_sampling_error` reports a within-sample half-sample range beside it, which
+    is a sensitivity diagnostic and NOT a measure of what that sampling costs, because it
+    cannot see variation across this draw. Several seeds measure that, and a `per_step` at or above the
+    finite-cell count removes it.
 
     Returns (coarse_sample, fine_sample), the smoothed and sign-adjusted values from each
     grid, which is what `climatology.anomaly_threshold` takes its percentile of.
@@ -234,18 +287,77 @@ def sample_anomaly_values(curvature, times_days, climatology, lat_values,
 
     rng = rng if rng is not None else np.random.default_rng(0)
     anomaly = clim.curvature_anomaly(curvature, _as_datetime(times_days), climatology)
+    if (lat_range is not None or lon_range is not None) and lon_values is None:
+        raise ValueError("a spatial box needs lon_values, not just the latitude axis")
 
+    def box_indices(lats, lons):
+        """Rows and columns inside the box, as index arrays, or None for the whole grid.
+
+        SLICE RATHER THAN MASK, because that is the order the tracker uses and the two are
+        NOT equivalent. `p2_track_eraint_700hPa.m` decimates the full field, then crops
+        both grids to lat1/lat2 and lon1/lon2 under "Parse Data to Final Lat/Lon Domain",
+        and passes the CROPPED arrays into `find_ews_f.m`, which smooths them at lines 84
+        to 91. So the smoother meets the tracking domain's edge as a boundary.
+
+        THE DIFFERENCE IS THE WHOLE PERIMETER, not a rounding detail. `smth9_f` loops from
+        2 to size-1 and starts from `out = x`, so it leaves the outer ring of whatever it
+        is handed untouched. Cropping first keeps the tracking domain's edge cells raw.
+        Smoothing a buffered field and masking afterwards smooths those same cells using
+        halo neighbours the archived smoother never sees.
+
+        An earlier version of this function masked after smoothing and its comment claimed
+        that doing so gave "what the tracker would compute at the same place". A review
+        checked that against the source and it was false. The comment asserted a fidelity
+        the code did not have, which is the defect shape this project keeps finding.
+        """
+        if lat_range is None and lon_range is None:
+            return None, None
+        lats = np.asarray(lats)
+        rows = np.arange(lats.size)
+        if lat_range is not None:
+            rows = rows[(lats >= lat_range[0]) & (lats <= lat_range[1])]
+        cols = None
+        if lons is not None:
+            lons = np.asarray(lons)
+            cols = np.arange(lons.size)
+            if lon_range is not None:
+                cols = cols[(lons >= lon_range[0]) & (lons <= lon_range[1])]
+        return rows, cols
+
+    def crop(field, rows, cols):
+        if rows is None:
+            return field
+        return field[np.ix_(rows, cols if cols is not None
+                            else np.arange(field.shape[1]))]
+
+    fine_rows, fine_cols = box_indices(lat_values, lon_values)
+    coarse_rows = coarse_cols = None
+    coarse_ready = False
     coarse_values, fine_values = [], []
     for step in range(anomaly.shape[0]):
-        fine = southern_hemisphere_sign(smooth9(anomaly[step])[np.newaxis, ...],
-                                        lat_values)[0]
+        cropped = crop(anomaly[step], fine_rows, fine_cols)
+        fine_lats = (np.asarray(lat_values) if fine_rows is None
+                     else np.asarray(lat_values)[fine_rows])
+        fine = southern_hemisphere_sign(smooth9(cropped)[np.newaxis, ...], fine_lats)[0]
         fine_values.append(_draw(fine, per_step, rng))
         if native_resolution is not None and coarse_resolution is not None:
+            # DECIMATE THE FULL FIELD FIRST, then crop, then smooth. The archive decimates
+            # before it parses to the final domain, so the Gaussian sees the halo and the
+            # nine-point smoother does not.
             coarse_field = gaussian_decimate(anomaly[step], native_resolution,
                                              coarse_resolution)
             _, stride = clim.decimation_shape(native_resolution, coarse_resolution)
-            coarse = southern_hemisphere_sign(smooth9(coarse_field)[np.newaxis, ...],
-                                              lat_values[::stride])[0]
+            coarse_lat_axis = np.asarray(lat_values)[::stride]
+            if not coarse_ready:
+                coarse_rows, coarse_cols = box_indices(
+                    coarse_lat_axis,
+                    None if lon_values is None else np.asarray(lon_values)[::stride])
+                coarse_ready = True
+            coarse_cropped = crop(coarse_field, coarse_rows, coarse_cols)
+            coarse_lats = (coarse_lat_axis if coarse_rows is None
+                           else coarse_lat_axis[coarse_rows])
+            coarse = southern_hemisphere_sign(
+                smooth9(coarse_cropped)[np.newaxis, ...], coarse_lats)[0]
             coarse_values.append(_draw(coarse, per_step, rng))
     return (np.concatenate(coarse_values) if coarse_values else np.array([]),
             np.concatenate(fine_values))
@@ -267,12 +379,21 @@ def _draw(field, count, rng):
 
 
 def threshold_sampling_error(sample, percentile, repeats=25, rng=None):
-    """How much the percentile moves when the sample is redrawn, as a fractional spread.
+    """How much the percentile moves when THIS sample is re-halved, as a fractional spread.
 
     THE POINT IS TO REFUSE TO GUESS. A threshold estimated from a sample is only usable if
-    the sampling noise is small against the number itself, and the way to know that is to
-    resample and look. Returns (estimate, relative_spread) where the spread is the full
-    range across half-samples divided by the estimate.
+    it is stable against how the sample was taken, and this measures one narrow part of
+    that. Returns (estimate,
+    relative_spread) where the spread is the full range across half-samples divided by the
+    estimate.
+
+    WHAT IT IS NOT, because a review found the result of this being misread. It draws
+    halves of the sample ALREADY DRAWN, so it is a WITHIN-SAMPLE SENSITIVITY DIAGNOSTIC. It
+    is not a confidence interval, and it cannot see variation across the ORIGINAL draw from
+    the field, which is the variation that decides whether two seeds would give the same
+    threshold. A run needing that must draw under several seeds and compare, or take the
+    exact percentile over every finite cell. Do not compare this number against a precision
+    rule stated in terms of independent seeds, because they measure different things.
     """
     rng = rng if rng is not None else np.random.default_rng(1)
     sample = np.asarray(sample, dtype=float)

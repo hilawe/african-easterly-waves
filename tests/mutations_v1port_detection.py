@@ -11,6 +11,13 @@ def _sub(old, new):
 
 
 MUTATIONS = {
+    # K26 the absorption flag reaches the coarse merge and not the fine one, so the two
+    # halves of the same merge disagree about which behaviour they are reproducing
+    "absorb_flag_not_passed_to_the_fine_merge": _sub(
+        "    return merge_contours(coarse, latgrid_fine, longrid_fine,\n"
+        "                          curvature_f, fine_threshold, absorb=absorb)",
+        "    return merge_contours(coarse, latgrid_fine, longrid_fine,\n"
+        "                          curvature_f, fine_threshold)"),
     # D1 the trough level moved off zero
     "trough_level_not_zero": _sub(
         "TROUGH_LEVEL = 0.0",
@@ -47,14 +54,14 @@ MUTATIONS = {
     # D9 only the coarse merge runs
     "only_one_merge_pass": _sub(
         "    return merge_contours(coarse, latgrid_fine, longrid_fine,\n"
-        "                          curvature_f, fine_threshold)",
+        "                          curvature_f, fine_threshold, absorb=absorb)",
         "    return coarse"),
     # D10 the merge passes run in the wrong order
     "merge_passes_reversed": _sub(
         "    coarse = merge_contours(candidates, latgrid_coarse, longrid_coarse,\n"
-        "                            curvature_c, coarse_threshold)",
+        "                            curvature_c, coarse_threshold, absorb=absorb)",
         "    coarse = merge_contours(candidates, latgrid_fine, longrid_fine,\n"
-        "                            curvature_f, fine_threshold)"),
+        "                            curvature_f, fine_threshold, absorb=absorb)"),
     # D11 the candidate centre taken from an endpoint rather than the mean
     "candidate_centre_is_an_endpoint": _sub(
         '                   "lat_mean": float(np.mean(lats)),\n'
