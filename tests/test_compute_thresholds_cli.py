@@ -288,9 +288,13 @@ def test_cheap_guards_fire_before_expensive_work(tree, tmp_path):
             "--out", out]
     with pytest.raises(SystemExit, match="reversed"):
         cli.main(base + ["--lat-range", "20", "5", "--lon-range", "-10", "9"])
-    with pytest.raises(SystemExit, match="non-positive"):
-        cli.main(base + ["--lat-range", "5", "20", "--lon-range", "-10", "9",
-                         "--expect", "-1e-7", "2.8e-6"])
+    # ZERO AND A PLAIN-DECIMAL NEGATIVE, not an exponent form: argparse before Python
+    # 3.12 reads "-1e-7" as an option flag and refuses with "expected 2 arguments",
+    # so the CLI's own guard was never reached there (public CI on 3.10 went red).
+    for bad in ("0.0", "-0.5"):
+        with pytest.raises(SystemExit, match="non-positive"):
+            cli.main(base + ["--lat-range", "5", "20", "--lon-range", "-10", "9",
+                             "--expect", bad, "2.8e-6"])
 
 
 def test_the_artifact_records_the_grid_and_calendar_facts(tree, tmp_path):
