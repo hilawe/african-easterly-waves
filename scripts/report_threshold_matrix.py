@@ -18,7 +18,15 @@ WHAT IT REFUSES, because a partial or mixed report reads as a complete one:
     the table cannot describe code that no longer exists (the suite's provenance gate
     checks the same thing, and the generator must not rely on it having run);
   - an artifact whose recorded settings differ from what its case id claims in the
-    frozen matrix registry, checked with the same validate_case_settings the CLI uses.
+    frozen matrix registry, checked with the same validate_case_settings the CLI uses;
+  - an artifact whose transformation object (passes and coarse scale, not only the id)
+    differs from the frozen table, whose coarse threshold is not the recorded unscaled
+    value scaled in the declared direction, or whose expected block (both relative
+    differences, the criterion and the verdict) is not what the CLI's own judgement
+    recomputes from the recorded thresholds. A review forged P1-T0's thresholds to zero
+    and its metadata to 99 passes while keeping the hashes and id, and the first version
+    tabled it. What this still cannot catch is a forgery that rewrites every field
+    consistently; only a rerun from the inputs establishes the numbers themselves.
 
     .venv/bin/python scripts/report_threshold_matrix.py --out <report path>
 
@@ -72,6 +80,44 @@ TRANSFORMATION_TEXT = {
     "T5": "two passes, coarse down"}
 
 
+def internal_consistency_problems(cid, a, cli):
+    """Every way an artifact's displayed fields disagree with its recorded thresholds.
+
+    The transformation object must be the frozen table's entry for the id, the coarse
+    threshold must be the recorded unscaled value scaled in the declared direction, and
+    the expected block must be what judge_against_expected() recomputes from the
+    thresholds. Exact equality throughout, since every value is derived from numbers the
+    same artifact records.
+    """
+    out = []
+    tid = cid.split("-")[1]
+    passes, scale = T.TRANSFORMATIONS[tid]
+    want_tr = {"id": tid, "smoothing_passes": passes, "coarse_scale": scale}
+    if a.get("transformation") != want_tr:
+        out.append(f"transformation records {a.get('transformation')!r}, "
+                   f"the frozen table says {want_tr!r}")
+    coarse = a.get("coarse") or {}
+    fine = a.get("fine") or {}
+    if "threshold_unscaled" not in coarse or "threshold" not in coarse \
+            or "threshold" not in fine:
+        out.append("coarse threshold, coarse threshold_unscaled and fine threshold "
+                   "must all be recorded")
+        return out
+    if coarse["threshold"] != T.apply_coarse_scale(coarse["threshold_unscaled"], scale):
+        out.append("coarse threshold is not the recorded unscaled value scaled "
+                   f"{scale!r}")
+    exp = a.get("expected") or {}
+    if "coarse" in exp and "fine" in exp:
+        want = cli.judge_against_expected(coarse["threshold"], fine["threshold"],
+                                          exp["coarse"], exp["fine"])
+        for key in ("coarse_relative_difference", "fine_relative_difference",
+                    "criterion", "reproduces"):
+            if exp.get(key) != want[key]:
+                out.append(f"expected.{key} is {exp.get(key)!r}, recomputed from the "
+                           f"thresholds it is {want[key]!r}")
+    return out
+
+
 def cell_ids():
     return [f"{p}-{t}" for t in TRANSFORMATIONS for p in PERIODS]
 
@@ -79,7 +125,8 @@ def cell_ids():
 def load_matrix(artifact_dir, allow_missing=False):
     """The twelve artifacts keyed by id, or a refusal string in `problems`."""
     cells, problems = {}, []
-    current_hashes = _cli_module().source_hashes()
+    cli = _cli_module()
+    current_hashes = cli.source_hashes()
     for cid in cell_ids():
         path = os.path.join(artifact_dir, f"thresholds_{cid}.json")
         if not os.path.exists(path):
@@ -102,6 +149,7 @@ def load_matrix(artifact_dir, allow_missing=False):
             problems.append(f"{cid}: fingerprints {rel}, which the producer does not")
         for violation in T.validate_case_settings(T.matrix_case(cid), artifact_settings(a)):
             problems.append(f"{cid}: {violation}")
+        problems.extend(f"{cid}: {v}" for v in internal_consistency_problems(cid, a, cli))
         cells[cid] = a
     present = [a for a in cells.values() if a is not None]
     if present:
