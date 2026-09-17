@@ -61,9 +61,14 @@ def main(argv=None):
         year = m.group(1)
         data = Q.read_year(path)
         r = Q.filter_year(data, args.min_shared)
+        # sensitivity under BOTH rules, so the artifact says what each number counts:
+        # the systems the rule removes (retention included) and the repeat clusters
+        # themselves, which retention does not alter
         sens = {}
         for k in SENSITIVITY_THRESHOLDS:
-            sens[str(k)] = Q.filter_year(data, k)["n_duplicates_removed"]
+            rk = Q.filter_year(data, k)
+            sens[str(k)] = {"systems_removed": rk["n_duplicates_removed"],
+                            "repeat_clusters": sum(1 for g in rk["clusters"] if len(g) > 1)}
         dst = os.path.join(args.out_directory, f"ERA5_AEW_tracks_atlantic_{year}.nc")
         tmp = dst + ".partial"
         Q.write_subset(path, tmp, r["keep"])
@@ -74,11 +79,16 @@ def main(argv=None):
                                           "n_developers_removed_as_duplicate",
                                           "n_retained_for_name")}
         years[year]["duplicates_removed_at_threshold"] = sens
-        years[year]["clusters_removed"] = [g for g in r["clusters"] if len(g) > 1]
+        # SYSTEM NUMBERS, the published one-based coordinate, never array indices: a
+        # review found the adjudication list pointing a person at the wrong system
+        sysno = lambda i: int(data["system"][i])  # noqa: E731
+        years[year]["repeat_clusters"] = [[sysno(i) for i in g]
+                                          for g in r["clusters"] if len(g) > 1]
         # the clusters a person still has to adjudicate: a developer kept alongside
         # its positional twin because dropping it would drop a storm name
         years[year]["retained_for_name"] = [
-            {"cluster": g, "names": {str(i): str(data["name"][i]) for i in g}}
+            {"cluster": [sysno(i) for i in g],
+             "names": {str(sysno(i)): str(data["name"][i]) for i in g}}
             for g in r["clusters"] if len(g) > 1
             and any(r["retained_for_name"][i] for i in g)]
         years[year]["input_sha256"] = _sha256(path)
@@ -92,17 +102,25 @@ def main(argv=None):
               f"retained for a name)", flush=True)
     summary = {
         "generated_by": "scripts/filter_qtrack_atlantic.py",
-        "rules": {"atlantic": "any valid step with basin_des in " + str(sorted(Q.ATLANTIC_CODES)),
+        "rules": {"atlantic": "any valid step with basin_des in " + str(sorted(Q.ATLANTIC_CODES))
+                              + " and first valid code not in " + str(sorted(Q.PACIFIC_CODES)),
+                  "identifiers": "every system in this summary is the published one-based "
+                                 "`system` coordinate, not an array index",
                   "basin_key": {str(k): v for k, v in Q.BASIN_KEY.items()},
                   "basin_key_status": "inferred from the tracks "
                                       "(docs/aewc_v2/artifacts/qtrack_basin_codes.json), "
                                       "awaiting the authors' confirmation",
                   "repeats": f"systems sharing >= {args.min_shared} identical "
                              "(lon, lat) positions, clustered transitively among Atlantic "
-                             "systems, longest kept, ties to the lower index, plus any "
-                             "developer whose storm name the survivor does not carry "
-                             "(listed per year under retained_for_name for adjudication)",
-                  "sensitivity_thresholds": list(SENSITIVITY_THRESHOLDS)},
+                             "systems, longest kept, ties to the lower index, plus the "
+                             "longest bearer of each storm name the survivor does not "
+                             "carry (listed per year under retained_for_name for "
+                             "adjudication)",
+                  "sensitivity_thresholds": list(SENSITIVITY_THRESHOLDS),
+                  "sensitivity_fields": "per year, duplicates_removed_at_threshold[k] holds "
+                                        "systems_removed under the full rule and "
+                                        "repeat_clusters, the cluster count, which "
+                                        "retention does not change"},
         "totals": totals,
         "years": years,
         "source_sha256": {"src/aew/qtrack.py": _sha256(os.path.join(

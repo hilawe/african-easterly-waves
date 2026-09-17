@@ -15,6 +15,16 @@ MUTATION LIST, written before the assertions:
      Harvey 2017, and four clusters of two distinct storms);
   W1 the subset writer forgets to subset a system-dimension variable;
   W2 the subset writer renumbers `system` instead of keeping the originals.
+Added after a repository-access review (2026-09-17) found seven survivors on the first
+fixture:
+  A4 drop the Pacific-origin exclusion (a system beginning in code 5 that later clips
+     code 6 or 7 counted as Atlantic: Rick 2009, Simon 2014, Darby 2016, Dora 1999);
+  D7 keep EVERY bearer of a missing name instead of the longest one;
+  D8 break ties toward the higher index;
+  D9 take the retention survivor as group[0] rather than the longest;
+  W3 drop the fill value when copying a variable;
+  W4 write `time` as a fixed dimension when the source had it unlimited;
+  W5 drop the global attributes.
 """
 import os
 
@@ -29,10 +39,13 @@ NAN = np.nan
 
 
 def write_year(path, lon, lat, basin, names):
+    """A file in the published schema's shape: `time` UNLIMITED as in the real files,
+    a global attribute, `system` numbered from 1, and a fill value on every array."""
     lon, lat, basin = (np.asarray(a, dtype=float) for a in (lon, lat, basin))
     n_sys, n_t = lon.shape
     d = nc.Dataset(path, "w")
-    d.createDimension("time", n_t)
+    d.setncattr("source", "synthetic")
+    d.createDimension("time", None)
     d.createDimension("system", n_sys)
     d.createDimension("longitude", 4)
     d.createVariable("time", "f8", ("time",))[:] = np.arange(n_t) * 21600.0
@@ -69,6 +82,15 @@ def year(tmp_path):
     # 12: tagged EPSILON, 5 steps; 13: its untagged shorter twin, REMOVED ("N/A" is
     #     not a name, so nothing is retained for it; a mutation treating it as one
     #     survived the fixture without this pair)
+    # 14: begins in the eastern Pacific (5) and later clips the Caribbean (6): NOT
+    #     Atlantic (the review's Rick/Simon/Darby/Dora class)
+    # 15: untagged, 5 steps, survivor of a three-member cluster; 16 and 17: two twins
+    #     both tagged ZETA, 4 steps each (a twin with three steps could not join a
+    #     four-step cluster, which a first draft of this fixture got wrong): only 16,
+    #     the lower index of the tied bearers, is retained
+    # 18 and 19: an untagged TIE at 4 steps each: the lower index, 18, survives
+    # 20: developer THETA at 4 steps, lower index; 21: untagged 5 steps, higher
+    #     index, the longest: 21 survives and 20 is retained for its name
     lon = [[-10, -14, -18, -22, -26, -30],
            [-84, -82, -80, -78, NAN, NAN],
            [-100, -104, -108, -112, -116, NAN],
@@ -82,7 +104,15 @@ def year(tmp_path):
            [-40, -44, -48, -52, -56, NAN],
            [-40, -44, -48, -52, NAN, NAN],
            [-20, -24, -28, -32, -36, NAN],
-           [-20, -24, -28, -32, NAN, NAN]]
+           [-20, -24, -28, -32, NAN, NAN],
+           [-100, -96, -92, -88, -84, -80],
+           [-70, -71, -72, -73, -74, NAN],
+           [-70, -71, -72, -73, NAN, NAN],
+           [-70, -71, -72, -73, NAN, NAN],
+           [-45, -46, -47, -48, NAN, NAN],
+           [-45, -46, -47, -48, NAN, NAN],
+           [-33, -34, -35, -36, NAN, NAN],
+           [-33, -34, -35, -36, -37, NAN]]
     lat = [[10, 10, 11, 11, 12, 12],
            [12, 13, 14, 15, NAN, NAN],
            [12, 12, 13, 13, 14, NAN],
@@ -96,7 +126,15 @@ def year(tmp_path):
            [13, 13, 14, 14, 15, NAN],
            [13, 13, 14, 14, NAN, NAN],
            [11, 11, 12, 12, 13, NAN],
-           [11, 11, 12, 12, NAN, NAN]]
+           [11, 11, 12, 12, NAN, NAN],
+           [12, 13, 14, 15, 16, 17],
+           [18, 18, 18, 18, 18, NAN],
+           [18, 18, 18, 18, NAN, NAN],
+           [18, 18, 18, 18, NAN, NAN],
+           [17, 17, 17, 17, NAN, NAN],
+           [17, 17, 17, 17, NAN, NAN],
+           [16, 16, 16, 16, NAN, NAN],
+           [16, 16, 16, 16, 16, NAN]]
     basin = [[2, 2, 7, 7, 7, 7],
              [1, 1, 6, 6, NAN, NAN],
              [5, 5, 5, 5, 5, NAN],
@@ -110,9 +148,18 @@ def year(tmp_path):
              [7, 7, 7, 7, 7, NAN],
              [7, 7, 7, 7, NAN, NAN],
              [7, 7, 7, 7, 7, NAN],
-             [7, 7, 7, 7, NAN, NAN]]
+             [7, 7, 7, 7, NAN, NAN],
+             [5, 5, 5, 1, 6, 6],
+             [7, 7, 7, 7, 7, NAN],
+             [7, 7, 7, 7, NAN, NAN],
+             [7, 7, 7, 7, NAN, NAN],
+             [7, 7, 7, 7, NAN, NAN],
+             [7, 7, 7, 7, NAN, NAN],
+             [7, 7, 7, 7, NAN, NAN],
+             [7, 7, 7, 7, 7, NAN]]
     names = ["ALPHA", "N/A", "N/A", "ALPHA", "N/A", "N/A", "N/A", "N/A",
-             "N/A", "BETA", "GAMMA", "DELTA", "EPSILON", "N/A"]
+             "N/A", "BETA", "GAMMA", "DELTA", "EPSILON", "N/A",
+             "N/A", "N/A", "ZETA", "ZETA", "N/A", "N/A", "THETA", "N/A"]
     path = str(tmp_path / "y.nc")
     write_year(path, lon, lat, basin, names)
     return path
@@ -122,7 +169,8 @@ def test_atlantic_is_any_step_not_first_basin_and_not_land_or_nan(year):
     data = Q.read_year(year)
     atl = Q.atlantic_systems(data["basin"])
     assert atl.tolist() == [True, True, False, True, True, False, False, False,
-                            True, True, True, True, True, True]
+                            True, True, True, True, True, True,
+                            False, True, True, True, True, True, True, True]
 
 
 def test_duplicates_need_both_coordinates_at_the_threshold_and_are_transitive():
@@ -148,15 +196,20 @@ def test_filter_year_removes_the_shorter_repeat_among_atlantic_systems_only(year
     data = Q.read_year(year)
     r = Q.filter_year(data, min_shared=4)
     T, F = True, False
-    assert r["atlantic"].tolist() == [T, T, F, T, T, F, F, F, T, T, T, T, T, T]
-    assert r["duplicate"].tolist() == [F, F, F, T, F, F, F, F, F, F, F, F, F, T]
-    assert r["keep"].tolist() == [T, T, F, F, T, F, F, F, T, T, T, T, T, F]
-    assert r["retained_for_name"].tolist() == [F, F, F, F, F, F, F, F, F, T, F, T, F, F]
-    assert r["n_systems"] == 14 and r["n_atlantic"] == 10
-    assert r["n_duplicates_removed"] == 2 and r["n_kept"] == 8
-    assert r["n_developers_kept"] == 5 and r["n_developers_removed_as_duplicate"] == 1
-    assert r["n_retained_for_name"] == 2
-    assert [g for g in r["clusters"] if len(g) > 1] == [[0, 3], [8, 9], [10, 11], [12, 13]]
+    assert r["atlantic"].tolist() == [T, T, F, T, T, F, F, F, T, T, T, T, T, T,
+                                      F, T, T, T, T, T, T, T]
+    assert r["duplicate"].tolist() == [F, F, F, T, F, F, F, F, F, F, F, F, F, T,
+                                       F, F, F, T, F, T, F, F]
+    assert r["keep"].tolist() == [T, T, F, F, T, F, F, F, T, T, T, T, T, F,
+                                  F, T, T, F, T, F, T, T]
+    assert r["retained_for_name"].tolist() == [F, F, F, F, F, F, F, F, F, T, F, T, F, F,
+                                               F, F, T, F, F, F, T, F]
+    assert r["n_systems"] == 22 and r["n_atlantic"] == 17
+    assert r["n_duplicates_removed"] == 4 and r["n_kept"] == 13
+    assert r["n_developers_kept"] == 7 and r["n_developers_removed_as_duplicate"] == 2
+    assert r["n_retained_for_name"] == 4
+    assert [g for g in r["clusters"] if len(g) > 1] == [
+        [0, 3], [8, 9], [10, 11], [12, 13], [15, 16, 17], [18, 19], [20, 21]]
 
 
 def test_write_subset_keeps_original_system_numbers_and_all_variables(year, tmp_path):
@@ -167,13 +220,20 @@ def test_write_subset_keeps_original_system_numbers_and_all_variables(year, tmp_
     d = nc.Dataset(dst)
     assert set(d.variables) == {"time", "system", "AEW_lon", "AEW_lat", "basin_des",
                                 "first_basin_des", "TC_name", "curv_data_mean"}
-    assert len(d.dimensions["system"]) == 8 and len(d.dimensions["time"]) == 6
-    assert d["system"][:].tolist() == [1.0, 2.0, 5.0, 9.0, 10.0, 11.0, 12.0, 13.0]
+    assert len(d.dimensions["system"]) == 13 and len(d.dimensions["time"]) == 6
+    assert d.dimensions["time"].isunlimited(), "the source's unlimited time must survive"
+    assert d.source == "synthetic", "global attributes are copied"
+    assert d["system"][:].tolist() == [1.0, 2.0, 5.0, 9.0, 10.0, 11.0, 12.0, 13.0,
+                                       16.0, 17.0, 19.0, 21.0, 22.0]
     assert np.asarray(d["TC_name"][:]).astype(str).tolist() == [
-        "ALPHA", "N/A", "N/A", "N/A", "BETA", "GAMMA", "DELTA", "EPSILON"]
+        "ALPHA", "N/A", "N/A", "N/A", "BETA", "GAMMA", "DELTA", "EPSILON",
+        "N/A", "ZETA", "N/A", "THETA", "N/A"]
     assert np.ma.filled(d["AEW_lon"][:], NAN)[2, 3] == -40.0     # system 5's own track
-    assert d["first_basin_des"][:].tolist() == [2.0, 1.0, 2.0, 7.0, 7.0, 7.0, 7.0, 7.0]
+    assert d["first_basin_des"][:].tolist() == [2.0, 1.0, 2.0, 7.0, 7.0, 7.0, 7.0, 7.0,
+                                                 7.0, 7.0, 7.0, 7.0, 7.0]
     assert d["curv_data_mean"].shape == (6, 4) and d["AEW_lon"].long_name == "AEW_lon"
+    for name in ("AEW_lon", "AEW_lat", "basin_des", "first_basin_des"):
+        assert np.isnan(d[name]._FillValue), f"{name} lost its fill value"
     assert "positional repeats removed" in d.aew_filter
     d.close()
 

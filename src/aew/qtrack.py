@@ -15,11 +15,16 @@ and is recorded as an inference awaiting the authors' confirmation:
 
 TWO RULES, both DECISIONS recorded here rather than facts read from the archive.
 
-ATLANTIC. A system is Atlantic when ANY valid step carries code 2, 6 or 7. Waves move
-westward, so a system that was ever on the Atlantic side is an Atlantic wave whatever
-it did afterwards, and a system whose steps are only 1, 4, 5, 8 or 9 never was.
-`first_basin_des` is deliberately NOT the criterion: a wave first detected over
-Central American land (code 1) that then runs along the Caribbean is Atlantic.
+ATLANTIC. A system is Atlantic when ANY valid step carries code 2, 6 or 7 AND its first
+valid code is not a Pacific one (4 or 5). Waves move westward, so a system that was ever
+on the Atlantic side is an Atlantic wave whatever it did afterwards, and a system whose
+steps are only 1, 4, 5, 8 or 9 never was. `first_basin_des` alone is deliberately NOT
+the criterion: a wave first detected over Central American land (code 1) that then runs
+along the Caribbean is Atlantic. The Pacific-origin exclusion exists because a review
+found six systems that begin in code 5 and later clip an Atlantic-side code: four named
+eastern Pacific hurricanes whose remnants were carried across North America (Rick 2009,
+Simon 2014, Darby 2016, Dora 1999) and two untagged tracks touching the Panama Bight.
+Under the any-step rule alone they counted as Atlantic developers.
 
 REPEATS. The dataset's authors report repeated systems needing filtering. Measured on
 the 44 files, the repeats are POSITIONAL: pairs of systems that share identical
@@ -27,9 +32,11 @@ the 44 files, the repeats are POSITIONAL: pairs of systems that share identical
 duplicate storm-name tags follow from them (1988 Gilbert is two systems of 110 and 106
 steps). A recurring "UNNAMED" tag is not a repeat, since HURDAT labels several distinct
 unnamed storms that way. Systems are clustered transitively on shared positions and the
-LONGEST track of each cluster is kept, ties broken by the lower system index, AND any
-developer in the cluster whose storm name the survivor does not carry is kept as well,
-because dropping it would remove a named storm from the record. Measured on the 44
+LONGEST track of each cluster is kept, ties broken by the lower system index, AND for
+each storm name in the cluster that the survivor does not carry, the LONGEST bearer of
+that name is kept as well, because dropping it would remove a named storm from the
+record (one bearer per missing name, so a three-member cluster with two twins of one
+storm does not keep both). Measured on the 44
 files, 31 clusters hold a developer; in 25 the survivor carries the same name, in 2 the
 longer twin is untagged (Bertha 1996, Harvey 2017), and in 4 the two tracks are
 different storms sharing positions (Priscilla and Octave 2013, Hermine and Fiona 2016,
@@ -47,6 +54,7 @@ import numpy as np
 
 __all__ = [
     "ATLANTIC_CODES",
+    "PACIFIC_CODES",
     "NON_ATLANTIC_CODES",
     "BASIN_KEY",
     "DEFAULT_MIN_SHARED",
@@ -63,6 +71,7 @@ BASIN_KEY = {1: "land, Americas", 2: "Africa", 4: "central Pacific",
              5: "eastern Pacific", 6: "Caribbean and Gulf", 7: "Atlantic",
              8: "east of the African window", 9: "south of the equator"}
 ATLANTIC_CODES = frozenset({2, 6, 7})
+PACIFIC_CODES = frozenset({4, 5})
 NON_ATLANTIC_CODES = frozenset({1, 4, 5, 8, 9})
 DEFAULT_MIN_SHARED = 4
 
@@ -86,12 +95,19 @@ def read_year(path):
 
 
 def atlantic_systems(basin):
-    """True per system when any valid step carries an Atlantic-side code."""
+    """True per system when any valid step is Atlantic-side and the first is not Pacific."""
     basin = np.asarray(basin, dtype=float)
     if basin.ndim != 2:
         raise ValueError("basin must be (system, time)")
     codes = np.where(np.isnan(basin), -1, basin)
-    return np.isin(codes, list(ATLANTIC_CODES)).any(axis=1)
+    any_atlantic = np.isin(codes, list(ATLANTIC_CODES)).any(axis=1)
+    first = np.full(basin.shape[0], -1.0)
+    for i in range(basin.shape[0]):
+        valid = codes[i][codes[i] >= 0]
+        if valid.size:
+            first[i] = valid[0]
+    pacific_origin = np.isin(first, list(PACIFIC_CODES))
+    return any_atlantic & ~pacific_origin
 
 
 def duplicate_clusters(lon, lat, min_shared=DEFAULT_MIN_SHARED):
@@ -148,15 +164,18 @@ def keep_longest_and_named(clusters, n_valid, names):
 
     A cluster of two different storms keeps both; a cluster whose longer track is
     untagged and whose shorter track is a storm keeps both; a cluster whose members are
-    the same storm keeps the longest only. "N/A" is not a name.
+    the same storm keeps the longest only; a cluster with two twins of one missing storm
+    keeps the longer twin only. "N/A" is not a name.
     """
     names = np.asarray(names).astype(str)
+    n_valid = np.asarray(n_valid)
     keep = keep_longest(clusters, n_valid)
     for group in clusters:
-        survivor = next(i for i in group if keep[i])
-        for i in group:
-            if names[i] != "N/A" and names[i] != names[survivor]:
-                keep[i] = True
+        survivor = min(group, key=lambda i: (-int(n_valid[i]), i))
+        missing = {names[i] for i in group if names[i] != "N/A"} - {names[survivor]}
+        for name in missing:
+            bearers = [i for i in group if names[i] == name]
+            keep[min(bearers, key=lambda i: (-int(n_valid[i]), i))] = True
     return keep
 
 
@@ -207,9 +226,11 @@ def write_subset(src, dst, keep):
         d = nc.Dataset(dst, "w")
         try:
             d.setncatts({k: s.getncattr(k) for k in s.ncattrs()})
-            d.setncattr("aew_filter", "Atlantic (any step in basin codes 2, 6, 7), "
-                        "positional repeats removed except developers whose storm name "
-                        "the surviving twin lacks. System numbers are the originals")
+            d.setncattr("aew_filter", "Atlantic (any step in basin codes 2, 6, 7 and "
+                        "first valid code not 4 or 5, under a key inferred from the "
+                        "tracks), positional repeats removed (four or more identical "
+                        "positions) except the longest bearer of each storm name the "
+                        "surviving twin lacks. System numbers are the originals")
             for name, dim in s.dimensions.items():
                 d.createDimension(name, int(keep.sum()) if name == "system"
                                   else (None if dim.isunlimited() else len(dim)))
