@@ -34,6 +34,24 @@ had never included:
   R4 count valid steps from longitude alone (lon and lat masks always agreed);
   R5 write zeros for curv_data_mean (the writer test checked its shape only);
   R6 the writer ignores the threshold it is given and writes "4" regardless.
+Added when the policy became KEEP EVERYTHING (2026-09-17, after a review showed the
+installed QTrack post-processing can impose every shared tail by copying positions, so
+the shorter head is a separate detection, not a duplicate; the archive's producing
+revision is unconfirmed):
+  K1 the keep policy still drops the shorter head;
+  K2 observation_counts ignores the time step (dedupes on position alone);
+  K3 observation_counts counts a record on three tracks as two distinct records;
+  K4 storm_keys uses the name alone ("UNNAMED" twice with different genesis times
+     collapses to one storm);
+  K5 storm_keys uses the genesis time alone;
+  K6 shared_tail_pairs reports first_shared for both ends of the span;
+  K7 the retired drop_shorter policy no longer removes anything;
+  K8 read_year stops reading TC_gen_time.
+Added after a further review of the keep policy:
+  K9 observation identity drops the latitude (same time and longitude, latitudes 5
+     and 6, became one distinct record and one copy);
+  K10 a tagged track with missing genesis is keyed by its name, so two unrelated
+      UNNAMED tracks with no genesis collapse to one storm.
 """
 import os
 
@@ -47,11 +65,14 @@ from aew import qtrack as Q  # noqa: E402
 NAN = np.nan
 
 
-def write_year(path, lon, lat, basin, names):
+def write_year(path, lon, lat, basin, names, gen_time=None):
     """A file in the published schema's shape: `time` UNLIMITED as in the real files,
-    a global attribute, `system` numbered from 1, and a fill value on every array."""
+    a global attribute, `system` numbered from 1, a fill value on every array, and
+    TC_gen_time in nanoseconds since 1970 as every real file stores it."""
     lon, lat, basin = (np.asarray(a, dtype=float) for a in (lon, lat, basin))
     n_sys, n_t = lon.shape
+    if gen_time is None:
+        gen_time = [NAN] * n_sys
     d = nc.Dataset(path, "w")
     d.setncattr("source", "synthetic")
     d.createDimension("time", None)
@@ -68,6 +89,9 @@ def write_year(path, lon, lat, basin, names):
     tn = d.createVariable("TC_name", str, ("system",))
     for i, nm in enumerate(names):
         tn[i] = nm
+    gt = d.createVariable("TC_gen_time", "f8", ("system",), fill_value=NAN)
+    gt.units = "nanoseconds since 1970-01-01"
+    gt[:] = np.asarray(gen_time, dtype=float)
     cm = d.createVariable("curv_data_mean", "f8", ("time", "longitude"))
     cm[:] = np.arange(n_t * 4, dtype=float).reshape(n_t, 4)
     d.close()
@@ -97,7 +121,9 @@ def year(tmp_path):
     #     length, lower index); 16 and 17: two twins both tagged ZETA, 5 and 4 steps
     #     (UNEQUAL, so "longest bearer" is distinguishable from "any bearer" and from
     #     "shortest bearer"): only 16 is retained
-    # 18 and 19: an untagged TIE at 4 steps each: the lower index, 18, survives
+    # 18 and 19: a TIE at 4 steps each, both tagged UNNAMED with DIFFERENT genesis
+    #     times (two distinct storms, as HURDAT's unnamed storms are); under the
+    #     retired rule the lower index, 18, survives
     # 20: developer THETA at 4 steps, lower index; 21: untagged 5 steps, higher
     #     index, the longest: 21 survives and 20 is retained for its name
     # 22: begins in the CENTRAL Pacific (4) and later touches 7: NOT Atlantic
@@ -185,10 +211,19 @@ def year(tmp_path):
              [7, 7, 7, 7, 7, NAN]]
     names = ["ALPHA", "N/A", "N/A", "ALPHA", "N/A", "N/A", "N/A", "N/A",
              "N/A", "BETA", "GAMMA", "DELTA", "EPSILON", "N/A",
-             "N/A", "N/A", "ZETA", "ZETA", "N/A", "N/A", "THETA", "N/A",
+             "N/A", "N/A", "ZETA", "ZETA", "UNNAMED", "UNNAMED", "THETA", "N/A",
              "N/A", "N/A", "N/A", "N/A"]
+    G = 1.0e18                                  # nanoseconds since 1970, arbitrary scale
+    gen = [NAN] * 26
+    gen[0] = gen[3] = 1 * G                     # ALPHA tagged on both heads: one storm
+    gen[9] = 2 * G
+    gen[10], gen[11] = 3 * G, 4 * G
+    gen[12] = 5 * G
+    gen[16] = gen[17] = 6 * G                   # ZETA on both twins: one storm
+    gen[18], gen[19] = 7 * G, 8 * G             # two UNNAMED storms, distinct
+    gen[20] = 9 * G
     path = str(tmp_path / "y.nc")
-    write_year(path, lon, lat, basin, names)
+    write_year(path, lon, lat, basin, names, gen)
     return path
 
 
@@ -220,24 +255,99 @@ def test_duplicates_need_both_coordinates_at_the_threshold_and_are_transitive():
     assert keep.tolist() == [True, False, True, True, False]
 
 
-def test_filter_year_removes_the_shorter_repeat_among_atlantic_systems_only(year):
+def test_the_keep_policy_removes_nothing_and_reports_the_shared_tails(year):
     data = Q.read_year(year)
     r = Q.filter_year(data, min_shared=4)
+    assert r["repeat_policy"] == "keep"
+    assert r["keep"].tolist() == r["atlantic"].tolist(), "nothing beyond the basin rule"
+    assert not r["duplicate"].any() and r["n_removed"] == 0
+    assert r["n_kept"] == r["n_atlantic"] == 19
+    pairs = {(q["a"], q["b"]): (q["first_shared"], q["last_shared"], q["n_shared"])
+             for q in r["shared_tail_pairs"]}
+    assert set(pairs) == {(0, 3), (8, 9), (10, 11), (12, 13), (15, 16), (15, 17),
+                          (16, 17), (18, 19), (20, 21), (24, 25)}
+    assert pairs[(0, 3)] == (0, 3, 4) and pairs[(15, 16)] == (0, 4, 5)
+    assert pairs[(24, 25)] == (0, 3, 4), "the lon-without-lat step is not shared"
+    assert r["n_shared_tail_pairs"] == 10
+    # storm identity: ALPHA on two heads is one storm, ZETA on two twins is one,
+    # two UNNAMED with different genesis times are two: nine storms, eleven tags
+    assert r["n_developer_tags_kept"] == 11
+    assert r["n_distinct_storms_kept"] == 9
+    assert r["n_unresolved_storm_identities_kept"] == 0
+    keys = r["storm_keys"]
+    assert keys[0] == keys[3] == ("ALPHA", int(1.0e18)) and keys[1] is None
+    assert keys[18] != keys[19] and keys[18][0] == keys[19][0] == "UNNAMED"
+
+
+def test_missing_genesis_never_collapses_repeated_names(tmp_path):
+    """Two unrelated retained tracks tagged UNNAMED in a file WITHOUT TC_gen_time: two
+    developer tags, zero resolved storms, two unresolved identities."""
+    lon = [[-30, -34, -38, NAN], [-50, -54, -58, NAN]]
+    lat = [[10, 10, 11, NAN], [12, 12, 13, NAN]]
+    basin = [[7, 7, 7, NAN], [7, 7, 7, NAN]]
+    path = str(tmp_path / "nogen.nc")
+    write_year(path, lon, lat, basin, ["UNNAMED", "UNNAMED"])
+    d = nc.Dataset(path, "a")
+    d["TC_gen_time"][:] = [NAN, NAN]
+    d.close()
+    r = Q.filter_year(Q.read_year(path), min_shared=4)
+    assert r["n_developer_tags_kept"] == 2
+    assert r["n_distinct_storms_kept"] == 0
+    assert r["n_unresolved_storm_identities_kept"] == 2
+
+
+def test_the_retired_drop_shorter_policy_is_still_reportable(year):
+    """The old rule is kept only so the summary can say what it would have removed."""
+    data = Q.read_year(year)
+    r = Q.filter_year(data, min_shared=4, repeat_policy="drop_shorter")
     T, F = True, False
-    assert r["atlantic"].tolist() == [T, T, F, T, T, F, F, F, T, T, T, T, T, T,
-                                      F, T, T, T, T, T, T, T, F, F, T, T]
-    assert r["duplicate"].tolist() == [F, F, F, T, F, F, F, F, F, F, F, F, F, T,
-                                       F, F, F, T, F, T, F, F, F, F, T, F]
     assert r["keep"].tolist() == [T, T, F, F, T, F, F, F, T, T, T, T, T, F,
                                   F, T, T, F, T, F, T, T, F, F, F, T]
-    assert r["retained_for_name"].tolist() == [F, F, F, F, F, F, F, F, F, T, F, T, F, F,
-                                               F, F, T, F, F, F, T, F, F, F, F, F]
-    assert r["n_systems"] == 26 and r["n_atlantic"] == 19
-    assert r["n_duplicates_removed"] == 5 and r["n_kept"] == 14
-    assert r["n_developers_kept"] == 7 and r["n_developers_removed_as_duplicate"] == 2
-    assert r["n_retained_for_name"] == 4
-    assert [g for g in r["clusters"] if len(g) > 1] == [
-        [0, 3], [8, 9], [10, 11], [12, 13], [15, 16, 17], [18, 19], [20, 21], [24, 25]]
+    assert r["n_removed"] == 5
+    with pytest.raises(ValueError):
+        Q.filter_year(data, min_shared=4, repeat_policy="merge")
+
+
+def test_observation_counts_are_distinct_per_time_step_and_handle_triples():
+    """Hand-counted: A has five records, B copies four of them, C copies two of those
+    and adds one of its own at a NEW time step, and D repeats A's first position at a
+    DIFFERENT time step, which is a distinct record. valid 5 + 4 + 3 + 1 = 13,
+    distinct 5 + 0 + 1 + 1 = 7, copied 6. The record shared by A, B and C at steps 2
+    and 3 is one distinct record and two copies each."""
+    lon = np.array([[1.0, 2.0, 3.0, 4.0, 5.0, NAN],
+                    [1.0, 2.0, 3.0, 4.0, NAN, NAN],
+                    [NAN, NAN, 3.0, 4.0, NAN, 9.0],
+                    [NAN, 1.0, NAN, NAN, NAN, NAN]])
+    lat = np.array([[0.0, 0.0, 0.0, 0.0, 0.0, NAN],
+                    [0.0, 0.0, 0.0, 0.0, NAN, NAN],
+                    [NAN, NAN, 0.0, 0.0, NAN, 0.0],
+                    [NAN, 0.0, NAN, NAN, NAN, NAN]])
+    assert Q.observation_counts(lon, lat, [True] * 4) == \
+        {"valid_records": 13, "distinct_records": 7, "copied_records": 6}
+    assert Q.observation_counts(lon, lat, [True, False, False, True]) == \
+        {"valid_records": 6, "distinct_records": 6, "copied_records": 0}
+    # same time step and longitude, DIFFERENT latitudes: two distinct records, no copy
+    lon2 = np.array([[10.0, 11.0], [10.0, NAN]])
+    lat2 = np.array([[5.0, 5.0], [6.0, NAN]])
+    assert Q.observation_counts(lon2, lat2, [True, True]) == \
+        {"valid_records": 3, "distinct_records": 3, "copied_records": 0}
+
+
+def test_storm_keys_need_both_name_and_genesis_time():
+    names = ["UNNAMED", "UNNAMED", "N/A", "IDA", "IDA", "KATE"]
+    gen = [1.0, 2.0, NAN, 5.0, 5.0, 5.0]
+    keys = Q.storm_keys(names, gen)
+    assert keys[2] is None
+    assert keys[0] != keys[1], "two unnamed storms with different genesis times"
+    assert keys[3] == keys[4], "one storm tagged on two tracks"
+    assert keys[4] != keys[5], "two storms with one genesis time are still two"
+    assert len({k for k in keys if k is not None}) == 4
+    with pytest.raises(ValueError):
+        Q.storm_keys(names, gen[:3])
+    # missing, zero or non-finite genesis on a TAGGED track is an unresolved identity,
+    # never a shared one: two UNNAMED with no genesis are not one storm
+    keys = Q.storm_keys(["UNNAMED", "UNNAMED", "IDA", "N/A"], [NAN, 0.0, np.inf, NAN])
+    assert keys[:3] == ["unresolved"] * 3 and keys[3] is None
 
 
 def test_write_subset_equals_the_expected_subset_of_the_source_in_every_variable(
@@ -253,7 +363,7 @@ def test_write_subset_equals_the_expected_subset_of_the_source_in_every_variable
     keep = r["keep"]
     assert set(out.variables) == set(src.variables)
     assert set(out.dimensions) == set(src.dimensions)
-    assert len(out.dimensions["system"]) == int(keep.sum()) == 14
+    assert len(out.dimensions["system"]) == int(keep.sum()) == 19
     assert out.dimensions["time"].isunlimited(), "the source's unlimited time must survive"
     assert out.source == "synthetic", "global attributes are copied"
     for name, sv in src.variables.items():
@@ -277,9 +387,11 @@ def test_write_subset_equals_the_expected_subset_of_the_source_in_every_variable
             assert np.array_equal(np.ma.getmaskarray(got), np.ma.getmaskarray(want)), name
             assert np.array_equal(np.ma.filled(got, 0.0), np.ma.filled(want, 0.0)), name
     # the kept systems are the originals, not renumbered
-    assert out["system"][:].tolist() == [1.0, 2.0, 5.0, 9.0, 10.0, 11.0, 12.0, 13.0,
-                                         16.0, 17.0, 19.0, 21.0, 22.0, 26.0]
+    assert out["system"][:].tolist() == [1.0, 2.0, 4.0, 5.0, 9.0, 10.0, 11.0, 12.0,
+                                         13.0, 14.0, 16.0, 17.0, 18.0, 19.0, 20.0,
+                                         21.0, 22.0, 25.0, 26.0]
     assert out.aew_filter_min_shared == 4 and "4 or more" in out.aew_filter
+    assert "Nothing removed for shared positions" in out.aew_filter
     src.close()
     out.close()
 
@@ -317,12 +429,17 @@ def test_the_driver_records_a_nondefault_threshold_everywhere(tmp_path):
     with open(summary) as fh:
         s = json.load(fh)
     y = s["years"]["1999"]
-    # systems 3 and 17 share three positions: a repeat at threshold three, not four
-    assert y["n_duplicates_removed"] == 1 and y["repeat_clusters"] == [[3, 17]]
-    assert y["duplicates_removed_at_threshold"]["4"]["systems_removed"] == 0
-    assert "3" in s["rules"]["repeats"]
+    # systems 3 and 17 share three positions: a shared-tail pair at threshold three,
+    # BOTH KEPT, listed by published number; the retired rule would have removed 17
+    assert y["n_kept"] == 2 and y["shared_tail_groups"] == [[3, 17]]
+    assert [q["systems"] for q in y["shared_tail_pairs"]] == [[3, 17]]
+    assert y["shared_tail_pairs"][0]["n_shared"] == 3
+    assert y["retired_drop_shorter_rule"]["would_remove"] == [17]
+    assert y["observations_kept"] == {"valid_records": 8, "distinct_records": 5,
+                                      "copied_records": 3}
+    assert "3" in s["rules"]["shared_tails"]
     o = nc.Dataset(str(out_dir / "ERA5_AEW_tracks_atlantic_1999.nc"))
-    assert o["system"][:].tolist() == [3.0]
+    assert o["system"][:].tolist() == [3.0, 17.0]
     assert o.aew_filter_min_shared == 3 and "3 or more" in o.aew_filter
     o.close()
 

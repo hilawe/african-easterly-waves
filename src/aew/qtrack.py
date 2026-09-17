@@ -30,24 +30,54 @@ developers. The stored trajectories do not establish the physical identity of a
 post-storm remnant, so the criterion is stated as it is measured: first valid code
 Pacific, some later step Atlantic-side.
 
-REPEATS. The dataset's authors report repeated systems needing filtering. Measured on
-the 44 files, the repeats are POSITIONAL: pairs of systems that share identical
-(longitude, latitude) values at four or more valid steps, 182 such pairs, and the
-duplicate storm-name tags follow from them (1988 Gilbert is two systems of 110 and 106
-steps). A recurring "UNNAMED" tag is not a repeat, since HURDAT labels several distinct
-unnamed storms that way. Systems are clustered transitively on shared positions and the
-LONGEST track of each cluster is kept, ties broken by the lower system index, AND for
-each storm name in the cluster that the survivor does not carry, the LONGEST bearer of
-that name is kept as well, because dropping it would remove a named storm from the
-record (one bearer per missing name, so a three-member cluster with two twins of one
-storm does not keep both). Measured on the 44
-files, 31 clusters hold a developer; in 25 the survivor carries the same name, in 2 the
-longer twin is untagged (Bertha 1996, Harvey 2017), and in 4 the two tracks are
-different storms sharing positions (Priscilla and Octave 2013, Hermine and Fiona 2016,
-Gamma and Delta 2020, Philippe and Rina 2023). Those six are retained and listed for a
-person to adjudicate, not resolved by the code. The threshold of shared steps is a
-parameter, and the driver reports the count of removed systems at 2, 4 and 8 so the
-choice of 4 (one day) is legible.
+SHARED TAILS, formerly "repeats". The dataset's authors report repeated systems needing
+filtering. Measured on the 44 files, every pair of Atlantic-side systems that shares four
+or more identical (longitude, latitude) positions has ONE geometry: different histories
+before the first shared step, then identical positions and validity through a common
+endpoint. 107 such pairs, forming 97 groups (92 pairs and 5 triples). None is a track
+contained within another. The INSTALLED QTrack implementation (the `qtrack` package in
+this environment, `tracking.py`, the block guarded by `two_wave_distance <
+merge_distance`) CAN produce that shape: when two tracked waves come within its merge
+distance (default 500 km) it compares the last finite LONGITUDE of each track and copies
+the remaining longitudes and latitudes of the one ending further west into the other from
+that step on. That is what the installed code computes, read from the code, not from its
+comment about lengths. WHETHER THIS IS HOW THE ARCHIVE'S FILES WERE PRODUCED is not
+established: the producing revision and its settings have not been confirmed with the
+authors, so the archive's procedure is an inference from an implementation capable of
+imposing the shape. The differing heads are separate detections under that inference.
+Whether they are separate physical waves, one wave detected twice, or a tracking error is
+NOT established by the stored tracks, and is a question for the archive's authors.
+
+THE POLICY, a decision: KEEP EVERY BASIN-SELECTED TRACK. Removing the shorter member of
+each pair, the first version of this module's rule, discarded 96 tracks and with them
+1,009 coordinate-and-time records present in no retained track; it also left 263 copied
+records in place, from the six pairs retained for a storm name and two pairs sharing
+fewer than four positions. Nothing in the geometry justifies choosing one head over the
+other, so nothing is removed. The old rule survives only as `repeat_policy="drop_shorter"`,
+so the summary can still report what it would have done. The shared tails are recorded
+per year (both systems, first and last shared step, shared count) and their effect is
+MEASURED by `observation_counts`, which counts distinct (time step, longitude, latitude)
+records among the kept tracks: with everything kept, 117,769 valid records hold 114,318
+distinct ones and 3,451 copies. Any density or longitude-time analysis owns the choice of
+which copy to count, and reads that choice from one place rather than inventing it.
+
+STORM IDENTITY. Counting developers by TC_name collapses distinct storms: in 1981 four
+systems tagged "UNNAMED" carry four different genesis times. `storm_keys` therefore
+identifies a storm by (name, TC_gen_time), which is nanoseconds since 1970 in every
+file, and a storm tagged on both heads of a shared-tail pair counts once. A TAGGED TRACK
+WHOSE GENESIS IS MISSING, ZERO OR NON-FINITE HAS AN UNRESOLVED IDENTITY: it is counted
+separately and never merged with another track of the same name, because a missing
+identity component is not a shared one (a first version keyed such tracks by name alone,
+which silently restored name-only counting). The key is a consistency convention within
+these files, not a link to the authoritative best track; 512 distinct keys in the
+Atlantic-side population is a count of tags, not of verified storms or of their genesis
+basins. Two of them (Priscilla and Octave 2013) are storms that formed in the eastern
+Pacific on Atlantic-origin tracks, which the tag cannot show.
+
+TIME. 43 files store the time axis as hours since 1900-01-01 and 2024 as seconds since
+1970-01-01; TC_gen_time is nanoseconds since 1970 in all 44. Decode each through its
+own units. This module never decodes the time axis; it works in time-step INDEX within a
+file, which is what identical stored positions share.
 """
 
 from __future__ import annotations
@@ -68,6 +98,9 @@ __all__ = [
     "keep_longest",
     "keep_longest_and_named",
     "filter_year",
+    "storm_keys",
+    "observation_counts",
+    "shared_tail_pairs",
     "write_subset",
 ]
 
@@ -90,6 +123,8 @@ def read_year(path):
                "lat": np.ma.filled(d["AEW_lat"][:], np.nan).astype(float),
                "basin": np.ma.filled(d["basin_des"][:], np.nan).astype(float),
                "name": np.asarray(d["TC_name"][:]).astype(str),
+               "gen_time": np.ma.filled(d["TC_gen_time"][:], np.nan).astype(float)
+               if "TC_gen_time" in d.variables else np.full(len(d.dimensions["system"]), np.nan),
                "system": np.asarray(d["system"][:])}
     finally:
         d.close()
@@ -183,33 +218,115 @@ def keep_longest_and_named(clusters, n_valid, names):
     return keep
 
 
-def filter_year(data, min_shared=DEFAULT_MIN_SHARED):
-    """Apply both rules to one year's arrays.
+def shared_tail_pairs(lon, lat, min_shared=DEFAULT_MIN_SHARED, among=None):
+    """Every pair sharing at least `min_shared` identical positions, with its span.
 
-    Returns a dict with the boolean masks `atlantic`, `duplicate` (removed as a repeat
-    among Atlantic systems) and `keep`, the clusters, and the counts a summary needs.
-    Deduplication runs among the Atlantic systems only, so a Pacific twin of an Atlantic
-    track can neither remove it nor be counted as its repeat.
+    Returns a list of dicts with the two indices, the first and last shared time-step
+    index, and the shared count. `among` restricts the pairs to those indices (the
+    Atlantic-side systems); every pair is reported, not only the transitive groups.
     """
+    lon = np.asarray(lon, dtype=float)
+    lat = np.asarray(lat, dtype=float)
+    idx = list(range(lon.shape[0])) if among is None else [int(i) for i in among]
+    valid = ~np.isnan(lon) & ~np.isnan(lat)
+    out = []
+    for p, i in enumerate(idx):
+        for j in idx[p + 1:]:
+            both = valid[i] & valid[j]
+            if both.sum() < min_shared:
+                continue
+            same = both & (lon[i] == lon[j]) & (lat[i] == lat[j])
+            if same.sum() >= min_shared:
+                where = np.where(same)[0]
+                out.append({"a": i, "b": j, "first_shared": int(where[0]),
+                            "last_shared": int(where[-1]), "n_shared": int(same.sum())})
+    return out
+
+
+def storm_keys(names, gen_time):
+    """One stable key per developer, (name, genesis time); None for a non-developer;
+    the string "unresolved" for a tagged track whose genesis is missing, zero or
+    non-finite.
+
+    Name alone collapses distinct storms ("UNNAMED" appears four times in 1981 with four
+    genesis times); name plus genesis time separates them and lets a storm tagged on both
+    heads of a shared-tail pair count once. A missing genesis is NOT a key component:
+    two tagged tracks with the same name and no genesis are two unresolved identities,
+    not one storm, since the data justify neither one nor two.
+    """
+    names = np.asarray(names).astype(str)
+    gen_time = np.asarray(gen_time, dtype=float)
+    if names.shape != gen_time.shape:
+        raise ValueError("names and gen_time must have one entry per system")
+    keys = []
+    for nm, g in zip(names, gen_time):
+        if nm == "N/A":
+            keys.append(None)
+        elif g != g or not np.isfinite(g) or g <= 0:
+            keys.append("unresolved")
+        else:
+            keys.append((nm, int(g)))
+    return keys
+
+
+def observation_counts(lon, lat, keep):
+    """Valid, distinct and copied (time step, longitude, latitude) records among `keep`.
+
+    Distinctness is exact equality at the same time-step index within one file, matching
+    the shared positions observed in the archive. A record shared by three tracks is one
+    distinct record and two copies, so groups larger than a pair are handled without
+    subtracting the same position once per pair.
+    """
+    lon = np.asarray(lon, dtype=float)
+    lat = np.asarray(lat, dtype=float)
+    keep = np.asarray(keep, dtype=bool)
+    seen = set()
+    total = 0
+    for i in np.where(keep)[0]:
+        valid = np.where(~np.isnan(lon[i]) & ~np.isnan(lat[i]))[0]
+        total += int(valid.size)
+        for t in valid:
+            seen.add((int(t), float(lon[i, t]), float(lat[i, t])))
+    return {"valid_records": total, "distinct_records": len(seen),
+            "copied_records": total - len(seen)}
+
+
+def filter_year(data, min_shared=DEFAULT_MIN_SHARED, repeat_policy="keep"):
+    """Apply the basin rule and the chosen shared-tail policy to one year's arrays.
+
+    `repeat_policy` is "keep" (the decision: nothing removed) or "drop_shorter" (the
+    retired rule, kept so the summary can report what it would have removed). Returns
+    the boolean masks `atlantic`, `duplicate` (removed under the policy) and `keep`,
+    the transitive clusters, the shared-tail pairs among Atlantic systems, the
+    observation counts among the kept tracks, the distinct storm keys, and counts.
+    """
+    if repeat_policy not in ("keep", "drop_shorter"):
+        raise ValueError(f"unknown repeat_policy {repeat_policy!r}")
     atl = atlantic_systems(data["basin"])
     n_valid = (~np.isnan(data["lon"]) & ~np.isnan(data["lat"])).sum(axis=1)
     idx = np.where(atl)[0]
     clusters_local = duplicate_clusters(data["lon"][idx], data["lat"][idx], min_shared)
     clusters = [[int(idx[i]) for i in g] for g in clusters_local]
-    # clusters hold ORIGINAL system indices, and n_valid is indexed the same way
-    longest = keep_longest(clusters, n_valid)
-    keep = keep_longest_and_named(clusters, n_valid, data["name"])
-    retained = keep & ~longest
+    pairs = shared_tail_pairs(data["lon"], data["lat"], min_shared, among=idx)
+    if repeat_policy == "keep":
+        keep = atl.copy()
+    else:
+        keep = keep_longest_and_named(clusters, n_valid, data["name"])
     duplicate = atl & ~keep
     developers = data["name"] != "N/A"
+    keys = storm_keys(data["name"], data.get("gen_time", np.full(len(atl), np.nan)))
+    kept_keys = {k for k, kp in zip(keys, keep) if kp and k is not None and k != "unresolved"}
+    unresolved = sum(1 for k, kp in zip(keys, keep) if kp and k == "unresolved")
     return {"atlantic": atl, "duplicate": duplicate, "keep": keep, "clusters": clusters,
-            "retained_for_name": retained,
+            "shared_tail_pairs": pairs,
+            "observations": observation_counts(data["lon"], data["lat"], keep),
+            "storm_keys": keys, "n_distinct_storms_kept": len(kept_keys),
+            "n_unresolved_storm_identities_kept": int(unresolved),
             "n_systems": int(len(atl)), "n_atlantic": int(atl.sum()),
-            "n_duplicates_removed": int(duplicate.sum()), "n_kept": int(keep.sum()),
-            "n_developers_kept": int((keep & developers).sum()),
-            "n_developers_removed_as_duplicate": int((duplicate & developers).sum()),
-            "n_retained_for_name": int(retained.sum()),
-            "min_shared": int(min_shared)}
+            "n_removed": int(duplicate.sum()), "n_kept": int(keep.sum()),
+            "n_developer_tags_kept": int((keep & developers).sum()),
+            "n_shared_tail_pairs": len(pairs),
+            "min_shared": int(min_shared), "repeat_policy": repeat_policy}
 
 
 def write_subset(src, dst, keep, min_shared=DEFAULT_MIN_SHARED):
@@ -218,9 +335,10 @@ def write_subset(src, dst, keep, min_shared=DEFAULT_MIN_SHARED):
     Every dimension, variable and attribute is copied; variables with a `system`
     dimension are subset along it, everything else (time, the grid, curv_data_mean) is
     copied whole. The `system` coordinate keeps its ORIGINAL numbers so a kept track
-    can be traced back to the published file. `min_shared` is the repeat threshold the
-    caller actually used, written into the file's own metadata as a number as well as
-    in words, because a review ran the driver at three and the file still said four.
+    can be traced back to the published file. `min_shared` is the shared-position
+    threshold the caller actually used, written into the file's own metadata as a number
+    as well as in words, because a review ran the driver at three and the file still
+    said four.
     """
     min_shared = int(min_shared)
     import netCDF4 as nc
@@ -235,9 +353,12 @@ def write_subset(src, dst, keep, min_shared=DEFAULT_MIN_SHARED):
             d.setncatts({k: s.getncattr(k) for k in s.ncattrs()})
             d.setncattr("aew_filter", "Atlantic (any step in basin codes 2, 6, 7 and "
                         "first valid code not 4 or 5, under a key inferred from the "
-                        f"tracks), positional repeats removed ({min_shared} or more "
-                        "identical positions) except the longest bearer of each storm "
-                        "name the surviving twin lacks. System numbers are the originals")
+                        "tracks). Nothing removed for shared positions: tracks sharing "
+                        f"{min_shared} or more identical positions are listed in the "
+                        "summary as shared-tail pairs, a shape the installed QTrack "
+                        "post-processing can impose by copying coordinates; the "
+                        "archive's producing revision is unconfirmed. System numbers "
+                        "are the originals")
             d.setncattr("aew_filter_min_shared", min_shared)
             for name, dim in s.dimensions.items():
                 d.createDimension(name, int(keep.sum()) if name == "system"
