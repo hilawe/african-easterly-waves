@@ -2,9 +2,10 @@
 """Write the Atlantic, repeat-free subset of QTrack v2 (ERA5_WITH_EPAC), year by year.
 
 The rules live in `aew.qtrack` and are decisions recorded there: Atlantic means any step
-in basin codes 2, 6 or 7 (an inferred key, see that module), and repeats are systems
-sharing at least `--min-shared` identical positions, the longest of each cluster kept
-along with any developer whose storm name the survivor lacks, listed for adjudication.
+in basin codes 2, 6 or 7 with a first valid code that is not Pacific (an inferred key,
+see that module), and repeats are systems sharing at least `--min-shared` identical
+positions, the longest of each cluster kept along with the longest bearer of each storm
+name the survivor lacks, listed for adjudication.
 Every input and the module are hashed into the summary, which also carries the count of
 repeats that WOULD be removed at thresholds 2, 4 and 8, so the chosen threshold is a
 legible choice rather than a hidden one. Output files keep the published schema and the
@@ -71,7 +72,7 @@ def main(argv=None):
                             "repeat_clusters": sum(1 for g in rk["clusters"] if len(g) > 1)}
         dst = os.path.join(args.out_directory, f"ERA5_AEW_tracks_atlantic_{year}.nc")
         tmp = dst + ".partial"
-        Q.write_subset(path, tmp, r["keep"])
+        Q.write_subset(path, tmp, r["keep"], args.min_shared)
         os.replace(tmp, dst)
         years[year] = {k: r[k] for k in ("n_systems", "n_atlantic",
                                           "n_duplicates_removed", "n_kept",

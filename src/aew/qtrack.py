@@ -21,10 +21,14 @@ on the Atlantic side is an Atlantic wave whatever it did afterwards, and a syste
 steps are only 1, 4, 5, 8 or 9 never was. `first_basin_des` alone is deliberately NOT
 the criterion: a wave first detected over Central American land (code 1) that then runs
 along the Caribbean is Atlantic. The Pacific-origin exclusion exists because a review
-found six systems that begin in code 5 and later clip an Atlantic-side code: four named
-eastern Pacific hurricanes whose remnants were carried across North America (Rick 2009,
-Simon 2014, Darby 2016, Dora 1999) and two untagged tracks touching the Panama Bight.
-Under the any-step rule alone they counted as Atlantic developers.
+found six systems that begin in code 5 and later touch an Atlantic-side code: three
+named eastern Pacific hurricanes whose stored tracks extend across North America (Rick
+2009, Simon 2014, Darby 2016), and three that touch code 6 at the Panama border and
+then run west into the Pacific, Dora 1999 (one code-6 step near 80W 8.7N) and two
+untagged tracks. Under the any-step rule alone the four named ones counted as Atlantic
+developers. The stored trajectories do not establish the physical identity of a
+post-storm remnant, so the criterion is stated as it is measured: first valid code
+Pacific, some later step Atlantic-side.
 
 REPEATS. The dataset's authors report repeated systems needing filtering. Measured on
 the 44 files, the repeats are POSITIONAL: pairs of systems that share identical
@@ -208,14 +212,17 @@ def filter_year(data, min_shared=DEFAULT_MIN_SHARED):
             "min_shared": int(min_shared)}
 
 
-def write_subset(src, dst, keep):
+def write_subset(src, dst, keep, min_shared=DEFAULT_MIN_SHARED):
     """Copy a year file keeping only the systems where `keep` is True.
 
     Every dimension, variable and attribute is copied; variables with a `system`
     dimension are subset along it, everything else (time, the grid, curv_data_mean) is
     copied whole. The `system` coordinate keeps its ORIGINAL numbers so a kept track
-    can be traced back to the published file.
+    can be traced back to the published file. `min_shared` is the repeat threshold the
+    caller actually used, written into the file's own metadata as a number as well as
+    in words, because a review ran the driver at three and the file still said four.
     """
+    min_shared = int(min_shared)
     import netCDF4 as nc
 
     keep = np.asarray(keep, dtype=bool)
@@ -228,9 +235,10 @@ def write_subset(src, dst, keep):
             d.setncatts({k: s.getncattr(k) for k in s.ncattrs()})
             d.setncattr("aew_filter", "Atlantic (any step in basin codes 2, 6, 7 and "
                         "first valid code not 4 or 5, under a key inferred from the "
-                        "tracks), positional repeats removed (four or more identical "
-                        "positions) except the longest bearer of each storm name the "
-                        "surviving twin lacks. System numbers are the originals")
+                        f"tracks), positional repeats removed ({min_shared} or more "
+                        "identical positions) except the longest bearer of each storm "
+                        "name the surviving twin lacks. System numbers are the originals")
+            d.setncattr("aew_filter_min_shared", min_shared)
             for name, dim in s.dimensions.items():
                 d.createDimension(name, int(keep.sum()) if name == "system"
                                   else (None if dim.isunlimited() else len(dim)))
