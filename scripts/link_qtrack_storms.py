@@ -141,9 +141,16 @@ def main(argv=None):
            "rule": {"genesis_event": "first best-track record whose USA_STATUS is not DB, LO "
                                      "or WV, the installed QTrack's own exclusion; the first "
                                      "observation of any stage is kept as a separate field",
-                    "candidates": "IBTrACS main-track storms of the same SEASON whose NAME is "
-                                  "among candidate_names(tag), with a genesis event",
-                    "choice": "nearest genesis event to the QTrack genesis time",
+                    "candidates": "IBTrACS main-track storms of the same SEASON with a "
+                                  "genesis event whose name forms (ibtracs_name_forms: the "
+                                  "NAME, and for a colon-joined crossover name its "
+                                  "hyphenated form and each part) share a whole name with "
+                                  "candidate_names(tag)",
+                    "choice": "the ONE candidate within both tolerances is matched; more "
+                              "than one is ambiguous; none within the time window is "
+                              "outside_window (nearest by time described); some within "
+                              "the window but none within the distance is "
+                              "rejected_distance (nearest in time among those described)",
                     "max_offset_hours": args.max_offset_hours,
                     "max_distance_km": args.max_distance_km,
                     "distance_rule": "QTrack's own genesis-association distance "

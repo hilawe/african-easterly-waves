@@ -13,6 +13,9 @@ MUTATION LIST, written before the assertions:
   S7 pandas reads the basin string "NA" as missing (keep_default_na dropped);
   S8 link_year yields one row per TRACK instead of per storm key;
   S9 candidate_names returns the tag unchanged;
+  S10 ibtracs_name_forms returns the name unchanged (a colon-joined crossover name is
+      never found by either of its parts or by the hyphenated tag);
+  S11 name forms match by substring ("JOAN" finds "JOANNE").
   E1 the genesis event is the FIRST observation, not the first non-DB/LO/WV record
      (a disturbance that crosses a subbasin boundary before qualifying gets the wrong
      subbasin, and a storm whose event is 78 h after its first observation is rejected);
@@ -239,3 +242,25 @@ def test_link_year_keeps_one_row_per_key_and_flags_shared_identifiers(events):
     a2 = next(r for r in rows2 if r["qtrack_genesis"] == "2013-07-08 18Z")
     assert a2["status"] == "matched" and a2["sid"] == "2013A"
     assert QS.link_year(data, times, genesis, events, keep=[False] * 5) == []
+
+
+def test_a_colon_joined_ibtracs_name_is_found_by_the_tag_and_by_either_part(events):
+    """Joan 1988 is one IBTrACS entry named JOAN:MIRIAM in both basin files; it was the
+    one key of 512 with no candidate anywhere until this form was handled. The tag,
+    each part, and the hyphenated tag all find it; a whole-name rule, so JOAN does not
+    find a storm named JOANNE."""
+    assert QS.ibtracs_name_forms("JOAN:MIRIAM") == {"JOAN:MIRIAM", "JOAN-MIRIAM", "JOAN",
+                                                    "MIRIAM"}
+    assert QS.ibtracs_name_forms("CESAR") == {"CESAR"}
+    e = events.copy()
+    e.loc[e["SID"] == "2013F", "NAME"] = "JOAN:MIRIAM"
+    e.loc[e["SID"] == "2013H", "NAME"] = "JOANNE"
+    for tag in ("JOAN-MIRIAM", "JOAN", "MIRIAM"):
+        m = QS.match_storm(e, 2013, tag, dt.datetime(2013, 9, 1, 12), (16.0, -41.0))
+        assert m["status"] == "matched" and m["sid"] == "2013F", (tag, m)
+        assert m["matched_name"] == "JOAN:MIRIAM"
+    # a JOAN tag on JOANNE's own date and position: the only candidate is still the
+    # JOAN:MIRIAM entry nineteen days away, so the state is a window rejection naming
+    # it, and JOANNE (2013H) never entered the candidate set
+    m = QS.match_storm(e, 2013, "JOAN", dt.datetime(2013, 9, 20, 12), (16.0, -150.0))
+    assert m["status"] == "outside_window" and m["nearest_sid"] == "2013F"

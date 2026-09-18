@@ -62,6 +62,7 @@ __all__ = [
     "DEFAULT_MAX_DISTANCE_KM",
     "DEFAULT_MAX_STEP_HOURS",
     "candidate_names",
+    "ibtracs_name_forms",
     "haversine_km",
     "load_ibtracs_records",
     "genesis_event",
@@ -90,8 +91,14 @@ def candidate_names(name):
 
     QTrack's tags follow HURDAT naming: a depression that never earned a name carries
     its number spelled out ("TEN"), which IBTrACS records as "UNNAMED", and a storm that
-    crossed between basins carries both names hyphenated ("JOAN-MIRIAM"), which IBTrACS
-    records under each name separately.
+    crossed between basins carries both names hyphenated ("JOAN-MIRIAM"). IBTrACS
+    records such a storm EITHER under one of the names (Cesar 1996 is "CESAR" in the
+    North Atlantic file) OR as one entry joining both with a colon (Joan 1988 is
+    "JOAN:MIRIAM" in both basin files). The tag side is expanded here and the IBTrACS
+    side by `ibtracs_name_forms`; a candidate is a storm whose forms share a name with
+    the tag's. Joan-Miriam 1988 had no candidate in either basin file until the colon
+    form was handled, the one key of 512 in that position; thirteen other keys stay
+    unresolved after the join for other reasons.
     """
     name = str(name).strip().upper()
     if name in NUMBER_WORDS:
@@ -99,6 +106,18 @@ def candidate_names(name):
     if "-" in name:
         return [name] + [p for p in name.split("-") if p]
     return [name]
+
+
+def ibtracs_name_forms(name):
+    """The names an IBTrACS NAME field may be matched under: itself, and for a
+    colon-joined crossover name ("JOAN:MIRIAM") the hyphenated form and each part.
+    Whole names only; "JOAN" is never a form of "JOANNE"."""
+    name = str(name).strip().upper()
+    forms = {name}
+    if ":" in name:
+        forms.add(name.replace(":", "-"))
+        forms.update(p for p in name.split(":") if p)
+    return forms
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
@@ -174,8 +193,9 @@ def match_storm(events, season, name, genesis, wave_lat_lon,
     genesis = pd.Timestamp(genesis)
     if genesis.tzinfo is not None:
         genesis = genesis.tz_convert(None)
+    wanted = set(candidate_names(name))
     cands = events[(events["SEASON"] == int(season))
-                   & (events["NAME"].isin(candidate_names(name)))
+                   & events["NAME"].map(lambda n: bool(ibtracs_name_forms(n) & wanted))
                    & events["event_time"].notna()]
     if len(cands) == 0:
         return {"status": "no_candidate"}
