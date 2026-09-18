@@ -100,6 +100,7 @@ __all__ = [
     "filter_year",
     "storm_keys",
     "observation_counts",
+    "observation_owners",
     "shared_tail_pairs",
     "write_subset",
 ]
@@ -289,6 +290,39 @@ def observation_counts(lon, lat, keep):
             seen.add((int(t), float(lon[i, t]), float(lat[i, t])))
     return {"valid_records": total, "distinct_records": len(seen),
             "copied_records": total - len(seen)}
+
+
+def observation_owners(lon, lat, keep, system):
+    """One owning track per (time step, longitude, latitude) record among `keep`.
+
+    THE CONVENTION, declared once here so every density or longitude-time analysis
+    applies the same one: a record held by several kept tracks is owned by the track
+    with the MOST valid records, ties to the LOWER published system number. Returns a
+    boolean `owned` mask (system x time), True where a track's record is the one to
+    count, and the owner's system number per record for inspection. Summing `owned`
+    over kept tracks equals `observation_counts(...)["distinct_records"]` by
+    construction, and a test holds that identity. Ownership decides counting only; no
+    coordinate is changed, and intensity or other track-specific fields at a shared
+    position still need their own explicit rule.
+    """
+    lon = np.asarray(lon, dtype=float)
+    lat = np.asarray(lat, dtype=float)
+    keep = np.asarray(keep, dtype=bool)
+    system = np.asarray(system).astype(int)
+    valid = ~np.isnan(lon) & ~np.isnan(lat)
+    n_valid = valid.sum(axis=1)
+    owner = {}
+    for i in np.where(keep)[0]:
+        for t in np.where(valid[i])[0]:
+            key = (int(t), float(lon[i, t]), float(lat[i, t]))
+            cur = owner.get(key)
+            if cur is None or (n_valid[i], -system[i]) > (n_valid[cur], -system[cur]):
+                owner[key] = int(i)
+    owned = np.zeros(lon.shape, dtype=bool)
+    for (t, _lo, _la), i in owner.items():
+        owned[i, t] = True
+    owner_system = {k: int(system[i]) for k, i in owner.items()}
+    return {"owned": owned, "owner_system": owner_system}
 
 
 def filter_year(data, min_shared=DEFAULT_MIN_SHARED, repeat_policy="keep"):

@@ -52,6 +52,12 @@ Added after a further review of the keep policy:
      and 6, became one distinct record and one copy);
   K10 a tagged track with missing genesis is keyed by its name, so two unrelated
       UNNAMED tracks with no genesis collapse to one storm.
+Observation ownership (the view a density analysis reads):
+  O1 a shared record is owned by the track with FEWER valid records;
+  O2 a tie is broken toward the HIGHER system number;
+  O3 a shared record is marked owned on every holder (owned no longer equals
+     distinct);
+  O4 a record held by one track only is not owned at all.
 """
 import os
 
@@ -451,3 +457,189 @@ def test_guards():
         Q.duplicate_clusters(np.zeros((2, 3)), np.zeros((2, 4)))
     with pytest.raises(ValueError):
         Q.duplicate_clusters(np.zeros((2, 3)), np.zeros((2, 3)), min_shared=0)
+
+
+def test_observation_owners_is_one_track_per_record_and_matches_distinct_counts():
+    """Hand-built: A (5 records, system 2) and B (4, system 7) share steps 0..3; C (2
+    records, system 1) shares step 2 with both and holds step 5 alone; D (4 records,
+    system 9) shares nothing. Owner of steps 0..3 is A (most records), so A also owns
+    the step-2 record C holds; C owns step 5; D owns its four. Ten distinct records."""
+    lon = np.array([[1.0, 2.0, 3.0, 4.0, 5.0, NAN],
+                    [1.0, 2.0, 3.0, 4.0, NAN, NAN],
+                    [NAN, NAN, 3.0, NAN, NAN, 9.0],
+                    [NAN, NAN, 7.0, 7.0, 7.0, 7.0]])
+    lat = np.array([[0.0, 0.0, 0.0, 0.0, 0.0, NAN],
+                    [0.0, 0.0, 0.0, 0.0, NAN, NAN],
+                    [NAN, NAN, 0.0, NAN, NAN, 0.0],
+                    [NAN, NAN, 1.0, 1.0, 1.0, 1.0]])
+    system = np.array([2.0, 7.0, 1.0, 9.0])
+    v = Q.observation_owners(lon, lat, [True] * 4, system)
+    T, F = True, False
+    assert v["owned"].tolist() == [[T, T, T, T, T, F],
+                                   [F, F, F, F, F, F],
+                                   [F, F, F, F, F, T],
+                                   [F, F, T, T, T, T]]
+    assert v["owner_system"][(2, 3.0, 0.0)] == 2 and v["owner_system"][(5, 9.0, 0.0)] == 1
+    counts = Q.observation_counts(lon, lat, [True] * 4)
+    assert int(v["owned"].sum()) == counts["distinct_records"] == 10
+    # a TIE: two tracks with equal record counts sharing everything, lower system wins
+    lon2 = np.array([[1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0]])
+    lat2 = np.zeros((2, 4))
+    v2 = Q.observation_owners(lon2, lat2, [True, True], np.array([12.0, 5.0]))
+    assert v2["owned"].tolist() == [[F, F, F, F], [T, T, T, T]]
+    # a track not kept owns nothing and its records are not counted
+    v3 = Q.observation_owners(lon2, lat2, [True, False], np.array([12.0, 5.0]))
+    assert v3["owned"].tolist() == [[T, T, T, T], [F, F, F, F]]
+
+
+def test_observation_owners_binds_the_rule_against_the_lazy_choosers():
+    """Five implementations that a review wrote survived the worked case above while
+    matching its every aggregate. Each block below is the one hand-counted case that
+    separates the declared rule from one of them, asserting the WHOLE mask and the
+    owner mapping, never a count. Recorded before the assertions were written:
+      L1 keep the first holder unless the counts tie (a longer holder met later);
+      L2 read the identity from time and longitude only (same lon, different lat);
+      L3 round coordinates before comparing (close but unequal coordinates);
+      L4 decide validity from longitude alone (a longitude with a missing latitude);
+      L5 count valid records over kept rows only but index the original rows (an
+         excluded row before a kept one)."""
+    T, F = True, False
+    keep_all = [True, True]
+    # L1: the shorter track comes FIRST and shares its only record with a longer one
+    v = Q.observation_owners([[1.0, NAN], [1.0, 2.0]], [[0.0, NAN], [0.0, 0.0]],
+                             keep_all, [1.0, 2.0])
+    assert v["owned"].tolist() == [[F, F], [T, T]]
+    assert v["owner_system"] == {(0, 1.0, 0.0): 2, (1, 2.0, 0.0): 2}
+    # L2: same time and longitude, different latitude, are two records, each owned
+    v = Q.observation_owners([[1.0, 2.0], [1.0, 2.0]], [[0.0, 0.0], [5.0, 5.0]],
+                             keep_all, [1.0, 2.0])
+    assert v["owned"].tolist() == [[T, T], [T, T]]
+    assert v["owner_system"] == {(0, 1.0, 0.0): 1, (1, 2.0, 0.0): 1,
+                                 (0, 1.0, 5.0): 2, (1, 2.0, 5.0): 2}
+    # L3: coordinates 0.04 degrees apart are different records; exact equality only
+    v = Q.observation_owners([[1.00, 2.0], [1.04, 2.0]], [[0.0, 0.0], [0.0, 0.0]],
+                             keep_all, [1.0, 2.0])
+    assert v["owned"].tolist() == [[T, T], [T, F]]
+    assert v["owner_system"][(0, 1.04, 0.0)] == 2 and v["owner_system"][(1, 2.0, 0.0)] == 1
+    # L4: a longitude beside a missing latitude is no record, so the track that holds
+    # it has ONE valid record, fewer than its twin, and loses the shared record
+    v = Q.observation_owners([[1.0, 2.0, 3.0], [1.0, 2.0, NAN]],
+                             [[0.0, NAN, NAN], [0.0, 0.0, NAN]], keep_all, [1.0, 2.0])
+    assert v["owned"].tolist() == [[F, F, F], [T, T, F]]
+    assert v["owner_system"] == {(0, 1.0, 0.0): 2, (1, 2.0, 0.0): 2}
+    # L5: an EXCLUDED long track sits before two kept ones; counts must be read at the
+    # original row, so the kept row 2 (three records) beats kept row 1 (two records)
+    v = Q.observation_owners([[1.0, 2.0, 3.0, 4.0], [1.0, 2.0, NAN, NAN], [1.0, 2.0, 3.0, NAN]],
+                             [[0.0, 0.0, 0.0, 0.0], [0.0, 0.0, NAN, NAN], [0.0, 0.0, 0.0, NAN]],
+                             [False, True, True], [1.0, 2.0, 3.0])
+    assert v["owned"].tolist() == [[F, F, F, F], [F, F, F, F], [T, T, T, F]]
+    assert v["owner_system"] == {(0, 1.0, 0.0): 3, (1, 2.0, 0.0): 3, (2, 3.0, 0.0): 3}
+
+
+def _load_observation_driver():
+    import importlib.util
+    import sys
+
+    here = os.path.dirname(os.path.abspath(__file__))
+    spec = importlib.util.spec_from_file_location(
+        "observation_view_qtrack", os.path.join(here, "..", "scripts",
+                                                "observation_view_qtrack.py"))
+    drv = importlib.util.module_from_spec(spec)
+    sys.modules["observation_view_qtrack"] = drv
+    spec.loader.exec_module(drv)
+    return drv
+
+
+def test_the_observation_driver_writes_a_companion_a_reader_can_align(tmp_path):
+    """Run the actual driver over two synthetic years and reopen everything: the whole
+    owned mask, the coordinate axes decoded to the SAME dates as the source (a 360_day
+    calendar on one file, which a companion carrying units alone would shift by a day),
+    the recorded hashes, the per-year and total counts, and the worked example."""
+    import hashlib
+    import json
+
+    drv = _load_observation_driver()
+    tracks = tmp_path / "tracks"
+    tracks.mkdir()
+    # 1999: A (3 records, system 4) and B (2, system 9) share steps 0 and 1
+    p99 = str(tracks / "ERA5_AEW_tracks_atlantic_1999.nc")
+    write_year(p99, [[1.0, 2.0, 3.0], [1.0, 2.0, NAN]], [[0.0, 0.0, 0.0], [0.0, 0.0, NAN]],
+               [[7, 7, 7], [7, 7, NAN]], ["N/A", "N/A"])
+    d = nc.Dataset(p99, "a")
+    d["system"][:] = [4.0, 9.0]
+    d["time"].units = "hours since 1900-01-01"
+    d["time"].calendar = "360_day"
+    d["time"][:] = [1440.0, 1446.0, 1452.0]
+    d.close()
+    # 2000: one track, nothing shared
+    p00 = str(tracks / "ERA5_AEW_tracks_atlantic_2000.nc")
+    write_year(p00, [[5.0, 6.0]], [[1.0, 1.0]], [[7, 7]], ["N/A"])
+    summary = str(tmp_path / "view.json")
+    assert drv.main(["--tracks", str(tracks), "--summary", summary]) == 0
+
+    o = nc.Dataset(p99[:-3] + "_owned.nc")
+    s = nc.Dataset(p99)
+    assert o["owned"][:].tolist() == [[1, 1, 1], [0, 0, 0]]
+    assert o["system"][:].tolist() == [4.0, 9.0]
+    assert o["time"].calendar == "360_day" and o["time"].units == s["time"].units
+    assert nc.num2date(o["time"][:], o["time"].units, o["time"].calendar).tolist() == \
+        nc.num2date(s["time"][:], s["time"].units, s["time"].calendar).tolist()
+    assert nc.num2date(o["time"][0], o["time"].units, o["time"].calendar).strftime(
+        "%m-%d") == "03-01"                                      # 1440 h in a 360-day year
+    assert "most valid records" in o.aew_observation_rule
+    o.close()
+    s.close()
+
+    with open(summary) as fh:
+        v = json.load(fh)
+    assert v["years"]["1999"]["valid_records"] == 5
+    assert v["years"]["1999"]["distinct_records"] == 3
+    assert v["years"]["1999"]["owned_records"] == 3
+    assert v["years"]["1999"]["records_with_several_holders"] == 2
+    assert v["years"]["2000"]["owned_records"] == 2
+    assert v["totals"] == {"valid": 7, "distinct": 5, "owned": 5, "multi_holder": 2}
+    for year, path in (("1999", p99), ("2000", p00)):
+        assert v["years"][year]["input_sha256"] == hashlib.sha256(open(path, "rb").read()).hexdigest()
+        assert v["years"][year]["output_sha256"] == hashlib.sha256(
+            open(path[:-3] + "_owned.nc", "rb").read()).hexdigest()
+    assert v["worked_example"] == {"year": "1999", "time_index": 0, "lon": 1.0, "lat": 0.0,
+                                   "holders": [{"system": 4, "valid_records": 3},
+                                               {"system": 9, "valid_records": 2}],
+                                   "owner_system": 4}
+
+
+def test_the_observation_driver_refuses_a_stray_file_and_a_mismatch(tmp_path, monkeypatch):
+    """A file that is not a filtered year is a refusal before anything is written (a
+    review's planted backup once made a year count twice in the totals and once in the
+    entries), and an owned count that differs from the distinct count is a refusal that
+    leaves no companion and no summary behind."""
+    drv = _load_observation_driver()
+    tracks = tmp_path / "tracks"
+    tracks.mkdir()
+    p = str(tracks / "ERA5_AEW_tracks_atlantic_1999.nc")
+    write_year(p, [[1.0, 2.0], [1.0, NAN]], [[0.0, 0.0], [0.0, NAN]], [[7, 7], [7, NAN]],
+               ["N/A", "N/A"])
+    summary = str(tmp_path / "view.json")
+    # Two strays, one at a time: the same year (the review's planted backup) and a
+    # DIFFERENT year, so the refusal is bound to the filename rule itself and not
+    # only to a year appearing twice.
+    for name in ("backup_1999.nc", "backup_2003.nc"):
+        stray = tracks / name
+        stray.write_bytes(open(p, "rb").read())
+        assert drv.main(["--tracks", str(tracks), "--summary", summary]) == 2
+        assert not os.path.exists(p[:-3] + "_owned.nc") and not os.path.exists(summary)
+        stray.unlink()
+
+    real = drv.Q.observation_owners
+
+    def wrong(lon, lat, keep, system):
+        v = real(lon, lat, keep, system)
+        v["owned"][:] = True                 # every holder marked: owned exceeds distinct
+        return v
+
+    monkeypatch.setattr(drv.Q, "observation_owners", wrong)
+    assert drv.main(["--tracks", str(tracks), "--summary", summary]) == 2
+    assert not os.path.exists(p[:-3] + "_owned.nc") and not os.path.exists(summary)
+    monkeypatch.setattr(drv.Q, "observation_owners", real)
+    assert drv.main(["--tracks", str(tracks), "--summary", summary]) == 0
+    assert os.path.exists(p[:-3] + "_owned.nc") and os.path.exists(summary)
