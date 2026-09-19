@@ -240,7 +240,17 @@ def merge_contours(candidates, latgrid, longrid, curvature, threshold, absorb=Fa
     if not masks[0].any():
         return []
 
-    base_rows, base_cols = np.nonzero(masks[0])
+    # COLUMN-FIRST, as the original enumerates. merge_contours_f.m takes
+    # `cid = find(cRVt >= thr)`, MATLAB linear indices in column-major order, and
+    # `[a, lid] = min(...)` returns the FIRST minimum in that order. NumPy's `nonzero`
+    # enumerates row-major, so a tie among nearest cells was broken by row here and by
+    # column there. A review found the real case: at 33035.75 of the 1990 window three
+    # fine cells tie at a squared distance of 5 from the coarse candidate at 15S 18W,
+    # the row-first choice seeds a region whose mean is 15.25S 14W, the column-first
+    # choice one whose mean is 27S 16W, and three port tracks end a step early for it.
+    # Enumerating the transposed mask yields the cells in column-major order, and the
+    # first minimum below then agrees with the original.
+    base_cols, base_rows = np.nonzero(masks[0].T)
     base_lat = latgrid[base_rows, base_cols]
     base_lon = longrid[base_rows, base_cols]
 

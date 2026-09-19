@@ -51,6 +51,11 @@ tests/mutations_v1port_contours.py.
     K25  with absorption off the wave still takes an absorbed candidate's time rather
          than its own
     K26  the flag reaches the coarse merge and not the fine one
+    K27  a tie among nearest above-threshold cells is broken row-first (NumPy's
+         nonzero order) instead of column-first (the original's find order); added
+         2026-09-18 after a review reproduced the real case at 33035.75 of the 1990
+         window, where the row-first seed moved a candidate twelve degrees and ended
+         three tracks a step early
 """
 
 import numpy as np
@@ -203,6 +208,39 @@ def test_a_large_region_is_returned_whole():
     legitimately differ from version 1 for large features."""
     mask = np.ones((40, 40), dtype=bool)      # 1600 cells, far past a 500-deep recursion
     assert connected_region(mask, (20, 20)).sum() == 1600
+
+
+# --- the nearest-cell seed, ties broken as the original breaks them --------------------
+
+def test_a_tie_among_nearest_cells_is_broken_column_first_as_the_original_does():
+    """K27 (added 2026-09-18 after a review found the real case). merge_contours_f.m
+    enumerates above-threshold cells with `find`, column-major, and `min` returns the
+    first minimum in that order; NumPy's `nonzero` is row-major. Three isolated cells
+    tie at a squared distance of 5 from the candidate at (10, 10), none adjacent to
+    another under eight-connectivity: (11, 12), (12, 9) and (8, 11). Column-first, the
+    cell in the lowest longitude column wins, (12, 9). Row-first would take the lowest
+    latitude row, (8, 11). At 33035.75 of the 1990 window that difference moved a
+    candidate twelve degrees and ended three tracks."""
+    latgrid, longrid = mesh()
+    curvature = np.zeros(latgrid.shape)
+    for lat, lon in ((11, 12), (12, 9), (8, 11)):
+        curvature[(latgrid == lat) & (longrid == lon)] = 5e-6
+    out = merge_contours([candidate(10, 10)], latgrid, longrid, curvature, 1e-6)
+    assert len(out) == 1
+    assert (out[0]["lat_mean"], out[0]["lon_mean"]) == (12.0, 9.0)
+    assert out[0]["region"].sum() == 1
+
+
+def test_a_unique_nearest_cell_is_chosen_whatever_the_enumeration_order():
+    """The control for K27: with one nearest cell the order cannot matter."""
+    latgrid, longrid = mesh()
+    curvature = np.zeros(latgrid.shape)
+    for lat, lon in ((11, 13), (13, 12), (14, 10)):      # none adjacent to the winner
+        curvature[(latgrid == lat) & (longrid == lon)] = 5e-6
+    curvature[(latgrid == 11) & (longrid == 10)] = 5e-6            # squared distance 1
+    out = merge_contours([candidate(10, 10)], latgrid, longrid, curvature, 1e-6)
+    assert len(out) == 1
+    assert (out[0]["lat_mean"], out[0]["lon_mean"]) == (11.0, 10.0)
 
 
 # --- the threshold ladder --------------------------------------------------------------

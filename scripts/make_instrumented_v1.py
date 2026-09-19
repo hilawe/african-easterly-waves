@@ -63,6 +63,12 @@ def patch(source):
         zlo = ch(1,id(zz)+1:id(zz)+ch(2,id(zz)));
         printf('AXIS %.4f %d %.4f %.4f %.4f %.4f\\n', time(t), numel(zla), ...
                mean(zla), mean(zlo), max(zla)-min(zla), max(zlo)-min(zlo));
+        % every vertex of the axis, because the summary above cannot show WHICH
+        % points a contour tracer joined into one line, and the third worked case
+        % turned on exactly that
+        printf('AXISPTS %.4f %d', time(t), numel(zla));
+        printf(' %.4f %.4f', [zla(:)'; zlo(:)']);
+        printf('\\n');
       end
     end
     fflush(stdout);

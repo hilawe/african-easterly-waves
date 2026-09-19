@@ -135,4 +135,9 @@ MUTATIONS = {
     "lone_wave_early_return_removed": _sub(
         "    if len(merged) <= 1:\n        return merged",
         "    if False:\n        return merged"),
+    # K27 the nearest-cell tie broken row-first, NumPy's order, instead of column-first,
+    # the original's `find` order (the 2026-09-18 real case at 33035.75 of 1990)
+    "nearest_tie_broken_row_first": _sub(
+        "    base_cols, base_rows = np.nonzero(masks[0].T)",
+        "    base_rows, base_cols = np.nonzero(masks[0])"),
 }

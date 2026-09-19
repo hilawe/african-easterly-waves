@@ -26,7 +26,11 @@ tracks than it does. A review constructed a three-edge case where greedy returns
 and two exist.
 """
 import argparse
+import hashlib
+import json
 import os
+import re
+import subprocess
 import sys
 
 import numpy as np
@@ -65,6 +69,199 @@ def read_tracks(path):
 # 82.1 percent got quoted as the port's fidelity for most of a session.
 FAITHFUL_ORACLE = "tracker_octave_hullfixed.mat"
 DEGRADED_ORACLE = "tracker_octave.mat"
+# The instrumented runner (scripts/octave/run_tracker_instrumented.m) writes this name.
+# A NAME DECIDES NOTHING ABOUT FAITHFULNESS. Whether an oracle run is the faithful one
+# (the convex-hull call repaired, which Octave otherwise refuses) is read from the
+# PRODUCER RECORD the runner writes inside its output at run time, with the hashes of
+# the source files that executed. A review copied outputs beside a fake source and
+# watched the first version of this artifact call them faithful by file name; that
+# path now reports the provenance as unverified and the faithfulness as unknown.
+REPAIRED_INSTRUMENTED_ORACLE = "tracker_octave_instrumented.mat"
+KNOWN_ORACLE_NAMES = (FAITHFUL_ORACLE, REPAIRED_INSTRUMENTED_ORACLE)
+
+
+def read_producer(path):
+    """The producer record a harness side wrote into its output, or None."""
+    raw = loadmat(path, variable_names=["producer_json"])
+    if "producer_json" not in raw:
+        return None
+    text = str(np.asarray(raw["producer_json"]).ravel()[0])
+    try:
+        return json.loads(text)
+    except ValueError:
+        return {"unparseable": text[:200]}
+
+
+def _sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 22), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
+ORACLE_REQUIRED = {"producer": str, "case_id": str, "instrumented": bool,
+                   "repaired_convhull": bool, "unrepaired_convhull_sites": int,
+                   "executed_source_sha256": dict, "runner_sha256": str}
+PORT_REQUIRED = {"producer": str, "case_id": str, "git_dirty": bool,
+                 "source_sha256": dict, "settings": dict}
+# The entries a port record must name for its source inventory to identify the
+# producing code: the tracker's pipeline module and the exporter that ran it. Any one
+# path under the package is not enough (a review named a nonexistent module there).
+PORT_REQUIRED_SOURCES = ("src/aew/v1port/pipeline.py", "scripts/export_tracker_case.py")
+
+
+def _digest_problems(mapping, label):
+    problems = []
+    if not mapping:
+        problems.append(f"{label} is empty")
+        return problems
+    for key, digest in mapping.items():
+        if not isinstance(digest, str) or not HEX64.match(digest):
+            problems.append(f"{label}[{key}] is not a sha256 digest")
+    return problems
+
+
+def validate_oracle_record(rec, outer_case, exported_case):
+    """The reasons an oracle producer record is NOT a valid record of THIS output.
+
+    A record is a claim about what produced the tracks it travels with. It is valid
+    only when it has the fields the runner writes, with their types, when its case
+    identifier is the case the output and the export carry, when every digest it
+    names is well formed and the executed find_ews_f.m is among them, and when its
+    repair flag agrees with its own count of unrepaired sites. A review fed the
+    first version a record naming another case, an empty source mapping, and a
+    digest that was not one, and each came back verified. Validity is about the
+    record's own consistency and is kept separate from whether the tree beside the
+    output still matches it.
+    """
+    problems = []
+    if not isinstance(rec, dict):
+        return ["record is not a mapping"]
+    for key, typ in ORACLE_REQUIRED.items():
+        if key not in rec:
+            problems.append(f"missing {key}")
+        elif typ is int and (isinstance(rec[key], bool) or not isinstance(rec[key], (int, float))
+                             or int(rec[key]) != rec[key]):
+            problems.append(f"{key} is not an integer")
+        elif typ is not int and not isinstance(rec[key], typ):
+            problems.append(f"{key} is not {typ.__name__}")
+    if problems:
+        return problems
+    if rec["case_id"] != outer_case or rec["case_id"] != exported_case:
+        problems.append(f"record case {rec['case_id']!r} is not the output's "
+                        f"{outer_case!r} or the export's {exported_case!r}")
+    problems += _digest_problems(rec["executed_source_sha256"], "executed_source_sha256")
+    if "v1_instrumented__find_ews_f_m" not in rec["executed_source_sha256"]:
+        problems.append("executed_source_sha256 does not name find_ews_f.m")
+    if not HEX64.match(rec["runner_sha256"]):
+        problems.append("runner_sha256 is not a sha256 digest")
+    if rec["repaired_convhull"] != (int(rec["unrepaired_convhull_sites"]) == 0):
+        problems.append("repaired_convhull disagrees with unrepaired_convhull_sites")
+    return problems
+
+
+def validate_port_record(rec, outer_case, exported_case, output_settings):
+    """The reasons a port producer record is NOT a valid record of THIS output: the
+    fields the exporter writes, the case identifier of this output and export, a
+    nonempty source mapping of well-formed digests naming the tracker package, a head
+    that is a commit identifier when present, and settings that agree with the flags
+    the output itself carries."""
+    problems = []
+    if not isinstance(rec, dict):
+        return ["record is not a mapping"]
+    for key, typ in PORT_REQUIRED.items():
+        if key not in rec:
+            problems.append(f"missing {key}")
+        elif not isinstance(rec[key], typ):
+            problems.append(f"{key} is not {typ.__name__}")
+    if problems:
+        return problems
+    if rec["case_id"] != outer_case or rec["case_id"] != exported_case:
+        problems.append(f"record case {rec['case_id']!r} is not the output's "
+                        f"{outer_case!r} or the export's {exported_case!r}")
+    problems += _digest_problems(rec["source_sha256"], "source_sha256")
+    for required in PORT_REQUIRED_SOURCES:
+        if required not in rec["source_sha256"]:
+            problems.append(f"source_sha256 does not name {required}")
+    head = rec.get("git_head")
+    if head is not None and not re.match(r"^[0-9a-f]{40}$", str(head)):
+        problems.append("git_head is not a commit identifier")
+    for flag in ("exclusive", "absorb"):
+        if flag in output_settings and flag in rec["settings"] \
+                and bool(rec["settings"][flag]) != bool(output_settings[flag]):
+            problems.append(f"settings.{flag} {rec['settings'][flag]!r} disagrees with the "
+                            f"output's {output_settings[flag]!r}")
+        elif flag not in rec["settings"]:
+            problems.append(f"settings lacks {flag}")
+    return problems
+
+
+def oracle_provenance(oracle_dir, oracle_name, outer_case, exported_case):
+    """What the oracle output says produced it, validated, then checked against the
+    tree beside it.
+
+    `status` is one of "unverified" (no record), "invalid" (a record that fails its
+    own consistency checks, with `problems`), "inconsistent" (a valid record whose
+    executed-source digests differ from the files now beside the output, with
+    `tree_mismatches`), or "verified" (valid and the tree matches). `faithful` is the
+    record's detected repair mode when the record is valid and None otherwise. The
+    record itself is returned whatever the status, because a valid record of a run
+    whose source has since changed is still the record of that run.
+    """
+    rec = read_producer(os.path.join(oracle_dir, oracle_name))
+    if rec is None:
+        return {"status": "unverified", "faithful": None, "record": None, "problems": []}
+    problems = validate_oracle_record(rec, outer_case, exported_case)
+    if problems:
+        return {"status": "invalid", "faithful": None, "record": rec, "problems": problems}
+    mismatches = []
+    here = os.path.dirname(os.path.abspath(__file__))
+    for key, digest in rec["executed_source_sha256"].items():
+        # the runner encodes "dir/file.m" as "dir__file_m", since a struct field name
+        # cannot carry a slash or a dot
+        rel = key.replace("__", "/")
+        rel = rel[:-2] + ".m" if rel.endswith("_m") else rel
+        candidate = os.path.join(oracle_dir, rel) if rel.startswith("v1_instrumented/") \
+            else os.path.join(here, "octave", rel)
+        if not os.path.exists(candidate) or _sha256(candidate) != digest:
+            mismatches.append(rel)
+    runner = os.path.join(here, "octave", "run_tracker_instrumented.m")
+    if not os.path.exists(runner) or _sha256(runner) != rec["runner_sha256"]:
+        mismatches.append("scripts/octave/run_tracker_instrumented.m")
+    status = "verified" if not mismatches else "inconsistent"
+    return {"status": status, "faithful": bool(rec["repaired_convhull"]), "record": rec,
+            "problems": [], "tree_mismatches": mismatches}
+
+
+def port_provenance(oracle_dir, port_name, outer_case, exported_case, output_settings,
+                    repo=None):
+    """What the port output says produced it, validated, then its declared source
+    inventory compared file by file against the source tree of THIS checkout.
+
+    `status` mirrors the oracle side: "unverified" (no record), "invalid" (fails its
+    own consistency checks, with `problems`), "inconsistent" (valid, but a declared
+    file is absent from the tree or hashes differently now, with `tree_mismatches`;
+    the record is kept, because it remains the record of that run), or "verified"
+    (valid and every declared file matches the tree). A review fed the first version
+    a well-formed digest that matched no file and a path that did not exist, and both
+    came back verified, because syntax was all that was checked.
+    """
+    rec = read_producer(os.path.join(oracle_dir, port_name))
+    if rec is None:
+        return {"status": "unverified", "record": None, "problems": []}
+    problems = validate_port_record(rec, outer_case, exported_case, output_settings)
+    if problems:
+        return {"status": "invalid", "record": rec, "problems": problems}
+    repo = repo or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    mismatches = []
+    for rel, digest in rec["source_sha256"].items():
+        path = os.path.join(repo, rel)
+        if not os.path.exists(path) or _sha256(path) != digest:
+            mismatches.append(rel)
+    return {"status": "verified" if not mismatches else "inconsistent", "record": rec,
+            "problems": [], "tree_mismatches": sorted(mismatches)}
 
 
 def load_case(oracle_dir, port_name="tracker_port.mat", oracle_name=FAITHFUL_ORACLE):
@@ -87,9 +284,9 @@ def load_case(oracle_dir, port_name="tracker_port.mat", oracle_name=FAITHFUL_ORA
             f"--oracle {DEGRADED_ORACLE} and say so in whatever you report.")
     v1, v1_case = read_tracks(path)
     port, port_case = read_tracks(os.path.join(oracle_dir, port_name))
-    if oracle_name != FAITHFUL_ORACLE:
-        print(f"  NOTE: comparing against {oracle_name}, not the faithful "
-              f"{FAITHFUL_ORACLE}")
+    if oracle_name not in KNOWN_ORACLE_NAMES:
+        print(f"  NOTE: comparing against {oracle_name}, not one of the harness's own "
+              f"output names ({' or '.join(KNOWN_ORACLE_NAMES)})")
     case_path = os.path.join(oracle_dir, "tracker_case.mat")
     if not os.path.exists(case_path):
         raise SystemExit(f"{case_path} is absent, so nothing says what was exported.")
@@ -197,11 +394,14 @@ def main(argv=None):
     ap.add_argument("--oracle-dir", default=os.environ.get("AEW_ORACLE_DIR"))
     ap.add_argument("--oracle", default=FAITHFUL_ORACLE,
                     help="which version 1 run to compare against")
+    ap.add_argument("--out", default=None,
+                    help="write the summary numbers and every input's digest as JSON")
     args = ap.parse_args(argv)
     if not args.oracle_dir:
         ap.error("set AEW_ORACLE_DIR or pass --oracle-dir")
 
-    v1, port, exported_case, _ = load_case(args.oracle_dir, oracle_name=args.oracle)
+    v1, port, exported_case, port_settings = load_case(args.oracle_dir,
+                                                       oracle_name=args.oracle)
     v1_case = port_case = exported_case
     # ALL THREE FILES, not just the two outputs. Checking the outputs against each other
     # only proves they agree with one another, and a review planted a `tracker_case.mat`
@@ -232,6 +432,43 @@ def main(argv=None):
     matched_port = {j for _, j, _, _ in assigned}
     seps = np.array([s for _, _, _, s in assigned]) if assigned else np.array([])
 
+    prov = oracle_provenance(args.oracle_dir, args.oracle, v1_case, exported_case)
+    port_prov = port_provenance(args.oracle_dir, "tracker_port.mat", port_case,
+                                exported_case, port_settings)
+    port_rec = port_prov["record"]
+    if prov["status"] != "verified":
+        why = {"unverified": "carries no producer record",
+               "invalid": "carries a producer record that fails its own consistency "
+                          "checks: " + "; ".join(prov.get("problems", [])),
+               "inconsistent": "was produced by source that differs from the tree "
+                               "beside it"}[prov["status"]]
+        print(f"  PROVENANCE {prov['status'].upper()}: the oracle output {why}. Its "
+              f"faithfulness is {'unknown' if prov['faithful'] is None else prov['faithful']} "
+              f"and this comparison is reported as such.")
+    if port_prov["status"] != "verified":
+        print(f"  PORT PROVENANCE {port_prov['status'].upper()}: "
+              + ("no producer record" if port_prov["status"] == "unverified" else
+                 "; ".join(port_prov["problems"]) if port_prov["status"] == "invalid" else
+                 f"declared source differs from or is absent in this checkout: "
+                 f"{port_prov['tree_mismatches'][:5]}"))
+    if prov["status"] == "verified" and not prov["faithful"]:
+        print("  NOTE: the oracle's producer record says the convex-hull call was NOT "
+              "repaired, so this is the degraded oracle whatever its file name.")
+    summary = {"case_id": v1_case, "oracle_file": args.oracle,
+               "oracle_provenance": prov["status"],
+               "oracle_faithful": prov["faithful"],
+               "oracle_producer": prov.get("record"),
+               "oracle_problems": prov.get("problems", []),
+               "oracle_tree_mismatches": prov.get("tree_mismatches"),
+               "port_producer": port_rec,
+               "port_provenance": port_prov["status"],
+               "port_problems": port_prov["problems"],
+               "port_tree_mismatches": port_prov.get("tree_mismatches"),
+               "v1_tracks": len(v1), "port_tracks": len(port),
+               "v1_matched": len(matched_v1), "port_matched": len(matched_port),
+               "v1_unmatched": len(v1) - len(matched_v1),
+               "port_unmatched": len(port) - len(matched_port),
+               "min_overlap": MIN_OVERLAP, "tolerance_deg": TOLERANCE_DEG}
     print(f"\nMAXIMUM-CARDINALITY ONE-TO-ONE MATCHING, overlap of at least "
           f"{MIN_OVERLAP} timesteps and mean")
     print(f"separation within {TOLERANCE_DEG:.0f} degrees:\n")
@@ -262,6 +499,10 @@ def main(argv=None):
         near = int(np.sum(seps < 1e-6))
         print(f"  matched pairs IDENTICAL over the whole track: "
               f"{identical} / {seps.size}")
+        summary.update({"identical_pairs": int(identical),
+                        "separation_median_deg": float(np.median(seps)),
+                        "separation_p90_deg": float(np.percentile(seps, 90)),
+                        "separation_worst_deg": float(seps.max())})
         # THE NON-IDENTICAL PAIRS ON THEIR OWN, because the write-up quotes a median for
         # them and the median printed above is over ALL 96, which is a different number
         # whenever the identical pairs are a large share. A review caught the write-up
@@ -276,6 +517,9 @@ def main(argv=None):
         if rest.size:
             print(f"    of the {rest.size} that are NOT identical: median "
                   f"{np.median(rest):.2f} deg, worst {rest.max():.2f}")
+            summary.update({"nonidentical_pairs": int(rest.size),
+                            "nonidentical_median_deg": float(np.median(rest)),
+                            "nonidentical_worst_deg": float(rest.max())})
         print(f"  pairs at zero separation on shared steps only: "
               f"{zero_on_shared} / {seps.size}")
         print(f"  pairs within 1e-6 degrees on shared steps:     {near} / {seps.size}")
@@ -345,6 +589,36 @@ def main(argv=None):
               f"({hit_out}/{len(outside)}):")
         print(f"    two-sided Fisher exact p = {p:.3f}"
               f"{'' if p < 0.05 else ', so this sample does not separate them'}")
+    if args.out:
+        # EVERY INPUT IS BOUND BY DIGEST, including the source the oracle ran from when
+        # it is the instrumented copy, so a reader can tell a repaired-hull run from a
+        # degraded one without trusting the file name.
+        files = {name: os.path.join(args.oracle_dir, name)
+                 for name in ("tracker_case.mat", "tracker_port.mat", args.oracle)}
+        inst = os.path.join(args.oracle_dir, "v1_instrumented", "find_ews_f.m")
+        if os.path.exists(inst):
+            files["v1_instrumented/find_ews_f.m"] = inst
+        here = os.path.dirname(os.path.abspath(__file__))
+        try:
+            head = subprocess.run(["git", "-C", here, "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            head = None
+        summary.update({"generated_by": "scripts/compare_tracker_oracle.py",
+                        "input_sha256": {k: _sha256(v) for k, v in files.items()},
+                        "source_sha256": {"scripts/compare_tracker_oracle.py":
+                                          _sha256(os.path.abspath(__file__))},
+                        # the checkout this COMPARISON ran in, named as such; the head
+                        # that PRODUCED the port's tracks is in port_producer
+                        "comparison_git_head": head,
+                        "what_this_is": "one-to-one maximum-cardinality track matching of "
+                                        "version 1's own tracker against the port on "
+                                        "identical raw fields over one window; equal "
+                                        "final tracks do not establish that the "
+                                        "intermediate stages agreed"})
+        with open(args.out, "w") as fh:
+            json.dump(summary, fh, indent=1, sort_keys=True)
+        print(f"\nwritten to {args.out}")
     return 0
 
 

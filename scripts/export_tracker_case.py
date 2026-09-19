@@ -14,7 +14,9 @@ to be comfortably longer than that.
 """
 import argparse
 import hashlib
+import json
 import os
+import subprocess
 import sys
 
 import numpy as np
@@ -26,6 +28,45 @@ from aew.v1port import climatology as clim  # noqa: E402
 from aew.v1port import load as L  # noqa: E402
 from aew.v1port import pipeline as P  # noqa: E402
 from aew.v1port.climo_cache import load_or_build  # noqa: E402
+
+
+def _sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 22), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def port_producer_record(case, args, climo_cache):
+    """What produced the port's tracks: the source that executed, hashed now, the
+    checkout it came from and whether it was dirty, the settings, and the climatology
+    cache. Written into the output so the record travels with the tracks."""
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    src_dir = os.path.join(repo, "src", "aew")
+    sources = {}
+    for root, _dirs, files in os.walk(src_dir):
+        for name in sorted(files):
+            if name.endswith(".py"):
+                full = os.path.join(root, name)
+                sources[os.path.relpath(full, repo)] = _sha256(full)
+    sources["scripts/export_tracker_case.py"] = _sha256(os.path.abspath(__file__))
+
+    def git(*argv):
+        try:
+            return subprocess.run(["git", "-C", repo, *argv], capture_output=True,
+                                  text=True, check=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            return None
+    head = git("rev-parse", "HEAD")
+    dirty = git("status", "--porcelain", "--", "src", "scripts")
+    return {"producer": "scripts/export_tracker_case.py", "case_id": case,
+            "git_head": head, "git_dirty": None if dirty is None else bool(dirty),
+            "source_sha256": sources,
+            "settings": {"year": args.year, "start": args.start, "steps": args.steps,
+                         "exclusive": bool(args.exclusive), "absorb": False,
+                         "directory": os.path.basename(os.path.normpath(args.directory))},
+            "climo_cache_sha256": _sha256(climo_cache) if os.path.exists(climo_cache) else None}
 
 
 def case_id(payload):
@@ -151,7 +192,14 @@ def main(argv=None):
                           coarse_threshold=ct, fine_threshold=ft,
                           exclusive=args.exclusive)
     port = {"n": float(len(tracks)), "case_id": payload["case_id"],
-            "exclusive": float(args.exclusive), "absorb": 0.0}
+            "exclusive": float(args.exclusive), "absorb": 0.0,
+            # PRODUCING PROVENANCE, recorded HERE at run time and carried inside the
+            # output, so a comparison can say which port source produced these tracks
+            # rather than reading the checkout it happens to run in. A review reused
+            # unchanged exchange files and watched the recorded head change with the
+            # comparison's own checkout, which proved the earlier field named nothing.
+            "producer_json": json.dumps(port_producer_record(
+                payload["case_id"], args, os.environ["AEW_CLIMO_CACHE"]), sort_keys=True)}
     for i, t in enumerate(tracks):
         port[f"lat{i}"] = np.asarray(t["meanlat"], dtype=float)
         port[f"lon{i}"] = np.asarray(t["meanlon"], dtype=float)
