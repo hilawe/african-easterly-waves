@@ -74,12 +74,17 @@ sys.path.insert(0, HERE)
 import compare_tracker_oracle as C  # noqa: E402
 import residue_membership as RM  # noqa: E402  (the shared experiment contract)
 
-# The port modules the replay EXECUTES, fingerprinted into the artifact, because a later
-# replay under different detection or merge code would otherwise carry the same script
-# fingerprint (a review's finding).
+# EVERY MODULE WHOSE CODE DECIDES WHAT THIS ARTIFACT SAYS, fingerprinted into it, because
+# a later run under different detection, merge or validation code would otherwise carry
+# the same script fingerprint (a review's finding). The last entry was added after a
+# review pointed out that the shared experiment contract had become a dependency of this
+# trace without joining the record of what produced it: the membership artifact hashed
+# that file, so the accounting chain as a whole named the version used, but an individual
+# case record did not.
 REPLAY_SOURCES = ("src/aew/v1port/detection.py", "src/aew/v1port/contours.py",
                   "src/aew/v1port/association.py", "src/aew/v1port/pipeline.py",
-                  "src/aew/v1port/climatology.py", "scripts/compare_tracker_oracle.py")
+                  "src/aew/v1port/climatology.py", "scripts/compare_tracker_oracle.py",
+                  "scripts/residue_membership.py")
 
 # THE CASE PARAMETERS, as module globals so the same validated code walks another case
 # by overriding them from the command line; the defaults are the Sahara case. `BOX` is

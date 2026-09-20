@@ -1224,3 +1224,26 @@ def test_a_crop_cannot_close_a_crossing_off_and_says_so():
                                     domain_complete=True)
     assert edge[0]["closed_off"] is True
     assert any(q["beyond_the_domain"] for q in edge[0]["quads"])
+
+
+def test_every_module_that_decides_the_artifact_is_fingerprinted():
+    """A review found the shared experiment contract had become a dependency of this trace
+    without joining the record of what produced a case artifact. Anything the trace
+    imports and relies on to decide what it writes belongs in REPLAY_SOURCES."""
+    M = _load()
+    import os as _os
+    assert "scripts/residue_membership.py" in M.REPLAY_SOURCES
+    assert "scripts/compare_tracker_oracle.py" in M.REPLAY_SOURCES
+    # the port modules whose behaviour the replay exercises
+    for module in ("detection", "contours", "association", "pipeline", "climatology"):
+        assert f"src/aew/v1port/{module}.py" in M.REPLAY_SOURCES
+    # and every one of them is a file that exists, so a fingerprint can be taken
+    repo = _os.path.join(HERE, "..")
+    for rel in M.REPLAY_SOURCES:
+        assert _os.path.exists(_os.path.join(repo, rel)), rel
+    # the modules this script imports from scripts/ are exactly the ones it records
+    source = open(_os.path.join(repo, "scripts", "trace_sahara_case.py")).read()
+    imported = {line.split()[1] for line in source.splitlines()
+                if line.startswith("import ") and "as " in line and "#" in line}
+    for name in imported:
+        assert f"scripts/{name}.py" in M.REPLAY_SOURCES, name
