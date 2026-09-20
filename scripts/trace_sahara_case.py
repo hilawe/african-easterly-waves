@@ -100,12 +100,24 @@ WEST = {"lat": (16.0, 20.5), "lon": (-12.0, -3.0)}
 FEATURE_LIFE = (33024.0, 33026.5)
 WINDOW = (33023.5, 33027.5)
 AGREEING_STEPS = (33024.0, 33024.5, 33024.75)
-DIVERGENCE_STEP = 33025.0
+DIVERGENCE_STEPS = (33025.0,)   # a case may declare more than one
 AXIS_BOX = None                  # where axis vertices are compared; None means BOX. The
                                  # third case needed a tight candidate box around the
                                  # missing observation and a wide one for the junction
 FIELD_ROWS = (14.0, 22.0)        # the printed sub-box of the masked field, latitudes
 FIELD_COLS = (-13.0, -5.0)       # and longitudes
+
+
+def step_key(t):
+    """A declared step's key in the per-step records. FOUR DECIMALS, not %g: %g keeps six
+    significant digits, so 33035.25 printed that way is 33035.2, which is both a wrong
+    label and a key that two different quarter-hour steps could share."""
+    return f"{float(t):.4f}"
+
+
+def step_label(t):
+    """The same step for prose, at the quarter-hour the window actually uses."""
+    return f"{float(t):.2f}"
 
 
 def _sha256(path):
@@ -240,7 +252,7 @@ def validate_evidence(oracle_dir, case_id, octave_log):
         elif dumped_times != expected:
             problems.append(f"the reference log's dumped timesteps ({len(dumped_times)}) are "
                             f"not the producer record's dump list ({len(expected)})")
-        if not {round(t, 4) for t in AGREEING_STEPS + (DIVERGENCE_STEP,)} <= expected:
+        if not {round(t, 4) for t in AGREEING_STEPS + tuple(DIVERGENCE_STEPS)} <= expected:
             problems.append("the dump list does not cover the agreeing and divergence steps")
     if returned is None:
         problems.append("the reference log does not report the returned track count")
@@ -252,42 +264,53 @@ def validate_evidence(oracle_dir, case_id, octave_log):
 
 def axis_spy(original, inject, now, captured, applied=None):
     """The detection hook the replay installs: it records the masked field and the axes
-    the port drew, and, when the replay is intervening, adds the injected axes at THE
-    NAMED TIMESTEP ONLY. A hook that added them at every step would make the control
-    reproduce the case as well as the intervention does, and the pair would say nothing.
+    the port drew, and, when the replay is intervening, adds each injection's axes at THE
+    TIMESTEP THAT INJECTION NAMES AND NO OTHER. A hook that added them at every step would
+    make the control reproduce the case as well as the intervention does, and the pair
+    would say nothing.
 
     EVERY APPLICATION IS RECORDED in `applied`, because a review passed a control time
     that lay outside the window, watched nothing be injected, and read the result as an
     injection that had no effect. An injection that did not happen is not evidence."""
     def spy(latgrid, longrid, advection, level=D.TROUGH_LEVEL):
         out = original(latgrid, longrid, advection, level)
-        if inject is not None and now[0] is not None \
-                and abs(now[0] - inject["time"]) < 1e-6:
-            out = list(out) + [(np.asarray(a["lat"], dtype=float),
-                                np.asarray(a["lon"], dtype=float))
-                               for a in inject["axes"]]
-            if applied is not None:
-                applied.append(float(now[0]))
+        for one in inject or ():
+            if now[0] is not None and abs(now[0] - one["time"]) < 1e-6:
+                added = [(np.asarray(a["lat"], dtype=float),
+                          np.asarray(a["lon"], dtype=float))
+                         for a in one["axes"] or ()
+                         if len(a.get("lat") or ()) and len(a.get("lon") or ())]
+                # AN INJECTION THAT ADDS NO AXIS IS NOT AN APPLICATION. A review called
+                # this hook with empty axis groups and watched it record two applied times
+                # while adding nothing, so a count of applications said nothing about
+                # whether any geometry entered the replay.
+                if not added:
+                    continue
+                out = list(out) + added
+                if applied is not None:
+                    applied.append(float(now[0]))
         captured["field"], captured["axes"] = advection, out
         return out
     return spy
 
 
-def replay_port(case, inject=None, reference_field=None):
+def replay_port(case, inject=None, reference_fields=None):
     """Port candidates in the box per step with their fate, the masked advection field
     plus axes at the divergence step, the full history of every port track that
     ever enters the western box with the step that pruned it, and the finished tracks,
     from the port's own functions.
 
-    `inject`, when given, adds axes to the port's own axis set at ONE timestep, which is
-    how this script intervenes: `{"time": t, "axes": [{"lat": [...], "lon": [...]}, ...]}`.
-    The axes are version 1's dumped vertices, read from the reference log, never the
-    port's own, and they are added at the named step and nowhere else. Returns the times
-    at which an injection was actually applied as its last value, so a caller can refuse
-    a replay in which nothing was injected.
+    `inject`, when given, is a LIST of injections, each adding axes to the port's own axis
+    set at one timestep: `[{"time": t, "axes": [{"lat": [...], "lon": [...]}, ...]}, ...]`.
+    A case whose pair loses observations at several steps needs a replay that injects at
+    all of them, and a single-injection replay is that list with one entry. The axes are
+    version 1's dumped vertices, read from the reference log, never the port's own, and
+    they are added at the named steps and nowhere else. Returns the times at which an
+    injection was actually applied as its last value, so a caller can refuse a replay in
+    which fewer were applied than requested.
 
-    `reference_field`, when given, is version 1's own masked field at the divergence step
-    and is compared cell by cell against the port's there.
+    `reference_fields`, when given, maps each declared step to version 1's own masked
+    field there, and each is compared cell by cell against the port's at that step.
     """
     times = case["time"].ravel()
     lat_c, lon_c = case["lat_c"].ravel(), case["lon_c"].ravel()
@@ -297,7 +320,7 @@ def replay_port(case, inject=None, reference_field=None):
     original = D.trough_axes
     now, applied = [None], []
     D.trough_axes = axis_spy(original, inject, now, captured, applied)
-    tracks, states, log, divergence = [], [], [], None
+    tracks, states, log, divergence = [], [], [], {}
     # Histories are keyed by a STABLE tag written into each track dictionary when it is
     # first seen, never by the object's identity: a first version keyed on id(track),
     # Python reuses an identity once a pruned track is freed, and a later track
@@ -311,11 +334,11 @@ def replay_port(case, inject=None, reference_field=None):
                                      case["currv_anom_c"][step], case["advcurrv_anom_c"][step],
                                      case["latgrid"], case["longrid"], case["currv_anom"][step],
                                      coarse_threshold=ct, fine_threshold=ft, absorb=False)
-            if abs(t - DIVERGENCE_STEP) < 1e-6:
+            if any(abs(t - step) < 1e-6 for step in DIVERGENCE_STEPS):
                 ri = np.where((lat_c <= FIELD_ROWS[1]) & (lat_c >= FIELD_ROWS[0]))[0]
                 ci = np.where((lon_c >= FIELD_COLS[0]) & (lon_c <= FIELD_COLS[1]))[0]
                 field = captured["field"][np.ix_(ri, ci)]
-                divergence = {
+                block = {
                     "time": t, "rows_lat": lat_c[ri].tolist(), "cols_lon": lon_c[ci].tolist(),
                     "masked_smoothed_advection": [[None if np.isnan(x) else float(x) for x in r]
                                                   for r in field],
@@ -335,21 +358,22 @@ def replay_port(case, inject=None, reference_field=None):
                 # not available rather than assuming the fields agree.
                 full = [[None if not np.isfinite(x) else float(x) for x in row]
                         for row in captured["field"]]
-                divergence["field_comparison"] = field_comparison(lat_c, lon_c, full,
-                                                                   reference_field)
+                block["field_comparison"] = field_comparison(
+                    lat_c, lon_c, full, (reference_fields or {}).get(step_key(t)))
                 # THE WHOLE GRID travels with the record, because the crossing geometry
                 # cannot be read off the printed crop: the cells beyond it decide whether
                 # a crossing is closed or merely unobserved.
-                divergence["full_field"] = {"rows_lat": [float(x) for x in lat_c],
-                                            "cols_lon": [float(x) for x in lon_c],
-                                            "grid": full}
+                block["full_field"] = {"rows_lat": [float(x) for x in lat_c],
+                                       "cols_lon": [float(x) for x in lon_c],
+                                       "grid": full}
                 # THE CROSSING GEOMETRY IS COMPUTED HERE, where the whole grid is in hand,
                 # because it cannot be read off the printed crop: the cells beyond the
                 # crop decide whether a crossing is closed or merely unobserved.
-                divergence["zero_crossings"] = zero_crossings(divergence)
-                divergence["crossing_neighborhoods"] = crossing_neighborhoods(
+                block["zero_crossings"] = zero_crossings(block)
+                block["crossing_neighborhoods"] = crossing_neighborhoods(
                     [float(x) for x in lat_c], [float(x) for x in lon_c], full,
-                    divergence["zero_crossings"], domain_complete=True)
+                    block["zero_crossings"], domain_complete=True)
+                divergence[step_key(t)] = block
             um = P._median_over(clim.smooth9(case["u"][step]))
             vm = P._median_over(clim.smooth9(case["v"][step]))
             tracks, states = associate_step(tracks, states, waves, step, um, vm, exclusive=False)
@@ -668,6 +692,12 @@ def reproduction(final, reference):
     return out
 
 
+def observations_at_steps(final, steps):
+    """The positions the finished port tracks hold at each declared step inside the box,
+    keyed by the step, since a case may declare more than one."""
+    return {step_key(t): observations_at(final, t) for t in steps}
+
+
 def observations_at(final, t):
     """The distinct positions the finished port tracks hold at one timestep inside the
     box, which is the observation this case says the port loses."""
@@ -685,8 +715,8 @@ def control_step_problems(case, control_time):
     problems = []
     if control_time is None or not np.isfinite(control_time):
         return [f"the control step {control_time} is not a finite time"]
-    if abs(control_time - DIVERGENCE_STEP) < 1e-6:
-        problems.append(f"the control step {control_time} is the divergence step")
+    if any(abs(control_time - step) < 1e-6 for step in DIVERGENCE_STEPS):
+        problems.append(f"the control step {control_time} is a declared divergence step")
     if not any(abs(control_time - t) < 1e-6 for t in times):
         problems.append(f"the control step {control_time} is not a timestep of the "
                         f"exported window ({times[0]} to {times[-1]})")
@@ -696,47 +726,84 @@ def control_step_problems(case, control_time):
 SHAPE_CONTROL_OFFSET_DEG = 4.0    # two coarse cells west, recorded in the artifact
 
 
-def intervene(case, v1_axis_points, reference, control_time, baseline_final,
+def finished_track_records(final):
+    """Every finished track a replay produced, complete, as plain arrays. THE CHECKER
+    RECOMPUTES THE OUTCOMES FROM THESE against the pinned reference output: whether any
+    track equals a reference track exactly, and how many lie in the western box during
+    the feature's life. A selected matching track would not do, since it cannot show
+    that NO baseline or time-control track matches, nor give a count. Recorded tracks
+    still do not prove the replay produced them; that needs a rerun, which is a separate
+    audit gate rather than every accounting invocation."""
+    return [{"time": [float(x) for x in tr["time"]],
+             "lat": [float(x) for x in tr["meanlat"]],
+             "lon": [float(x) for x in tr["meanlon"]]} for tr in final]
+
+
+def intervene(case, axes_by_step, reference, control_times, baseline_final,
               baseline_west, shape_offset=SHAPE_CONTROL_OFFSET_DEG):
-    """THE INTERVENTION, because a difference observed at a stage is not a mechanism
+    """THE EXPERIMENT SET, because a difference observed at a stage is not a mechanism
     until an intervention at that stage changes the output and one elsewhere does not.
 
-    Version 1's own dumped axis vertices at the divergence step, read from the reference
-    log and never from the port's axes, are added to the port's axis set at that step
-    alone and the whole window is replayed. The CONTROL adds the same vertices at another
-    timestep instead, so the effect has to be specific to the step this case names rather
-    than to the act of adding an axis. Both are reported beside the untouched replay."""
-    axes = [{"lat": list(r["lat"]), "lon": list(r["lon"])} for r in v1_axis_points]
-    runs = {"injected_axes": axes,
-            "control_step_problems": control_step_problems(case, control_time),
-            "baseline": {"injected_at": None, "injections_applied": 0,
-                         "applied_at": [],
+    Version 1's own dumped axis vertices, read from the reference log and never from the
+    port's axes, are added to the port's axis set at the steps this case declares, and the
+    whole window is replayed from the same untouched input. All of these are recorded
+    together:
+
+      the BASELINE, nothing injected;
+      one PARTIAL run per declared step, injecting at that step alone, since two missing
+        observations do not establish that two injections are needed and restoring one
+        detection can change the tracking that follows;
+      the INTERVENTION, injecting at every declared step at once;
+      a TIME CONTROL and a SHAPE CONTROL WITH THE SAME NUMBER OF INJECTIONS as the
+        intervention, because a two-injection experiment compared against a one-injection
+        control would not be a comparison.
+
+    A case with one declared step has one partial run, which is the intervention itself,
+    and it is not recorded twice."""
+    steps = sorted(axes_by_step)
+    moved_by_step = {t: [{"lat": list(a["lat"]), "lon": [lo - shape_offset for lo in a["lon"]]}
+                         for a in axes_by_step[t]] for t in steps}
+    plans = {"intervention": [{"time": t, "axes": axes_by_step[t]} for t in steps],
+             "control": [{"time": c, "axes": axes_by_step[t]}
+                         for t, c in zip(steps, control_times)],
+             "shape_control": [{"time": t, "axes": moved_by_step[t]} for t in steps]}
+    if len(steps) > 1:
+        for t in steps:
+            plans[f"partial_at_{step_key(t)}"] = [{"time": t, "axes": axes_by_step[t]}]
+    # NO PER-STEP MAP OF WHAT THE AXES SHOULD HAVE BEEN is written beside them. An earlier
+    # version wrote three, and a review deleted them, which switched the comparison off
+    # rather than refusing the record, then wrote the same wrong geometry into both a run
+    # and its map so the two agreed with each other and with nothing else. What each run's
+    # axes must be is now DERIVED by `residue_membership.expected_axes` from version 1's
+    # dumped vertices at each step, the declared control pairing and the offset below.
+    runs = {"injected_axes": [a for t in steps for a in axes_by_step[t]],
+            "declared_steps": [float(t) for t in steps],
+            "partial_runs": sorted(k for k in plans if k.startswith("partial_at_")),
+            "control_step_problems": [w for c in control_times
+                                      for w in control_step_problems(case, c)],
+            "baseline": {"requested_times": [], "injections_applied": 0, "applied_at": [],
+                         "finished_tracks": finished_track_records(baseline_final),
                          "reference_tracks": reproduction(baseline_final, reference),
                          "observations_at_divergence_in_box":
-                             observations_at(baseline_final, DIVERGENCE_STEP),
+                             observations_at_steps(baseline_final, steps),
                          "finished_tracks_in_the_western_box": baseline_west}}
-    # THE SHAPE CONTROL, at the divergence step with the same vertex count moved off the
-    # crossing. The time control shows the effect belongs to this timestep; it cannot show
-    # the effect belongs to THESE vertices, and a reader coming in cold asked for that.
-    moved = [{"lat": list(a["lat"]), "lon": [lo - shape_offset for lo in a["lon"]]}
-             for a in axes]
-    for label, t, what in (("intervention", DIVERGENCE_STEP, axes),
-                           ("control", control_time, axes),
-                           ("shape_control", DIVERGENCE_STEP, moved)):
-        _log, _div, west, _hist, final, applied = replay_port(
-            case, inject={"time": t, "axes": what})
-        runs[label] = {"injected_at": t, "injections_applied": len(applied),
-                       "applied_at": applied,
+    for label, plan in plans.items():
+        _log, _div, west, _hist, final, applied = replay_port(case, inject=plan)
+        runs[label] = {"requested_times": [float(one["time"]) for one in plan],
+                       "injections_applied": len(applied), "applied_at": applied,
+                       "axes_by_requested_step": {step_key(one["time"]): one["axes"]
+                                                  for one in plan},
+                       "axes": [one["axes"] for one in plan],
+                       "finished_tracks": finished_track_records(final),
                        "reference_tracks": reproduction(final, reference),
                        "observations_at_divergence_in_box":
-                           observations_at(final, DIVERGENCE_STEP),
+                           observations_at_steps(final, steps),
                        # the TRACK-level effect beside the observation-level one: the
                        # Sahara case's injection restores the missing observation without
                        # reproducing the reference track, and only this distinguishes the
                        # two outcomes
                        "finished_tracks_in_the_western_box": west}
     runs["shape_control"]["longitude_offset_deg"] = shape_offset
-    runs["shape_control"]["axes"] = moved
     return runs
 
 
@@ -773,15 +840,21 @@ def read_v1_dumps(octave_log):
     return out
 
 
-def intervention_statements(runs):
+def intervention_statements(runs, v1_at=None):
     """What the intervention and its control did, derived from the two replays' own
     counts. A run that was not performed says nothing: an absent intervention is never
-    reported as one that changed nothing."""
+    reported as one that changed nothing.
+
+    `v1_at` is version 1's records at the declared steps, and it is what the injected
+    geometry is checked against. A review deleted the expected-axis maps the artifact
+    carried and the comparison simply stopped happening, so the expectation is now derived
+    from these dumped vertices instead."""
     statements, missing = [], []
     if runs is None:
         return statements, missing
     counts = {}
-    for label in ("baseline", "intervention", "control", "shape_control"):
+    for label in (("baseline", "intervention", "control", "shape_control")
+                  + tuple(runs.get("partial_runs") or ())):
         refs = runs.get(label, {}).get("reference_tracks")
         if not refs:
             missing.append(f"the {label} replay's reference-track comparison")
@@ -791,43 +864,55 @@ def intervention_statements(runs):
     # time outside the window, nothing was injected, and the first version reported the
     # untouched replay as an injection that reproduced nothing.
     missing.extend(RM.experiment_problems(
-        runs, DIVERGENCE_STEP, runs.get("control", {}).get("injected_at"),
-        runs.get("control_step_problems"), runs.get("injected_axes"),
-        (runs.get("shape_control") or {}).get("axes")))
+        runs, DIVERGENCE_STEPS, runs.get("control", {}).get("requested_times"),
+        runs.get("control_step_problems"), RM.dumped_vertices(v1_at)))
     # AN ABSENT MEASUREMENT IS NOT A ZERO, and this statement reports the counts, so it
     # refuses when one is missing. A review deleted all three records and watched the
     # first version report "untouched 0 ... intervention 0 ... control 0", which is the
     # one comparison the Sahara case's claim rests on.
-    for label in ("baseline", "intervention", "control", "shape_control"):
+    for label in (("baseline", "intervention", "control", "shape_control")
+                  + tuple(runs.get("partial_runs") or ())):
         if runs.get(label, {}).get("finished_tracks_in_the_western_box") is None:
             missing.append(f"the {label} replay's finished tracks in the western box")
     if missing:
         return statements, missing
     n_axes = len(runs["injected_axes"])
+    steps = runs.get("declared_steps") or list(DIVERGENCE_STEPS)
+    where = ", ".join(step_label(t) for t in steps)
     statements.append(
         f"injecting version 1's {n_axes} dumped axis (axes) into the port's axis set at "
-        f"{DIVERGENCE_STEP} alone reproduces {counts['intervention'][0]} of "
+        f"{where} reproduces {counts['intervention'][0]} of "
         f"{counts['intervention'][1]} reference tracks exactly, against "
         f"{counts['baseline'][0]} of {counts['baseline'][1]} with the port untouched")
     statements.append(
-        f"the same axes injected at {runs['control']['injected_at']} instead reproduce "
-        f"{counts['control'][0]} of {counts['control'][1]}, and the same vertex count moved "
-        f"{runs['shape_control']['longitude_offset_deg']} degrees west of the crossing at "
-        f"{DIVERGENCE_STEP} reproduces {counts['shape_control'][0]} of "
-        f"{counts['shape_control'][1]}")
+        f"the same axes injected at "
+        f"{', '.join(step_label(t) for t in runs['control']['requested_times'])} instead "
+        f"reproduce {counts['control'][0]} of {counts['control'][1]}, and the same vertex "
+        f"count moved {runs['shape_control']['longitude_offset_deg']} degrees west of the "
+        f"crossing at {where} reproduces {counts['shape_control'][0]} of "
+        f"{counts['shape_control'][1]}; each control carries "
+        f"{len(runs['control']['requested_times'])} injection(s), as the experiment does")
+    # EACH STEP ON ITS OWN, because two missing observations do not establish that two
+    # injections are needed: restoring one detection can change the tracking that follows.
+    for label in runs.get("partial_runs") or ():
+        at = ", ".join(step_label(t) for t in runs[label]["requested_times"])
+        statements.append(
+            f"injecting at {at} alone reproduces {counts[label][0]} of "
+            f"{counts[label][1]} reference tracks exactly")
     counts_west = {label: len(runs[label].get("finished_tracks_in_the_western_box") or [])
-                   for label in ("baseline", "intervention", "control", "shape_control")}
+                   for label in (("baseline", "intervention", "control", "shape_control")
+                                 + tuple(runs.get("partial_runs") or ()))}
     statements.append(
         f"finished port tracks in the western box: untouched {counts_west['baseline']}, "
-        f"with the injection at {DIVERGENCE_STEP} {counts_west['intervention']}, with the "
+        f"with the injection at {where} {counts_west['intervention']}, with the "
         f"time control {counts_west['control']}, with the shape control "
         f"{counts_west['shape_control']}")
     statements.append(
-        f"positions the finished port tracks hold at {DIVERGENCE_STEP} in the box: "
+        f"positions the finished port tracks hold at the declared steps in the box: "
         f"untouched {runs['baseline']['observations_at_divergence_in_box']}, "
-        f"with the injection at {DIVERGENCE_STEP} "
+        f"with the injection at {where} "
         f"{runs['intervention']['observations_at_divergence_in_box']}, "
-        f"with the control injection "
+        f"with the time control "
         f"{runs['control']['observations_at_divergence_in_box']}")
     return statements, missing
 
@@ -858,7 +943,11 @@ def field_statements(divergence):
 def derive_conclusion(log, v1, v1_at, port_at, divergence, west, western, intervention=None):
     """The conclusion as a list of statements, each derived from a recorded observation,
     and the list of observations that were needed and absent. Nothing here is typed
-    from memory of the case: a statement appears only when its observation does."""
+    from memory of the case: a statement appears only when its observation does.
+
+    `v1_at`, `port_at` and `divergence` are keyed by declared step, since a case may name
+    more than one, and each step is read on its own before the track-level statements and
+    the experiment set are added once."""
     missing, statements = [], []
     for t in AGREEING_STEPS:
         v1_c = [r for r in v1 if r["kind"] == "COARSE" and abs(r["time"] - t) < 1e-6]
@@ -870,17 +959,32 @@ def derive_conclusion(log, v1, v1_at, port_at, divergence, west, western, interv
     if len(missing) == 0:
         statements.append(f"both sides detect a candidate in the box at each of "
                           f"{list(AGREEING_STEPS)}")
+    for step in DIVERGENCE_STEPS:
+        key = step_key(step)
+        said, absent = per_step_statements(step, (v1_at or {}).get(key, []),
+                                           (port_at or {}).get(key, []),
+                                           (divergence or {}).get(key))
+        statements += said
+        missing += absent
+    return _conclusion_tail(statements, missing, west, western, intervention, v1_at)
+
+
+def per_step_statements(step, v1_at, port_at, divergence):
+    """What the two sides did at ONE declared divergence step, and the observations a
+    conclusion about that step needs and lacks. A case may declare several steps, and
+    each gets its own reading from its own recorded block."""
+    missing, statements = [], []
     v1_axes = [r for r in v1_at if r["kind"] == "AXIS"]
     v1_coarse = [r for r in v1_at if r["kind"] == "COARSE"]
     if not v1_axes or not v1_coarse:
-        missing.append(f"version 1 axes and coarse candidate in the box at {DIVERGENCE_STEP}")
+        missing.append(f"version 1 axes and coarse candidate in the box at {step}")
     if divergence is None:
-        missing.append(f"the port's masked field at {DIVERGENCE_STEP}")
+        missing.append(f"the port's masked field at {step}")
     if not missing:
         v1_fine = [r for r in v1_at if r["kind"] == "FINE"]
         if port_at and not divergence["port_axes_in_box"]:
             statements.append(f"the port also has a candidate in the box at "
-                              f"{DIVERGENCE_STEP} and draws no axis, so this step is "
+                              f"{step} and draws no axis, so this step is "
                               f"not the divergence")
         elif port_at:
             # BOTH SIDES HOLD A CANDIDATE: the divergence is where each side's fine
@@ -892,7 +996,7 @@ def derive_conclusion(log, v1, v1_at, port_at, divergence, west, western, interv
                                        * np.cos(np.radians(0.5 * (vf["lat_mean"]
                                                                   + pc["lat_mean"])))))
                     statements.append(
-                        f"at {DIVERGENCE_STEP} both sides hold a candidate in the box: "
+                        f"at {step} both sides hold a candidate in the box: "
                         f"version 1's fine candidate at ({vf['lat_mean']}, {vf['lon_mean']}) "
                         f"and the port's at ({pc['lat_mean']}, {pc['lon_mean']}), "
                         f"{d:.1f} degrees apart")
@@ -926,12 +1030,12 @@ def derive_conclusion(log, v1, v1_at, port_at, divergence, west, western, interv
             # partition moves it.
             v1_pts = [r for r in v1_at if r["kind"] == "AXISPTS"]
             if not v1_pts:
-                missing.append(f"version 1 axis vertices (AXISPTS) at {DIVERGENCE_STEP}")
+                missing.append(f"version 1 axis vertices (AXISPTS) at {step}")
             else:
                 cmp = compare_vertices(v1_pts, divergence["port_axes_in_box"])
                 divergence["vertex_comparison"] = cmp
                 statements.append(
-                    f"at {DIVERGENCE_STEP} both sides draw axes in the box: version 1 "
+                    f"at {step} both sides draw axes in the box: version 1 "
                     f"{cmp['v1_lines']} line(s) over {cmp['v1_vertices']} vertices, the port "
                     f"{cmp['port_lines']} line(s) over {cmp['port_vertices']} vertices; "
                     f"{cmp['shared_vertices']} distinct vertices are shared, "
@@ -951,7 +1055,7 @@ def derive_conclusion(log, v1, v1_at, port_at, divergence, west, western, interv
                                       "established by this comparison")
         else:
             statements.append(
-                f"at {DIVERGENCE_STEP} version 1 dumps {len(v1_axes)} axes and "
+                f"at {step} version 1 dumps {len(v1_axes)} axes and "
                 f"{len(v1_coarse)} coarse candidate in the box and the port has no "
                 f"candidate and no axis there; the port's masked field holds "
                 f"{divergence['finite_cells']} finite cells in the box")
@@ -967,14 +1071,22 @@ def derive_conclusion(log, v1, v1_at, port_at, divergence, west, western, interv
                 closed = [h for h in hoods if h["closed_off"] is True]
                 undetermined = [h for h in hoods if h["closed_off"] is None]
                 if hoods:
+                    # BY THE REASON EACH CROSSING IS CLOSED, not by assuming one reason. A
+                    # review found this sentence calling every closed crossing a two-sided
+                    # masking case while the records beside it showed the Mozambique pair
+                    # closed by one masked quad and one true domain boundary.
+                    by_masking = [h for h in closed
+                                  if not any(q["beyond_the_domain"] for q in h["quads"])]
+                    at_edge = [h for h in closed if h not in by_masking]
                     statements.append(
                         f"of the {len(hoods)} zero crossings on the port's field in the "
-                        f"printed box, {len(closed)} lie on an edge whose quads on both "
-                        f"sides hold two or more masked corners, which is what leaves the "
-                        f"tracer no triangle to trace through (a quad with one masked "
-                        f"corner still offers one), and {len(undetermined)} are "
-                        f"undetermined because a neighbouring quad was not observed; the "
-                        f"count is taken over the WHOLE coarse grid, not the printed box")
+                        f"printed box, {len(closed)} leave the tracer no usable triangle: "
+                        f"{len(by_masking)} with two or more masked corners in the quads on "
+                        f"BOTH sides, and {len(at_edge)} with a masked quad on one side and "
+                        f"the DOMAIN BOUNDARY on the other (a quad with one masked corner "
+                        f"still offers a triangle). {len(undetermined)} are undetermined "
+                        f"because a neighbouring quad was not observed; the count is taken "
+                        f"over the WHOLE coarse grid, not the printed box")
                 worst = max((v["distance_deg"] for v in on if v["distance_deg"] is not None),
                             default=None)
                 if on and all(v["on_a_crossing"] for v in on):
@@ -997,6 +1109,10 @@ def derive_conclusion(log, v1, v1_at, port_at, divergence, west, western, interv
     # the branch where the port draws no axis, so the third case, where both sides draw,
     # recorded nothing about the fields at all.
     statements += field_statements(divergence)
+    return statements, missing
+
+
+def _conclusion_tail(statements, missing, west, western, intervention, v1_at=None):
     if west:
         statements.append(f"{len(west)} finished port track(s) sit in the western box")
     else:
@@ -1015,7 +1131,7 @@ def derive_conclusion(log, v1, v1_at, port_at, divergence, west, western, interv
             statements.append("every port track that entered the western box was removed "
                               "by the in-loop prune, so the western history survives on "
                               "neither side as a finished port track")
-    more, absent = intervention_statements(intervention)
+    more, absent = intervention_statements(intervention, v1_at)
     return statements + more, missing + absent
 
 
@@ -1112,7 +1228,7 @@ def octave_synthetic():
 
 
 def main(argv=None):
-    global V1_TRACK, BOX, WEST, FEATURE_LIFE, WINDOW, AGREEING_STEPS, DIVERGENCE_STEP
+    global V1_TRACK, BOX, WEST, FEATURE_LIFE, WINDOW, AGREEING_STEPS, DIVERGENCE_STEPS
     global FIELD_ROWS, FIELD_COLS, AXIS_BOX
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     ap.add_argument("--oracle-dir", default=os.environ.get("AEW_ORACLE_DIR"))
@@ -1129,7 +1245,8 @@ def main(argv=None):
     ap.add_argument("--feature-life", type=float, nargs=2, default=None)
     ap.add_argument("--window", type=float, nargs=2, default=None)
     ap.add_argument("--agreeing", type=float, nargs="+", default=None)
-    ap.add_argument("--divergence", type=float, default=None)
+    ap.add_argument("--divergence", type=float, nargs="+", default=None,
+                    help="the timestep or timesteps this case says the port loses")
     ap.add_argument("--axis-box", type=float, nargs=4, metavar=("LAT0", "LAT1", "LON0", "LON1"),
                     default=None, help="where axis vertices are compared (default the box)")
     ap.add_argument("--explains-unmatched", type=int, nargs="*", default=[],
@@ -1147,9 +1264,9 @@ def main(argv=None):
     ap.add_argument("--shape-control-offset", type=float, default=SHAPE_CONTROL_OFFSET_DEG,
                     help="how far west to move the injected vertices for the shape "
                          "control, which runs at the divergence step")
-    ap.add_argument("--control-step", type=float, default=None,
-                    help="the timestep the control injects the same axes at (default the "
-                         "last agreeing step)")
+    ap.add_argument("--control-step", type=float, nargs="*", default=None,
+                    help="the timestep(s) the time control injects the same axes at, one "
+                         "per declared divergence step (default the agreeing steps)")
     args = ap.parse_args(argv)
     if not args.oracle_dir:
         ap.error("set AEW_ORACLE_DIR or pass --oracle-dir")
@@ -1165,7 +1282,7 @@ def main(argv=None):
     if args.agreeing:
         AGREEING_STEPS = tuple(args.agreeing)
     if args.divergence is not None:
-        DIVERGENCE_STEP = args.divergence
+        DIVERGENCE_STEPS = tuple(args.divergence)
     if args.axis_box:
         AXIS_BOX = {"lat": (args.axis_box[0], args.axis_box[1]),
                     "lon": (args.axis_box[2], args.axis_box[3])}
@@ -1195,24 +1312,33 @@ def main(argv=None):
     _t, oracle_rec, _c, _n = read_producer_text(oracle_path)
     _t, port_rec, _c, _n = read_producer_text(port_path)
     _r, dumped_times, returned, run_digest = parse_log(octave_log)
-    reference_field = reference_field_at(octave_log, DIVERGENCE_STEP)
-    if reference_field["problems"]:
+    reference_fields = {step_key(step): reference_field_at(octave_log, step)
+                        for step in DIVERGENCE_STEPS}
+    field_problems = sorted({w for rec in reference_fields.values()
+                             for w in rec["problems"]})
+    if field_problems:
         print("REFUSED: the reference log's FIELD records are not usable evidence: "
-              + "; ".join(sorted(set(reference_field["problems"]))), flush=True)
+              + "; ".join(field_problems), flush=True)
         return 2
     log, divergence, west, western, final, _applied = replay_port(
-        case, reference_field=reference_field)
+        case, reference_fields=reference_fields)
     v1 = read_v1_dumps(octave_log)
-    v1_at = [r for r in v1 if abs(r["time"] - DIVERGENCE_STEP) < 1e-6]
-    port_at = [r for r in log if abs(r["time"] - DIVERGENCE_STEP) < 1e-6]
+    v1_at = {step_key(step): [r for r in v1 if abs(r["time"] - step) < 1e-6]
+             for step in DIVERGENCE_STEPS}
+    port_at = {step_key(step): [r for r in log if abs(r["time"] - step) < 1e-6]
+               for step in DIVERGENCE_STEPS}
     intervention, control_used = None, None
     not_attempted = "no reference tracks were declared"
     if args.reference_tracks:
-        v1_pts = [r for r in v1_at if r["kind"] == "AXISPTS"]
-        reference, absent = [], []
-        if not v1_pts:
-            absent.append(f"version 1 axis vertices (AXISPTS) at {DIVERGENCE_STEP}, which "
-                          f"the intervention injects")
+        axes_by_step, reference, absent = {}, [], []
+        for step in DIVERGENCE_STEPS:
+            pts = [r for r in v1_at[step_key(step)] if r["kind"] == "AXISPTS"]
+            if not pts:
+                absent.append(f"version 1 axis vertices (AXISPTS) at {step_label(step)}, which the "
+                              f"intervention injects")
+            else:
+                axes_by_step[step] = [{"lat": list(r["lat"]), "lon": list(r["lon"])}
+                                      for r in pts]
         tracks, why = finished_tracks(oracle_path)
         if why:
             absent.append(why)
@@ -1226,9 +1352,17 @@ def main(argv=None):
             print("REFUSED: the intervention this case declares cannot run: "
                   + "; ".join(absent), flush=True)
             return 2
-        control_used = (args.control_step if args.control_step is not None
-                        else AGREEING_STEPS[-1])
-        intervention = intervene(case, v1_pts, reference, control_used, final,
+        # ONE CONTROL STEP PER DECLARED STEP, so the time control carries as many
+        # injections as the experiment it controls.
+        declared = args.control_step or []
+        control_used = [declared[i] if i < len(declared)
+                        else AGREEING_STEPS[-(i + 1) if i < len(AGREEING_STEPS) else -1]
+                        for i in range(len(DIVERGENCE_STEPS))]
+        if len(set(control_used)) != len(control_used):
+            print("REFUSED: the control steps repeat, so the time control would carry "
+                  f"fewer injections than the experiment ({control_used})", flush=True)
+            return 2
+        intervention = intervene(case, axes_by_step, reference, control_used, final,
                                  west, args.shape_control_offset)
     conclusion, missing = derive_conclusion(log, v1, v1_at, port_at, divergence, west,
                                             western, intervention)
@@ -1243,13 +1377,13 @@ def main(argv=None):
               "parameters": {"v1_track": V1_TRACK, "box": BOX, "axis_box": AXIS_BOX, "west": WEST,
                              "feature_life": list(FEATURE_LIFE), "window": list(WINDOW),
                              "agreeing_steps": list(AGREEING_STEPS),
-                             "divergence_step": DIVERGENCE_STEP,
+                             "divergence_steps": [float(t) for t in DIVERGENCE_STEPS],
+                             "control_steps": control_used,
                              # the printed sub-box of the masked field and the
                              # intervention's arguments, which a reader otherwise has to
                              # infer from the recorded rows and columns
                              "field_rows": list(FIELD_ROWS), "field_cols": list(FIELD_COLS),
-                             "reference_tracks": sorted(args.reference_tracks),
-                             "control_step": control_used},
+                             "reference_tracks": sorted(args.reference_tracks)},
               "evidence_binding": {"oracle_provenance": provenance["oracle"]["status"],
                                    "oracle_faithful": provenance["oracle"]["faithful"],
                                    "port_provenance": provenance["port"]["status"],
@@ -1277,9 +1411,12 @@ def main(argv=None):
     for st in conclusion:
         print("  -", st)
     print(f"case {result['case_id']}: port candidates in box {len(log)}, v1 dump records in "
-          f"box {len(v1)}; at {DIVERGENCE_STEP}: v1 {len(v1_at)} records, port {len(port_at)} "
-          f"candidates, finite cells in the box {divergence['finite_cells'] if divergence else None}, "
-          f"port axes in box {divergence['port_axes_in_box'] if divergence else None}")
+          f"box {len(v1)}; declared steps "
+          f"{', '.join(step_label(t) for t in DIVERGENCE_STEPS)}: "
+          + "; ".join(f"at {k} v1 {len(v1_at[k])} records, port {len(port_at[k])} "
+                      f"candidates, finite cells "
+                      f"{(divergence.get(k) or {}).get('finite_cells')}"
+                      for k in sorted(divergence or {})))
     print(f"port finished tracks ever in the western box: {west}")
     print(f"synthetic lone column: port axes {synthetic['port']['lone_column_axes']}, "
           f"two columns {synthetic['port']['two_column_axes']}; octave "

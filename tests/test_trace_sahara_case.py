@@ -86,6 +86,15 @@ def _load():
     return mod
 
 
+def _conclude(M, log, v1, v1_at, port_at, divergence, west, western, intervention=None,
+              step=None):
+    """The conclusion for ONE declared step, in the keyed shape the instrument now uses.
+    A case may declare several steps, and the tests below each exercise one."""
+    key = M.step_key(step if step is not None else M.DIVERGENCE_STEPS[0])
+    return M.derive_conclusion(log, v1, {key: v1_at}, {key: port_at}, {key: divergence},
+                               west, western, intervention)
+
+
 def test_a_lone_masked_bounded_column_yields_no_port_axis_and_two_columns_do():
     M = _load()
     r = M.port_synthetic()
@@ -257,19 +266,19 @@ def test_conclusion_is_derived_from_the_recorded_observations():
     M = _load()
     v1 = ([{"kind": "COARSE", "time": t, "lat_mean": 18.0, "lon_mean": -9.0}
            for t in M.AGREEING_STEPS]
-          + [{"kind": "AXIS", "time": M.DIVERGENCE_STEP, "n_points": 3, "lat_mean": 18.4,
+          + [{"kind": "AXIS", "time": M.DIVERGENCE_STEPS[0], "n_points": 3, "lat_mean": 18.4,
               "lon_mean": -9.0, "lat_range": 0.0, "lon_range": 0.0},
-             {"kind": "COARSE", "time": M.DIVERGENCE_STEP, "lat_mean": 18.0, "lon_mean": -9.0}])
+             {"kind": "COARSE", "time": M.DIVERGENCE_STEPS[0], "lat_mean": 18.0, "lon_mean": -9.0}])
     log = [{"time": t, "lat_mean": 18.5, "lon_mean": -8.5, "n_points": 14,
             "taken_by_tracks_of_length": [k + 1]} for k, t in enumerate(M.AGREEING_STEPS)]
-    v1_at = [r for r in v1 if r["time"] == M.DIVERGENCE_STEP]
+    v1_at = [r for r in v1 if r["time"] == M.DIVERGENCE_STEPS[0]]
     divergence = {"finite_cells": 4, "port_axes_in_box": [], "port_waves_in_box": []}
     western = [{"observations": [[33024.0, 19.0, -5.0], [33024.5, 18.75, -8.75],
                                  [33024.75, 18.5, -8.5]], "pruned_at": 33026.75},
                {"observations": [[33025.5, 18.0, -11.5]] + [[33026.0 + 0.25 * k, 21.0, -2.0]
                                                             for k in range(5)],
                 "pruned_at": 33028.75}]
-    statements, missing = M.derive_conclusion(log, v1, v1_at, [], divergence, [], western)
+    statements, missing = _conclude(M, log, v1, v1_at, [], divergence, [], western)
     assert missing == []
     assert any("both sides detect a candidate" in s for s in statements)
     assert any("version 1 dumps 1 axes and 1 coarse candidate" in s and "port has no "
@@ -279,13 +288,13 @@ def test_conclusion_is_derived_from_the_recorded_observations():
     assert any("every port track that entered the western box was removed" in s
                for s in statements)
     # without version 1's axes at the divergence step there is no divergence statement
-    statements2, missing2 = M.derive_conclusion(log, [r for r in v1 if r["kind"] != "AXIS"],
+    statements2, missing2 = _conclude(M, log, [r for r in v1 if r["kind"] != "AXIS"],
                                                 [], [], divergence, [], western)
     assert any("version 1 axes and coarse candidate" in m for m in missing2)
     assert not any("port has no candidate and no axis" in s for s in statements2)
     # a western fragment that survives forbids the "every ... removed" statement
     kept = [dict(western[0]), dict(western[1], pruned_at=None)]
-    statements3, _ = M.derive_conclusion(log, v1, v1_at, [], divergence, [], kept)
+    statements3, _ = _conclude(M, log, v1, v1_at, [], divergence, [], kept)
     assert not any("every port track that entered the western box was removed" in s
                    for s in statements3)
     assert any("never pruned" in s for s in statements3)
@@ -299,9 +308,9 @@ def test_vertex_comparison_states_shared_vertices_and_different_partition():
     B = [(-18.0, -19.4), (-16.0, -14.4)]
     C = [(-16.0, -31.3), (-14.2, -29.0)]
     far = (10.0, 60.0)
-    v1 = [{"kind": "AXISPTS", "time": M.DIVERGENCE_STEP, "n_points": 5,
+    v1 = [{"kind": "AXISPTS", "time": M.DIVERGENCE_STEPS[0], "n_points": 5,
            "lat": [p[0] for p in A + B] + [far[0]], "lon": [p[1] for p in A + B] + [far[1]]},
-          {"kind": "AXISPTS", "time": M.DIVERGENCE_STEP, "n_points": 2,
+          {"kind": "AXISPTS", "time": M.DIVERGENCE_STEPS[0], "n_points": 2,
            "lat": [p[0] for p in C], "lon": [p[1] for p in C]}]
     port = [{"n": 5, "lat_mean": 0.0, "lon_mean": 0.0,
              "lat": [p[0] for p in A + C] + [far[0]], "lon": [p[1] for p in A + C] + [far[1]]},
@@ -316,16 +325,16 @@ def test_vertex_comparison_states_shared_vertices_and_different_partition():
     # the conclusion path: agreeing steps satisfied, port axes present, no port wave
     v1_dumps = ([{"kind": "COARSE", "time": t, "lat_mean": -22.0, "lon_mean": -23.0}
                  for t in M.AGREEING_STEPS]
-                + [{"kind": "AXIS", "time": M.DIVERGENCE_STEP, "n_points": 5, "lat_mean": -20.0,
+                + [{"kind": "AXIS", "time": M.DIVERGENCE_STEPS[0], "n_points": 5, "lat_mean": -20.0,
                     "lon_mean": -18.0, "lat_range": 8.0, "lon_range": 7.0},
-                   {"kind": "COARSE", "time": M.DIVERGENCE_STEP, "lat_mean": -20.0,
+                   {"kind": "COARSE", "time": M.DIVERGENCE_STEPS[0], "lat_mean": -20.0,
                     "lon_mean": -18.0}] + v1)
     log = [{"time": t, "lat_mean": -26.0, "lon_mean": -17.0, "n_points": 100,
             "taken_by_tracks_of_length": [9]} for t in M.AGREEING_STEPS]
-    v1_at = [r for r in v1_dumps if r["time"] == M.DIVERGENCE_STEP]
+    v1_at = [r for r in v1_dumps if r["time"] == M.DIVERGENCE_STEPS[0]]
     divergence = {"finite_cells": 30, "port_axes_in_box": port, "port_waves_in_box": []}
     western = [{"observations": [[33035.0, -24.9, -21.7]], "pruned_at": None}]
-    statements, missing = M.derive_conclusion(log, v1_dumps, v1_at, [], divergence,
+    statements, missing = _conclude(M, log, v1_dumps, v1_at, [], divergence,
                                               [{"steps": 1}], western)
     assert missing == []
     assert any("both sides draw axes in the box" in s and "6 distinct vertices are shared"
@@ -338,7 +347,7 @@ def test_vertex_comparison_states_shared_vertices_and_different_partition():
     port2 = [dict(port[0]), dict(port[1], lat=port[1]["lat"] + [-15.0],
                                 lon=port[1]["lon"] + [-20.0])]
     divergence2 = dict(divergence, port_axes_in_box=port2)
-    statements2, _ = M.derive_conclusion(log, v1_dumps, v1_at, [], divergence2,
+    statements2, _ = _conclude(M, log, v1_dumps, v1_at, [], divergence2,
                                          [{"steps": 1}], western)
     assert not any("join them into different lines" in s for s in statements2)
     assert any("1 the port's only" in s for s in statements2)
@@ -351,7 +360,8 @@ def test_vertex_comparison_states_shared_vertices_and_different_partition():
 def test_the_injected_axes_are_added_at_the_named_step_and_nowhere_else():
     M = _load()
     drawn = [(np.array([1.0, 2.0]), np.array([10.0, 11.0]))]
-    inject = {"time": 33035.25, "axes": [{"lat": [-32.0, -32.0], "lon": [-60.3167, -60.3167]}]}
+    inject = [{"time": 33035.25,
+               "axes": [{"lat": [-32.0, -32.0], "lon": [-60.3167, -60.3167]}]}]
     now, captured = [None], {}
     spy = M.axis_spy(lambda *a, **k: list(drawn), inject, now, captured)
     now[0] = 33035.25
@@ -418,89 +428,161 @@ def test_observations_at_reads_one_timestep_inside_the_box():
     assert M.observations_at(tracks, 33035.25) == [(-28.95, -60.3)]
 
 
+def _dumped(runs, lat=(-32.0,), lon=(-60.3167,)):
+    """Version 1's own recorded vertices at the steps a run set declares. The contract
+    binds each injected axis to these rather than to a map carried beside the runs, after
+    a review deleted such a map and watched the comparison stop happening."""
+    steps = (runs or {}).get("declared_steps") or [33035.25]
+    return {f"{float(t):.4f}": [{"kind": "AXISPTS", "lat": list(lat), "lon": list(lon)}]
+            for t in steps}
+
+
+def _say(M, runs, lat=(-32.0,), lon=(-60.3167,)):
+    """What the trace states about an experiment set, checked against those vertices."""
+    return M.intervention_statements(runs, _dumped(runs, lat, lon))
+
+
 def _runs(baseline=0, intervention=2, control=0, n=2, control_at=33035.5,
-          applied=(1, 1), control_problems=(), shape=0):
+          applied=(1, 1), control_problems=(), shape=0, steps=(33035.25,)):
+    """A fabricated experiment set in the recorded shape: every injected replay carries
+    the times it REQUESTED and the times it APPLIED, as lists, since a case may declare
+    more than one divergence step and its controls carry as many injections as it does."""
     def refs(hits):
         return [{"reference_index": i, "reference_steps": 8, "reproduced_exactly": i < hits,
                  "nearest_worst_step_deg": 0.0 if i < hits else 0.78} for i in range(n)]
+
+    steps = list(steps)
+    # spaced so no control lands on a declared step, which the contract refuses
+    controls = [control_at + 0.5 * k for k in range(len(steps))]
+    axis = [{"lat": [-32.0], "lon": [-60.3167]}]
+    moved_axis = [{"lat": [-32.0], "lon": [-64.3167]}]
+    keys = [f"{t:.4f}" for t in steps]
+    control_keys = [f"{c:.4f}" for c in controls]
+    partials = [f"partial_at_{k}" for k in keys] if len(steps) > 1 else []
+    extra = {name: {"requested_times": [steps[i]], "applied_at": [steps[i]],
+                    "injections_applied": 1,
+                    "axes_by_requested_step": {keys[i]: axis},
+                    "reference_tracks": refs(0),
+                    "observations_at_divergence_in_box": {},
+                    "finished_tracks_in_the_western_box": []}
+             for i, name in enumerate(partials)}
     return {"injected_axes": [{"lat": [-32.0], "lon": [-60.3167]}],
+            **extra,
+            "declared_steps": steps, "partial_runs": partials,
             "control_step_problems": list(control_problems),
-            "baseline": {"injected_at": None, "injections_applied": 0,
+            "baseline": {"requested_times": [], "injections_applied": 0,
+                         "applied_at": [],
                          "reference_tracks": refs(baseline),
-                         "observations_at_divergence_in_box": [],
+                         "observations_at_divergence_in_box": {},
                          "finished_tracks_in_the_western_box": []},
-            "intervention": {"injected_at": 33035.25, "injections_applied": applied[0],
-                             "applied_at": [33035.25] * applied[0],
+            "intervention": {"requested_times": steps,
+                             "injections_applied": len(steps) if applied[0] else 0,
+                             "applied_at": list(steps) if applied[0] else [],
+                             "axes_by_requested_step": {k: axis for k in keys},
                              "reference_tracks": refs(intervention),
-                             "observations_at_divergence_in_box": [(-28.95, -60.3)],
+                             "observations_at_divergence_in_box":
+                                 {"33035.2500": [(-28.95, -60.3)]},
                              "finished_tracks_in_the_western_box": [{"steps": 13},
                                                                     {"steps": 8}]},
-            "control": {"injected_at": control_at, "injections_applied": applied[1],
-                        "applied_at": [control_at] * applied[1],
+            "control": {"requested_times": controls,
+                        "injections_applied": len(controls) if applied[1] else 0,
+                        "applied_at": list(controls) if applied[1] else [],
+                        "axes_by_requested_step": {k: axis for k in control_keys},
                         "reference_tracks": refs(control),
-                        "observations_at_divergence_in_box": [],
+                        "observations_at_divergence_in_box": {},
                         "finished_tracks_in_the_western_box": []},
-            "shape_control": {"injected_at": 33035.25, "injections_applied": 1,
-                              "applied_at": [33035.25], "longitude_offset_deg": 4.0,
-                              "axes": [{"lat": [-32.0], "lon": [-64.3167]}],
+            "shape_control": {"requested_times": steps, "injections_applied": len(steps),
+                              "applied_at": list(steps), "longitude_offset_deg": 4.0,
+                              "axes_by_requested_step": {k: moved_axis for k in keys},
+                              "axes": [moved_axis],
                               "reference_tracks": refs(shape),
-                              "observations_at_divergence_in_box": [],
+                              "observations_at_divergence_in_box": {},
                               "finished_tracks_in_the_western_box": []}}
 
 
 def test_the_intervention_statement_reports_all_three_replays():
     M = _load()
-    M.DIVERGENCE_STEP = 33035.25
-    statements, missing = M.intervention_statements(_runs())
+    M.DIVERGENCE_STEPS = (33035.25,)
+    statements, missing = _say(M, _runs())
     assert missing == []
-    assert any("at 33035.25 alone reproduces 2 of 2 reference tracks exactly, against 0 "
+    assert any("at 33035.25 reproduces 2 of 2 reference tracks exactly, against 0 "
                "of 2 with the port untouched" in s for s in statements)
-    assert any("injected at 33035.5 instead reproduce 0 of 2" in s
+    assert any("injected at 33035.50 instead reproduce 0 of 2" in s
                and "moved 4.0 degrees west of the crossing at 33035.25 reproduces 0 of 2" in s
+               and "each control carries 1 injection(s), as the experiment does" in s
                for s in statements)
     # A CONTROL IN TIME IS NOT A CONTROL IN SHAPE. The vertices moved off the crossing at
     # the SAME step are what answer "these vertices" rather than "an axis here".
-    shaped, _ = M.intervention_statements(_runs(shape=2))
+    shaped, _ = _say(M, _runs(shape=2))
     assert any("moved 4.0 degrees west of the crossing at 33035.25 reproduces 2 of 2" in s
                for s in shaped)
+    # A TWO-STEP EXPERIMENT CARRIES TWO-INJECTION CONTROLS, and says so, because a
+    # two-injection experiment compared against a one-injection control is not a
+    # comparison.
+    M.DIVERGENCE_STEPS = (33035.25, 33035.75)
+    two, why_two = _say(M, _runs(steps=(33035.25, 33035.75)))
+    assert why_two == []
+    assert any("at 33035.25, 33035.75 reproduces" in s for s in two)
+    assert any("each control carries 2 injection(s)" in s for s in two)
+    M.DIVERGENCE_STEPS = (33035.25,)
+    # A SHAPE CONTROL THAT DID NOT MOVE ANYTHING is the intervention a second time. The
+    # first version of this check compared two lists the artifact carried beside the runs,
+    # so writing the same geometry into both made them agree; the geometry each run must
+    # hold is now derived from the dumped vertices and the recorded translation.
     same_axes = _runs()
-    same_axes["shape_control"]["axes"] = same_axes["injected_axes"]
-    said6, why9 = M.intervention_statements(same_axes)
-    assert said6 == [] and any("vertices are the intervention's own" in m for m in why9)
+    same_axes["shape_control"]["axes_by_requested_step"] = {
+        "33035.2500": [{"lat": [-32.0], "lon": [-60.3167]}]}
+    said6, why9 = _say(M, same_axes)
+    assert said6 == [] and any("shape_control replay's axes at 33035.2500 are not the ones"
+                               in m for m in why9)
+    untranslated = _runs()
+    untranslated["shape_control"].pop("longitude_offset_deg")
+    said8, why11 = _say(M, untranslated)
+    assert said8 == [] and any("translation is zero or not a finite number" in m
+                               for m in why11)
+    # A TRANSLATION TOO SMALL TO SEE IS NOT ONE. A review passed 1e-12, which is finite and
+    # nonzero and moves nothing at the tolerance the comparison uses.
+    invisible = _runs()
+    invisible["shape_control"]["longitude_offset_deg"] = 1e-12
+    said9, why12 = _say(M, invisible)
+    assert said9 == [] and any("leaves its vertices equal to the intervention's" in m
+                               for m in why12)
     moved_step = _runs()
-    moved_step["shape_control"]["injected_at"] = 33035.5
+    moved_step["shape_control"]["requested_times"] = [33035.5]
     moved_step["shape_control"]["applied_at"] = [33035.5]
-    said7, why10 = M.intervention_statements(moved_step)
-    assert said7 == [] and any("shape_control replay injected at 33035.5" in m
+    said7, why10 = _say(M, moved_step)
+    assert said7 == [] and any("shape_control replay injected at [33035.5]" in m
                                for m in why10)
-    assert any("untouched []" in s and "with the injection at 33035.25 [(-28.95, -60.3)]"
-               in s for s in statements)
+    assert any("untouched {}" in s and "with the injection at 33035.25 "
+               "{'33035.2500': [(-28.95, -60.3)]}" in s for s in statements)
     # the TRACK-level effect beside the observation-level one, which the Sahara case
     # separates: there the injection restores the observation and no finished track
     assert any("finished port tracks in the western box: untouched 0, with the injection "
                "at 33035.25 2, with the time control 0, with the shape control 0" in s
                for s in statements)
+    assert any("positions the finished port tracks hold at the declared steps" in s
+               for s in statements)
     # a control that reproduces the case as well as the intervention is reported as such
-    both, _ = M.intervention_statements(_runs(control=2))
-    assert any("injected at 33035.5 instead reproduce 2 of 2" in s for s in both)
+    both, _ = _say(M, _runs(control=2))
+    assert any("injected at 33035.50 instead reproduce 2 of 2" in s for s in both)
     # an intervention that was not run says nothing at all
-    assert M.intervention_statements(None) == ([], [])
+    assert _say(M, None) == ([], [])
     # and a replay whose comparison is absent is a missing observation, not a silent pass
     incomplete = _runs()
     incomplete["control"]["reference_tracks"] = []
-    statements2, missing2 = M.intervention_statements(incomplete)
+    statements2, missing2 = _say(M, incomplete)
     assert statements2 == [] and missing2 == ["the control replay's reference-track comparison"]
     # A REPLAY THAT INJECTED NOTHING IS NOT A NEGATIVE RESULT. A review passed a control
     # time outside the window, nothing was injected, and the untouched replay was
     # reported as an injection that reproduced nothing.
-    never, why = M.intervention_statements(_runs(applied=(1, 0)))
+    never, why = _say(M, _runs(applied=(1, 0)))
     assert never == []
-    assert any("control replay applied 0 of the 1 injection" in m for m in why)
-    unapplied, why2 = M.intervention_statements(_runs(applied=(0, 1)))
+    assert any("control replay applied 0 of the 1 injections" in m for m in why)
+    unapplied, why2 = _say(M, _runs(applied=(0, 1)))
     assert unapplied == []
-    assert any("intervention replay applied 0 of the 1 injection" in m for m in why2)
+    assert any("intervention replay applied 0 of the 1 injections" in m for m in why2)
     # and a control step the replay should never have been given stops the statement too
-    bad, why3 = M.intervention_statements(_runs(control_problems=["the control step 99999.0 "
+    bad, why3 = _say(M, _runs(control_problems=["the control step 99999.0 "
                                                                  "is not a timestep of the "
                                                                  "exported window"]))
     assert bad == [] and any("99999.0" in m for m in why3)
@@ -509,34 +591,33 @@ def test_the_intervention_statement_reports_all_three_replays():
     # still call it a control at 33035.5.
     lying = _runs()
     lying["control"]["applied_at"] = [33035.25]
-    said, why4 = M.intervention_statements(lying)
-    assert said == [] and any("recorded an application at [33035.25] for an injection "
-                              "requested at 33035.5" in m for m in why4)
+    said, why4 = _say(M, lying)
+    assert said == [] and any("recorded applications at [33035.25] for injections "
+                              "requested at [33035.5]" in m for m in why4)
     # and an intervention that injected somewhere other than the divergence step is not
     # this case's intervention
     elsewhere = _runs()
-    elsewhere["intervention"]["injected_at"] = 33036.0
+    elsewhere["intervention"]["requested_times"] = [33036.0]
     elsewhere["intervention"]["applied_at"] = [33036.0]
-    said2, why5 = M.intervention_statements(elsewhere)
-    assert said2 == [] and any("injected at 33036.0 and the case's divergence step is "
-                               "33035.25" in m for m in why5)
+    said2, why5 = _say(M, elsewhere)
+    assert said2 == [] and any("injected at [33036.0] and the case declares [33035.25]"
+                               in m for m in why5)
     # A NOT-A-NUMBER APPLICATION TIME passes every comparison, so it is refused outright
     nan_receipt = _runs()
     nan_receipt["control"]["applied_at"] = [float("nan")]
-    said3, why6 = M.intervention_statements(nan_receipt)
-    assert said3 == [] and any("recorded an application at [nan]" in m for m in why6)
+    said3, why6 = _say(M, nan_receipt)
+    assert said3 == [] and any("recorded applications at [nan]" in m for m in why6)
     # A CONTROL ON THE DIVERGENCE STEP is the intervention, whatever the problem list
     # computed when the replays ran says, and a review left that list empty.
     not_a_control = _runs(control_at=33035.25)
-    not_a_control["control"]["applied_at"] = [33035.25]
-    said4, why7 = M.intervention_statements(not_a_control)
-    assert said4 == [] and any("time control injected at the divergence step" in m
+    said4, why7 = _say(M, not_a_control)
+    assert said4 == [] and any("time control injected at a declared divergence step" in m
                                for m in why7)
     # AN ABSENT WESTERN MEASUREMENT IS NOT A ZERO, which is the comparison the Sahara
     # case's claim rests on
     unmeasured = _runs()
     del unmeasured["intervention"]["finished_tracks_in_the_western_box"]
-    said5, why8 = M.intervention_statements(unmeasured)
+    said5, why8 = _say(M, unmeasured)
     assert said5 == []
     assert any("intervention replay's finished tracks in the western box" in m
                for m in why8)
@@ -544,22 +625,26 @@ def test_the_intervention_statement_reports_all_three_replays():
 
 def test_the_conclusion_carries_the_intervention_only_when_one_ran():
     M = _load()
-    M.DIVERGENCE_STEP = 33035.25
+    M.DIVERGENCE_STEPS = (33035.25,)
     v1 = ([{"kind": "COARSE", "time": t, "lat_mean": 18.0, "lon_mean": -9.0}
            for t in M.AGREEING_STEPS]
-          + [{"kind": "AXIS", "time": M.DIVERGENCE_STEP, "n_points": 3, "lat_mean": 18.4,
+          + [{"kind": "AXIS", "time": M.DIVERGENCE_STEPS[0], "n_points": 3, "lat_mean": 18.4,
               "lon_mean": -9.0, "lat_range": 0.0, "lon_range": 0.0},
-             {"kind": "COARSE", "time": M.DIVERGENCE_STEP, "lat_mean": 18.0, "lon_mean": -9.0}])
+             {"kind": "COARSE", "time": M.DIVERGENCE_STEPS[0], "lat_mean": 18.0,
+              "lon_mean": -9.0},
+             # the dumped vertices the experiment's injected axes are checked against
+             {"kind": "AXISPTS", "time": M.DIVERGENCE_STEPS[0], "lat": [-32.0],
+              "lon": [-60.3167]}])
     log = [{"time": t, "lat_mean": 18.5, "lon_mean": -8.5, "n_points": 14,
             "taken_by_tracks_of_length": [1]} for t in M.AGREEING_STEPS]
-    v1_at = [r for r in v1 if r["time"] == M.DIVERGENCE_STEP]
+    v1_at = [r for r in v1 if r["time"] == M.DIVERGENCE_STEPS[0]]
     divergence = {"finite_cells": 4, "port_axes_in_box": [], "port_waves_in_box": [],
                   "rows_lat": [20.0, 18.0], "cols_lon": [-9.0, -7.0],
                   "masked_smoothed_advection": [[None, None], [None, None]]}
     western = [{"observations": [[33024.0, 19.0, -5.0]], "pruned_at": 33026.75}]
-    plain, _ = M.derive_conclusion(log, v1, v1_at, [], divergence, [], western)
+    plain, _ = _conclude(M, log, v1, v1_at, [], divergence, [], western)
     assert not any("injecting version 1" in s for s in plain)
-    with_it, missing = M.derive_conclusion(log, v1, v1_at, [], divergence, [], western,
+    with_it, missing = _conclude(M, log, v1, v1_at, [], divergence, [], western,
                                            _runs())
     assert missing == [] and any("injecting version 1" in s for s in with_it)
 
@@ -615,7 +700,7 @@ def test_the_same_field_statement_rests_on_the_two_fields_and_not_on_the_vertice
     M.BOX = {"lat": (-35.0, -26.0), "lon": (-67.0, -57.0)}
     M.AXIS_BOX = None
     M.AGREEING_STEPS = (33035.0,)
-    M.DIVERGENCE_STEP = 33035.25
+    M.DIVERGENCE_STEPS = (33035.25,)
     base = ([{"kind": "COARSE", "time": 33035.0, "lat_mean": -29.0, "lon_mean": -60.5}]
             + [{"kind": "AXIS", "time": 33035.25, "n_points": 3, "lat_mean": -32.0,
                 "lon_mean": -60.3167, "lat_range": 0.0, "lon_range": 0.0},
@@ -646,7 +731,7 @@ def test_the_same_field_statement_rests_on_the_two_fields_and_not_on_the_vertice
     same = {"available": True, "cells_unmasked_on_both_sides": 1874,
             "cells_unmasked_only_in_the_port": 0, "cells_unmasked_only_in_version_1": 0,
             "worst_relative_difference": 3e-14, "same_field": True}
-    statements, missing = M.derive_conclusion(log, on_it, at, [], field(same), [], western)
+    statements, missing = _conclude(M, log, on_it, at, [], field(same), [], western)
     assert missing == []
     assert any("unmasked in exactly the same 1874 cells" in s and "one field" in s
                for s in statements)
@@ -656,12 +741,12 @@ def test_the_same_field_statement_rests_on_the_two_fields_and_not_on_the_vertice
     assert any("locates where version 1 drew and does not by itself say the two fields "
                "are the same" in s for s in statements)
     differs = dict(same, cells_unmasked_only_in_version_1=1, same_field=False)
-    statements2, _ = M.derive_conclusion(log, on_it, at, [], field(differs), [], western)
+    statements2, _ = _conclude(M, log, on_it, at, [], field(differs), [], western)
     assert not any("the two sides hold one field" in s for s in statements2)
     assert any("is not established as contouring alone" in s for s in statements2)
     # a field comparison that could not be made says so, and claims nothing
     absent = {"available": False, "reason": "no FIELD records"}
-    statements3, _ = M.derive_conclusion(log, on_it, at, [], field(absent), [], western)
+    statements3, _ = _conclude(M, log, on_it, at, [], field(absent), [], western)
     assert any("was not dumped, so whether the port's axes and the port's candidates "
                "differ from version 1's by contouring or by masking is not established"
                in s for s in statements3)
@@ -669,12 +754,13 @@ def test_the_same_field_statement_rests_on_the_two_fields_and_not_on_the_vertice
     # AND SO IS THE CROSSING GEOMETRY, which the prose got wrong twice and is therefore
     # generated. A review deleted the statement and the suite stayed green.
     assert any("zero crossings on the port's field in the printed box" in s
-               and "two or more masked corners" in s
+               and "1 with two or more masked corners in the quads on BOTH sides" in s
+               and "0 with a masked quad on one side and the DOMAIN BOUNDARY" in s
                and "taken over the WHOLE coarse grid" in s for s in statements)
     # THE FIELD QUESTION IS REPORTED WHATEVER THE PORT HELD THERE. A review skipped the
     # statement whenever the port had a candidate at the divergence step, which is the
     # third case's situation exactly.
-    with_candidate, _ = M.derive_conclusion(
+    with_candidate, _ = _conclude(M, 
         log, on_it, at,
         [{"time": 33035.25, "lat_mean": -29.0, "lon_mean": -60.0, "n_points": 9,
           "taken_by_tracks_of_length": [4]}],
@@ -683,7 +769,7 @@ def test_the_same_field_statement_rests_on_the_two_fields_and_not_on_the_vertice
     # and an off-crossing vertex is reported as such without touching the field claim
     off_it = base + [{"kind": "AXISPTS", "time": 33035.25, "n_points": 3,
                       "lat": [-32.0] * 3, "lon": [-60.3167, -60.3167, -58.0]}]
-    statements4, _ = M.derive_conclusion(log, off_it,
+    statements4, _ = _conclude(M, log, off_it,
                                          [r for r in off_it if r["time"] == 33035.25],
                                          [], field(same), [], western)
     assert any("do not all sit on zero crossings" in s for s in statements4)
@@ -723,28 +809,28 @@ def test_intervene_requests_an_injection_at_each_step_and_reports_what_was_appli
     `intervene`, which destroys both experiments, and every test still passed because
     nothing called `intervene` itself."""
     M = _load()
-    M.DIVERGENCE_STEP = 33035.25
+    M.DIVERGENCE_STEPS = (33035.25,)
     M.BOX = {"lat": (-35.0, -26.0), "lon": (-67.0, -57.0)}
     case = {"time": np.array([33035.0, 33035.25, 33035.5])}
     calls = []
     ref = _reference([33035.25], [-28.95], [-60.3])
     hit = _track([33035.25], [-28.95], [-60.3])
 
-    def fake_replay(c, inject=None, reference_field=None):
+    def fake_replay(c, inject=None, reference_fields=None):
         calls.append(inject)
-        applied = [inject["time"]] if inject else []
-        at_divergence = bool(inject) and abs(inject["time"] - 33035.25) < 1e-6
+        applied = [one["time"] for one in inject or ()]
+        at_divergence = bool(inject) and abs(inject[0]["time"] - 33035.25) < 1e-6
         final = [hit] if at_divergence else []
         west = [{"steps": 13, "first": 33033.0, "last": 33036.25}] if at_divergence else []
         return [], None, west, [], final, applied
 
     M.replay_port = fake_replay
-    runs = M.intervene(case, [{"lat": [-32.0] * 3, "lon": [-60.3167] * 3}],
-                       [(81, ref)], 33035.5, [], [{"steps": 9}])
-    assert [c["time"] for c in calls] == [33035.25, 33035.5, 33035.25]
-    assert [c["axes"][0]["lon"] for c in calls[:2]] == [[-60.3167] * 3] * 2
+    runs = M.intervene(case, {33035.25: [{"lat": [-32.0] * 3, "lon": [-60.3167] * 3}]},
+                       [(81, ref)], [33035.5], [], [{"steps": 9}])
+    assert [one["time"] for c in calls for one in c] == [33035.25, 33035.5, 33035.25]
+    assert [c[0]["axes"][0]["lon"] for c in calls[:2]] == [[-60.3167] * 3] * 2
     # the third replay is the shape control: same step, vertices moved off the crossing
-    assert calls[2]["axes"][0]["lon"] == [-64.3167] * 3
+    assert calls[2][0]["axes"][0]["lon"] == [-64.3167] * 3
     assert runs["shape_control"]["longitude_offset_deg"] == 4.0
     assert runs["intervention"]["injections_applied"] == 1
     assert runs["control"]["injections_applied"] == 1
@@ -757,32 +843,32 @@ def test_intervene_requests_an_injection_at_each_step_and_reports_what_was_appli
     assert runs["intervention"]["reference_tracks"][0]["reproduced_exactly"] is True
     assert runs["control"]["reference_tracks"][0]["reproduced_exactly"] is False
     assert runs["baseline"]["reference_tracks"][0]["reproduced_exactly"] is False
-    statements, missing = M.intervention_statements(runs)
+    statements, missing = _say(M, runs, [-32.0] * 3, [-60.3167] * 3)
     assert missing == [] and any("reproduces 1 of 1" in s for s in statements)
 
     # AND THE COUNT IS THE REPLAY'S OWN. A review hard-coded it to one, which turns a
     # replay that injected nothing into a negative result.
-    def injects_nothing(c, inject=None, reference_field=None):
+    def injects_nothing(c, inject=None, reference_fields=None):
         return [], None, [], [], [], []
 
     M.replay_port = injects_nothing
-    silent = M.intervene(case, [{"lat": [-32.0] * 3, "lon": [-60.3167] * 3}],
-                         [(81, ref)], 33035.5, [], [])
+    silent = M.intervene(case, {33035.25: [{"lat": [-32.0] * 3, "lon": [-60.3167] * 3}]},
+                         [(81, ref)], [33035.5], [], [])
     assert silent["intervention"]["injections_applied"] == 0
     assert silent["control"]["injections_applied"] == 0
     assert silent["intervention"]["applied_at"] == []
-    said, why = M.intervention_statements(silent)
+    said, why = _say(M, silent, [-32.0] * 3, [-60.3167] * 3)
     assert said == [] and len(why) >= 2
 
 
 def test_a_control_step_outside_the_window_or_on_the_divergence_is_refused():
     M = _load()
-    M.DIVERGENCE_STEP = 33035.25
+    M.DIVERGENCE_STEPS = (33035.25,)
     case = {"time": np.array([33035.0, 33035.25, 33035.5])}
     assert M.control_step_problems(case, 33035.5) == []
     assert any("not a timestep of the exported window" in w
                for w in M.control_step_problems(case, 99999.0))
-    assert any("is the divergence step" in w
+    assert any("is a declared divergence step" in w
                for w in M.control_step_problems(case, 33035.25))
     assert any("not a finite time" in w for w in M.control_step_problems(case, float("nan")))
     assert any("not a finite time" in w for w in M.control_step_problems(case, None))
@@ -944,19 +1030,24 @@ def test_the_real_replay_installs_the_injection_and_records_where_it_applied():
     hook with nothing to inject and hard-coded the applied count, and both survived tests
     that never ran the replay."""
     M = _load()
-    M.DIVERGENCE_STEP = 2.0
+    M.DIVERGENCE_STEPS = (2.0,)
     M.BOX = {"lat": (-10.0, 10.0), "lon": (0.0, 10.0)}
     M.WEST, M.FEATURE_LIFE, M.WINDOW = M.BOX, (1.0, 3.0), (1.0, 3.0)
     M.FIELD_ROWS, M.FIELD_COLS = (-4.0, 4.0), (0.0, 10.0)
     case = _tiny_case([1.0, 2.0, 3.0])
     axes = [{"lat": [1.0, 1.0, 1.0], "lon": [4.0, 4.0, 4.0]}]
-    *_rest, applied = M.replay_port(case, inject={"time": 2.0, "axes": axes})
+    *_rest, applied = M.replay_port(case, inject=[{"time": 2.0, "axes": axes}])
     assert applied == [2.0]
     *_rest2, none_applied = M.replay_port(case)
     assert none_applied == []
     # the injection lands at ITS step and no other
-    *_rest3, elsewhere = M.replay_port(case, inject={"time": 3.0, "axes": axes})
+    *_rest3, elsewhere = M.replay_port(case, inject=[{"time": 3.0, "axes": axes}])
     assert elsewhere == [3.0]
+    # AND SEVERAL INJECTIONS EACH LAND AT THEIR OWN STEP, which is what a case whose pair
+    # loses observations at more than one step needs
+    *_rest4, both = M.replay_port(case, inject=[{"time": 1.0, "axes": axes},
+                                                {"time": 3.0, "axes": axes}])
+    assert sorted(both) == [1.0, 3.0]
 
 
 def test_the_main_replay_is_given_the_reference_field_the_log_carries(exchange, tmp_path):
@@ -965,8 +1056,8 @@ def test_the_main_replay_is_given_the_reference_field_the_log_carries(exchange, 
     M = _load()
     seen = {}
 
-    def recorder(case, inject=None, reference_field=None):
-        seen["reference_field"] = reference_field
+    def recorder(case, inject=None, reference_fields=None):
+        seen["reference_fields"] = reference_fields
         return [], None, [], [], [], []
 
     log = exchange / "octave3.log"
@@ -974,10 +1065,11 @@ def test_the_main_replay_is_given_the_reference_field_the_log_carries(exchange, 
                    + "FIELD %.4f -32.0000 -61.0000 1.202971274689e-10\n" % DUMPS[3]
                    + "FIELD %.4f -32.0000 -59.0000 -2.318261062885e-10\n" % DUMPS[3])
     M.replay_port = recorder
-    M.DIVERGENCE_STEP = DUMPS[3]
+    M.DIVERGENCE_STEPS = (DUMPS[3],)
     M.main(["--oracle-dir", str(exchange), "--octave-log", str(log)])
-    assert seen["reference_field"]["cells"] == {(-32.0, -61.0): 1.202971274689e-10,
-                                               (-32.0, -59.0): -2.318261062885e-10}
+    only = list(seen["reference_fields"].values())[0]
+    assert only["cells"] == {(-32.0, -61.0): 1.202971274689e-10,
+                             (-32.0, -59.0): -2.318261062885e-10}
 
 
 def _nonuniform_case(times):
@@ -1002,13 +1094,14 @@ def _nonuniform_case(times):
 
 def test_the_real_replay_compares_the_field_it_captured_against_the_reference_given():
     M = _load()
-    M.DIVERGENCE_STEP = 2.0
+    M.DIVERGENCE_STEPS = (2.0,)
     M.BOX = {"lat": (-10.0, 10.0), "lon": (0.0, 10.0)}
     M.WEST, M.FEATURE_LIFE, M.WINDOW = M.BOX, (1.0, 3.0), (1.0, 3.0)
     M.FIELD_ROWS, M.FIELD_COLS = (-4.0, 4.0), (0.0, 10.0)
     case = _nonuniform_case([1.0, 2.0, 3.0])
     # what the port actually holds there, read from a first replay
-    *_r, div, _w, _h, _f, _a = (None,) + tuple(M.replay_port(case))
+    *_r, divs, _w, _h, _f, _a = (None,) + tuple(M.replay_port(case))
+    div = divs[M.step_key(M.DIVERGENCE_STEPS[0])]
     finite = {(round(la, 4), round(lo, 4)): v
               for la, row in zip(div["rows_lat"], div["masked_smoothed_advection"])
               for lo, v in zip(div["cols_lon"], row) if v is not None}
@@ -1022,29 +1115,33 @@ def test_the_real_replay_compares_the_field_it_captured_against_the_reference_gi
     assert rows.get(0.0) and all(v < 0 for v in rows[0.0])
     assert sum(sum(r) for r in rows.values()) < 0
     agreeing = {"cells": dict(finite), "records": len(finite), "problems": []}
-    _l, div_same, *_ = M.replay_port(case, reference_field=agreeing)
-    cmp_same = div_same["field_comparison"]
+    _l, div_same, *_ = M.replay_port(
+        case, reference_fields={M.step_key(M.DIVERGENCE_STEPS[0]): agreeing})
+    cmp_same = div_same[M.step_key(M.DIVERGENCE_STEPS[0])]["field_comparison"]
     assert cmp_same["available"] is True and cmp_same["same_field"] is True
     assert cmp_same["cells_unmasked_on_both_sides"] == len(finite)
     # A REFERENCE THAT DIFFERS MUST BE SEEN TO DIFFER, in value and in sign
     key = sorted(finite)[0]
     differing = {"cells": {**finite, key: finite[key] * 1.5}, "records": len(finite),
                  "problems": []}
-    _l2, div_diff, *_ = M.replay_port(case, reference_field=differing)
-    assert div_diff["field_comparison"]["same_field"] is False
+    _l2, div_diff, *_ = M.replay_port(
+        case, reference_fields={M.step_key(M.DIVERGENCE_STEPS[0]): differing})
+    assert div_diff[M.step_key(M.DIVERGENCE_STEPS[0])]["field_comparison"]["same_field"] is False
     flipped = {"cells": {**finite, key: -finite[key]}, "records": len(finite),
                "problems": []}
-    _l3, div_flip, *_ = M.replay_port(case, reference_field=flipped)
-    assert div_flip["field_comparison"]["same_field"] is False
+    _l3, div_flip, *_ = M.replay_port(
+        case, reference_fields={M.step_key(M.DIVERGENCE_STEPS[0]): flipped})
+    assert div_flip[M.step_key(M.DIVERGENCE_STEPS[0])]["field_comparison"]["same_field"] is False
     # and with no reference the comparison is recorded as unavailable, never as agreement
     _l4, div_none, *_ = M.replay_port(case)
-    assert div_none["field_comparison"]["available"] is False
+    assert div_none[M.step_key(M.DIVERGENCE_STEPS[0])]["field_comparison"]["available"] is False
     # THE REPLAY READS THE CROSSING GEOMETRY FROM THE WHOLE GRID, not from the printed
     # crop. Narrow the crop so a quad completing a crossing falls outside it: read from
     # the crop that crossing is undetermined, and read from the grid it is open, which is
     # what the field actually is.
     M.FIELD_COLS = (0.0, 0.0)
-    _l5, div_cropped, *_ = M.replay_port(case)
+    _l5, cropped_record, *_ = M.replay_port(case)
+    div_cropped = cropped_record[M.step_key(M.DIVERGENCE_STEPS[0])]
     hoods = div_cropped["crossing_neighborhoods"]
     assert hoods, "the fixture must put a crossing inside the crop"
     assert div_cropped["cols_lon"] == [0.0]
@@ -1062,7 +1159,7 @@ def test_the_western_box_count_is_the_box_and_the_feature_life():
     lifetime filtering, and both survived, because nothing asserted which finished tracks
     the count includes."""
     M = _load()
-    M.DIVERGENCE_STEP = 2.0
+    M.DIVERGENCE_STEPS = (2.0,)
     M.BOX = {"lat": (-10.0, 10.0), "lon": (0.0, 10.0)}
     M.WEST = {"lat": (0.0, 4.0), "lon": (0.0, 4.0)}
     M.FEATURE_LIFE, M.WINDOW = (1.0, 2.0), (1.0, 3.0)
@@ -1142,9 +1239,10 @@ def test_the_declared_claims_default_to_nothing(exchange, tmp_path):
     the Sahara track. Read through the real entry point, from the artifact it writes."""
     M = _load()
 
-    def quiet_replay(case, inject=None, reference_field=None):
-        return [], {"finite_cells": 0, "port_axes_in_box": [], "port_waves_in_box": [],
-                    "field_comparison": {"available": False, "reason": "no records"}}, \
+    def quiet_replay(case, inject=None, reference_fields=None):
+        return [], {M.step_key(M.DIVERGENCE_STEPS[0]):
+                    {"finite_cells": 0, "port_axes_in_box": [], "port_waves_in_box": [],
+                     "field_comparison": {"available": False, "reason": "no records"}}}, \
             [], [], [], []
 
     M.replay_port = quiet_replay
@@ -1154,6 +1252,7 @@ def test_the_declared_claims_default_to_nothing(exchange, tmp_path):
     written = json.loads(out.read_text())
     assert written["explains"] == {"unmatched_v1_tracks": [], "v1_extra_pairs": []}
     assert written["parameters"]["reference_tracks"] == []
+    assert written["parameters"]["divergence_steps"] == list(M.DIVERGENCE_STEPS)
     # and a case that declares one gets exactly that one
     assert M.main(["--oracle-dir", str(exchange), "--out", str(out),
                    "--explains-unmatched", "19"]) == 0
@@ -1247,3 +1346,115 @@ def test_every_module_that_decides_the_artifact_is_fingerprinted():
                 if line.startswith("import ") and "as " in line and "#" in line}
     for name in imported:
         assert f"scripts/{name}.py" in M.REPLAY_SOURCES, name
+
+
+def test_a_two_step_experiment_carries_partial_runs_and_matching_controls():
+    """T32 to T34. A case whose pair loses observations at two steps needs each step tried
+    ALONE as well as together, since two missing observations do not establish that two
+    injections are needed, and its controls must carry as many injections as it does."""
+    M = _load()
+    M.DIVERGENCE_STEPS = (33035.25, 33035.75)
+    M.BOX = {"lat": (-35.0, -26.0), "lon": (-67.0, -57.0)}
+    calls = []
+    ref = _reference([33035.25, 33035.75], [-17.5, -18.2], [40.0, 39.6])
+    hit = _track([33035.25, 33035.75], [-17.5, -18.2], [40.0, 39.6])
+
+    def fake_replay(c, inject=None, reference_fields=None):
+        calls.append([one["time"] for one in inject or ()])
+        # only the run that injects at BOTH steps reproduces the track
+        both = len(inject or ()) == 2 and abs(inject[0]["time"] - 33035.25) < 1e-6
+        return [], None, [], [], ([hit] if both else []), [one["time"] for one in inject or ()]
+
+    M.replay_port = fake_replay
+    axes = {33035.25: [{"lat": [-19.4], "lon": [39.0]}],
+            33035.75: [{"lat": [-21.6], "lon": [39.0]}]}
+    case = {"time": np.array([33035.25, 33035.5, 33035.75, 33036.0])}
+    runs = M.intervene(case, axes, [(106, ref)], [33035.5, 33036.0], [], [])
+    # each declared step is tried alone, and both together
+    assert sorted(runs["partial_runs"]) == ["partial_at_33035.2500", "partial_at_33035.7500"]
+    assert runs["intervention"]["requested_times"] == [33035.25, 33035.75]
+    assert [len(c) for c in calls].count(1) == 2, "each step alone"
+    # THE CONTROLS CARRY AS MANY INJECTIONS AS THE EXPERIMENT
+    assert len(runs["control"]["requested_times"]) == 2
+    assert len(runs["shape_control"]["requested_times"]) == 2
+    assert runs["control"]["requested_times"] == [33035.5, 33036.0]
+    # and only the joint run reproduces the track
+    assert runs["intervention"]["reference_tracks"][0]["reproduced_exactly"] is True
+    for label in runs["partial_runs"] + ["control", "baseline"]:
+        assert runs[label]["reference_tracks"][0]["reproduced_exactly"] is False, label
+    M.DIVERGENCE_STEPS = (33025.0,)
+
+
+def test_a_step_key_keeps_the_quarter_hour_apart():
+    """T35: %g keeps six significant digits, so 33035.25 becomes 33035.2 and two different
+    quarter-hour steps would share one key and one block."""
+    M = _load()
+    assert M.step_key(33035.25) != M.step_key(33035.2)
+    assert M.step_key(33035.25) == "33035.2500"
+    assert M.step_key(33035.75) == "33035.7500"
+    assert len({M.step_key(t) for t in (33035.25, 33035.5, 33035.75, 33036.0)}) == 4
+    # and the label a reader sees keeps the quarter hour too
+    assert M.step_label(33035.25) == "33035.25"
+
+
+def test_a_crossing_closed_at_the_domain_edge_is_not_called_a_two_sided_masking_case():
+    """T36: a review found the generated sentence calling every closed crossing a two-sided
+    masking case while the records beside it showed the Mozambique pair closed by one
+    masked quad and one true domain boundary."""
+    M = _load()
+    M.BOX = {"lat": (-24.0, -14.0), "lon": (34.0, 42.0)}
+    M.AXIS_BOX = None
+    M.AGREEING_STEPS = (33035.5,)
+    M.DIVERGENCE_STEPS = (33035.25,)
+    # the real shape: a column at the grid's LAST longitude, masked to its west, with
+    # nothing at all to its east because the grid ends there
+    rows, cols = [-18.0, -20.0, -22.0], [37.0, 39.0]
+    grid = [[None, 3.0e-10], [None, -2.0e-10], [None, -5.0e-10]]
+    crossings = M.zero_crossings({"rows_lat": rows, "cols_lon": cols,
+                                  "masked_smoothed_advection": grid})
+    hoods = M.crossing_neighborhoods(rows, cols, grid, crossings, domain_complete=True)
+    assert len(hoods) == 1 and hoods[0]["closed_off"] is True
+    assert sorted(q["masked_corners"] for q in hoods[0]["quads"]) == [0, 2]
+    assert any(q["beyond_the_domain"] for q in hoods[0]["quads"])
+    block = {"rows_lat": rows, "cols_lon": cols, "masked_smoothed_advection": grid,
+             "finite_cells": 3, "port_axes_in_box": [], "port_waves_in_box": [],
+             "zero_crossings": crossings, "crossing_neighborhoods": hoods,
+             "field_comparison": {"available": True, "same_field": True,
+                                  "cells_unmasked_on_both_sides": 836,
+                                  "worst_relative_difference": 4.9e-13,
+                                  "cells_unmasked_only_in_the_port": 0,
+                                  "cells_unmasked_only_in_version_1": 0}}
+    v1 = ([{"kind": "COARSE", "time": 33035.5, "lat_mean": -17.8, "lon_mean": 39.5}]
+          + [{"kind": "AXIS", "time": 33035.25, "n_points": 2, "lat_mean": -19.4,
+              "lon_mean": 39.0, "lat_range": 0.0, "lon_range": 0.0},
+             {"kind": "COARSE", "time": 33035.25, "lat_mean": -19.0, "lon_mean": 39.0},
+             {"kind": "AXISPTS", "time": 33035.25, "n_points": 2,
+              "lat": [-19.4154, -19.4154], "lon": [39.0, 39.0]}])
+    log = [{"time": 33035.5, "lat_mean": -17.0, "lon_mean": 39.5, "n_points": 9,
+            "taken_by_tracks_of_length": [1]}]
+    western = [{"observations": [[33035.5, -17.0, 39.5]], "pruned_at": None}]
+    statements, missing = _conclude(M, log, v1, [r for r in v1 if r["time"] == 33035.25],
+                                    [], block, [{"steps": 5}], western)
+    assert missing == []
+    said = [s for s in statements if "zero crossings on the port's field" in s]
+    assert said and "1 with a masked quad on one side and the DOMAIN BOUNDARY" in said[0]
+    assert "0 with two or more masked corners in the quads on BOTH sides" in said[0]
+    M.DIVERGENCE_STEPS = (33025.0,)
+
+
+def test_an_injection_with_no_axis_is_not_an_application():
+    """T37: a review called the hook with empty axis groups and watched it record applied
+    times while adding nothing, so a count of applications said nothing about whether any
+    geometry entered the replay."""
+    M = _load()
+    drawn = [(np.array([1.0, 2.0]), np.array([10.0, 11.0]))]
+    now, captured, applied = [2.0], {}, []
+    empty = [{"time": 2.0, "axes": []}, {"time": 2.0, "axes": [{"lat": [], "lon": []}]}]
+    spy = M.axis_spy(lambda *a, **k: list(drawn), empty, now, captured, applied)
+    assert len(spy(None, None, np.zeros((2, 2)))) == 1, "nothing was added"
+    assert applied == [], "and nothing was recorded as applied"
+    # a real axis at the same step is applied and recorded
+    real = [{"time": 2.0, "axes": [{"lat": [-32.0], "lon": [-60.3167]}]}]
+    applied2 = []
+    spy2 = M.axis_spy(lambda *a, **k: list(drawn), real, now, captured, applied2)
+    assert len(spy2(None, None, np.zeros((2, 2)))) == 2 and applied2 == [2.0]
