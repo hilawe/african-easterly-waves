@@ -17,6 +17,7 @@ nothing here.
 """
 import argparse
 import hashlib
+import math
 import json
 import os
 import sys
@@ -61,6 +62,151 @@ def binding_problems(residuals, cases):
     return problems
 
 
+REQUIRED_RUNS = ("baseline", "intervention", "control", "shape_control")
+
+
+def experiment_problems(intervention, divergence_step, control_step=None,
+                        control_step_problems=(), injected_axes=None, shape_axes=None):
+    """Why a recorded four-run experiment is not one, checked the SAME WAY wherever it is
+    read. This is the shared contract: the trace calls it before it will state anything
+    about an intervention, and the membership checker calls it before it will credit one.
+
+    A review is why it is shared rather than written twice. The checker had its own
+    weaker copy: it required a receipt to agree with the time its own replay requested,
+    and never asked whether that time was the case's DIVERGENCE STEP, so moving an
+    intervention ten hours away kept all four of its credits while the trace refused the
+    same artifact. It also ignored the recorded control-step problems and let the whole
+    shape-control record disappear. The expected divergence time is passed in explicitly,
+    never read from a module global."""
+    problems = []
+    if not intervention or not intervention.get("baseline"):
+        return ["the artifact records no intervention"]
+    absent = [r for r in REQUIRED_RUNS if not intervention.get(r)]
+    if absent:
+        problems.append("the experiment records no " + " or ".join(absent) + " replay")
+    problems.extend(control_step_problems or [])
+
+    def finite(x):
+        try:
+            return math.isfinite(float(x))
+        except (TypeError, ValueError):
+            return False
+
+    for label in ("intervention", "control", "shape_control"):
+        run = intervention.get(label)
+        if not run:
+            continue
+        applied, at, when = (run.get("injections_applied"), run.get("applied_at") or [],
+                             run.get("injected_at"))
+        if applied != 1 or len(at) != 1:
+            problems.append(f"the {label} replay applied {applied} of the 1 injection it "
+                            f"requested")
+            continue
+        if not finite(at[0]) or not finite(when) or abs(float(at[0]) - float(when)) > 1e-6:
+            problems.append(f"the {label} replay recorded an application at {at} for an "
+                            f"injection requested at {when}")
+            continue
+        if label in ("intervention", "shape_control"):
+            if not finite(divergence_step) \
+                    or abs(float(when) - float(divergence_step)) > 1e-6:
+                problems.append(f"the {label} replay injected at {when} and the case's "
+                                f"divergence step is {divergence_step}")
+        else:
+            if finite(divergence_step) and abs(float(when) - float(divergence_step)) <= 1e-6:
+                problems.append(f"the time control injected at the divergence step {when}")
+            if control_step is not None and finite(control_step) \
+                    and abs(float(when) - float(control_step)) > 1e-6:
+                problems.append(f"the time control injected at {when} and the case declares "
+                                f"its control step as {control_step}")
+    if injected_axes and shape_axes \
+            and all(a.get("lon") == b.get("lon") and a.get("lat") == b.get("lat")
+                    for a, b in zip(injected_axes, shape_axes)):
+        problems.append("the shape control's vertices are the intervention's own")
+    return problems
+
+
+def outcome_for(intervention, index):
+    """What a case's intervention DID for one index, read from its own records.
+
+    "reproduced" means the intervention replay reproduces that reference track exactly
+    while neither the untouched replay nor a control does. "track_survival" is the weaker
+    outcome the Sahara case has: nothing reproduces the track, and the intervention's
+    count of finished tracks in the western box differs from every control's. Anything
+    else is no outcome at all.
+
+    A REVIEW READING THIS COLD FOUND WHY THE DISTINCTION MATTERS. The first version of
+    this gate required only that the three replays MENTION the index, so a case whose
+    intervention reproduced nothing was credited beside cases that reproduced their tracks
+    exactly, and the weaker case was presented as the stronger one. Requiring an examined
+    index was a better stand-in for an outcome, not an outcome."""
+    labels = [l for l in REQUIRED_RUNS if intervention.get(l)]
+    exact, west = {}, {}
+    for label in labels:
+        run = intervention[label]
+        for rec in run.get("reference_tracks") or []:
+            if rec.get("reference_index") == index:
+                exact[label] = bool(rec.get("reproduced_exactly"))
+        tracks = run.get("finished_tracks_in_the_western_box")
+        west[label] = None if tracks is None else len(tracks)
+    if set(exact) != set(labels):
+        missing = sorted(set(labels) - set(exact))
+        return None, f"its replays {missing} record no outcome for it"
+    # THE NULL CONTROL IS THE ONE IN TIME, the same injection at a step the two sides
+    # already agree on, and it is the one that must not reproduce the track. The SHAPE
+    # control is a second intervention rather than a null: it injects an axis where the
+    # port had none, with the vertices moved off the crossing, and on three of the four
+    # cases it reproduces the tracks too. That is a refinement of the claim, since it
+    # shows the port's loss is the ABSENCE of an axis rather than the absence of that
+    # line, and treating it as a disqualifier would refuse a case for being better
+    # understood.
+    nulls = [l for l in labels if l == "control"]
+    if exact["intervention"] and not exact["baseline"] \
+            and not any(exact[l] for l in nulls):
+        return "reproduced", None
+    if exact["baseline"] or any(exact[l] for l in nulls):
+        return None, ("the untouched replay reproduces it" if exact["baseline"]
+                      else "the time control reproduces it as well as the intervention")
+    if west.get("intervention") is None or west["baseline"] is None:
+        return None, "no finished-track measurement to fall back on"
+    others = [west[l] for l in ["baseline"] + nulls if west.get(l) is not None]
+    # SURVIVAL MEANS MORE TRACKS, not a different number of them. A review set a genuine
+    # artifact's baseline and control counts to two and its intervention's to zero, and
+    # the first version credited that LOSS under a label that says the opposite.
+    if len(others) == len(nulls) + 1 and all(west["intervention"] > o for o in others):
+        return "track_survival", None
+    if len(others) == len(nulls) + 1 and all(west["intervention"] < o for o in others):
+        return None, ("its intervention REMOVES finished tracks from the western box, "
+                      "which is not the survival outcome")
+    return None, "neither reproduces it nor adds finished tracks to its western box"
+
+
+def walk_problems(name, case, claimed):
+    """Why a case may not be credited for an index it claims, and how it is credited when
+    it may. Returns (problems, outcomes).
+
+    THE EXPERIMENT IS VALIDATED FIRST, under the same contract the trace applies, with the
+    expected divergence and control steps taken from the case's own declared parameters."""
+    intervention = case.get("intervention") or {}
+    if not intervention.get("baseline"):
+        return ([f"{name} claims {sorted(claimed)} and records no intervention, so nothing "
+                 f"in it examined those indices"], {})
+    parameters = case.get("parameters") or {}
+    broken = experiment_problems(
+        intervention, parameters.get("divergence_step"), parameters.get("control_step"),
+        intervention.get("control_step_problems"), intervention.get("injected_axes"),
+        (intervention.get("shape_control") or {}).get("axes"))
+    if broken:
+        return ([f"{name} claims {sorted(claimed)} and {w}" for w in broken], {})
+    problems, outcomes = [], {}
+    for index in sorted(claimed):
+        outcome, why = outcome_for(intervention, index)
+        if outcome is None:
+            problems.append(f"{name} claims {index}, which {why}")
+        else:
+            outcomes[index] = outcome
+    return problems, outcomes
+
+
 def membership(residuals, cases):
     binding = binding_problems(residuals, cases)
     if binding:
@@ -75,25 +221,44 @@ def membership(residuals, cases):
     for k in by_kind:
         by_kind[k] = sorted(by_kind[k])
     explained_unmatched, explained_pairs, problems, per_case = [], [], [], {}
+    by_outcome = {}
     for name, case in cases.items():
         ex = case.get("explains") or {}
         per_case[name] = ex
+        claimed = list(ex.get("unmatched_v1_tracks", [])) + list(ex.get("v1_extra_pairs", []))
+        if claimed:
+            why, outcomes = walk_problems(name, case, claimed)
+            problems.extend(why)
+            by_outcome.update(outcomes)
         for i in ex.get("unmatched_v1_tracks", []):
             if i not in unmatched_no_eligible:
                 problems.append(f"{name} claims unmatched track {i}, which is not in the "
                                 f"no-eligible-counterpart set")
             elif i in explained_unmatched:
                 problems.append(f"unmatched track {i} is claimed by more than one case")
-            else:
+            elif i in by_outcome:
                 explained_unmatched.append(i)
         for i in ex.get("v1_extra_pairs", []):
             if i not in by_kind.get("extra_v1_only", []):
                 problems.append(f"{name} claims pair {i}, which is not a version-1-extra pair")
             elif i in explained_pairs:
                 problems.append(f"pair {i} is claimed by more than one case")
-            else:
+            elif i in by_outcome:
+                # A CREDIT IS GRANTED ONLY WHERE AN OUTCOME WAS READ. The lists used to be
+                # built from the declaration alone, so an index whose experiment had just
+                # been refused above still appeared among the explained.
                 explained_pairs.append(i)
+    def split(indices):
+        return {"reproduced": sorted(i for i in indices
+                                     if by_outcome.get(i) == "reproduced"),
+                "track_survival": sorted(i for i in indices
+                                         if by_outcome.get(i) == "track_survival")}
+
     return {"unmatched_v1_no_eligible_counterpart": unmatched_no_eligible,
+            # THE OUTCOME EACH CREDIT RESTS ON, beside the credit, so a case that changes
+            # a track count is never read as one that reproduced a track
+            "explained_by_outcome": {"unmatched": split(explained_unmatched),
+                                     "v1_extra_pairs": split(explained_pairs)},
             "unmatched_v1_with_eligible_counterpart": unmatched_eligible,
             "pairs_by_extra_kind": by_kind,
             "explained_unmatched": sorted(explained_unmatched),
@@ -103,6 +268,12 @@ def membership(residuals, cases):
                                                - set(explained_pairs)),
             "counts": {"unmatched_no_eligible": len(unmatched_no_eligible),
                        "unmatched_explained": len(explained_unmatched),
+                       "unmatched_explained_by_exact_reproduction":
+                           len([i for i in explained_unmatched
+                                if by_outcome.get(i) == "reproduced"]),
+                       "v1_extra_pairs_explained_by_exact_reproduction":
+                           len([i for i in explained_pairs
+                                if by_outcome.get(i) == "reproduced"]),
                        "v1_extra_pairs": len(by_kind.get("extra_v1_only", [])),
                        "v1_extra_pairs_explained": len(explained_pairs),
                        "both_sides_extra_pairs": len(by_kind.get("extra_both_sides", []))},

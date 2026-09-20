@@ -46,7 +46,16 @@ def read_tracks(path):
     if not os.path.exists(path):
         raise SystemExit(f"{path} is absent. The run that writes it did not finish.")
     raw = loadmat(path)
-    n = int(np.asarray(raw["n"]).ravel()[0])
+    # A DECLARED COUNT IS NOT A NUMBER OF TRACKS UNTIL IT IS ONE. A review set both
+    # outputs' counts to -1 and watched the comparison succeed on zero tracks a side, with
+    # both provenance records still verified, and a fractional count was truncated.
+    declared = np.asarray(raw["n"]).ravel()[0]
+    if not np.isfinite(declared) or float(declared) < 0 \
+            or float(declared) != int(float(declared)):
+        raise SystemExit(
+            f"{path} declares {declared!r} tracks, which is not a whole count. A file whose "
+            f"count cannot be read holds an unknown number of tracks, not zero.")
+    n = int(float(declared))
     if "case_id" not in raw:
         raise SystemExit(
             f"{path} carries no case id, so nothing establishes which exported window it "

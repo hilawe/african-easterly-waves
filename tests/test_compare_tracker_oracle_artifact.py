@@ -309,3 +309,33 @@ def test_port_source_that_does_not_match_the_tree_is_inconsistent_with_the_recor
     assert v["port_tree_mismatches"] == [expected_mismatch], label
     assert v["port_producer"]["git_head"] == HEAD           # the historical record stands
     assert "PORT PROVENANCE INCONSISTENT" in capsys.readouterr().out
+
+
+def test_a_declared_count_that_is_not_a_whole_number_is_refused(tmp_path):
+    """A review set both outputs' counts to -1 and watched the comparison succeed on zero
+    tracks a side, with both provenance records still verified."""
+    import importlib.util
+    import sys as _sys
+    import numpy as _np
+    import pytest as _pytest
+    from scipy.io import savemat as _savemat
+    here = os.path.dirname(os.path.abspath(__file__))
+    spec = importlib.util.spec_from_file_location(
+        "compare_tracker_oracle", os.path.join(here, "..", "scripts",
+                                               "compare_tracker_oracle.py"))
+    C = importlib.util.module_from_spec(spec)
+    _sys.modules["compare_tracker_oracle"] = C
+    spec.loader.exec_module(C)
+    for bad in (-1.0, 2.5, float("nan"), float("inf")):
+        path = tmp_path / f"tracks_{str(bad).replace('.', '_')}.mat"
+        _savemat(str(path), {"n": bad, "case_id": "abc123",
+                             "lat0": _np.array([1.0]), "lon0": _np.array([2.0]),
+                             "time0": _np.array([3.0])})
+        with _pytest.raises(SystemExit) as e:
+            C.read_tracks(str(path))
+        assert "not a whole count" in str(e.value), bad
+    ok = tmp_path / "good.mat"
+    _savemat(str(ok), {"n": 1.0, "case_id": "abc123", "lat0": _np.array([1.0]),
+                       "lon0": _np.array([2.0]), "time0": _np.array([3.0])})
+    tracks, case = C.read_tracks(str(ok))
+    assert len(tracks) == 1 and case == "abc123"

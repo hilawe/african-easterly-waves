@@ -13,7 +13,7 @@ of an archived record is not something to keep under version control where it co
 mistaken for the record.
 
 WHAT IS ADDED, and it is deliberately the least that answers the question: one global and
-four printf blocks, each guarded by a time match against that global. With the global empty
+five printf blocks, each guarded by a time match against that global. With the global empty
 every guard is false, so the instrumented copy computes exactly what the original does. The
 caller checks that by comparing its finished tracks against the uninstrumented run.
 """
@@ -24,6 +24,10 @@ import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ARCHIVE = os.path.join(REPO, "data", "aewc_v2_pilot", "v1_src")
+
+# The file this script writes into every copy it makes, and the ONLY thing that makes a
+# directory disposable to it.
+MARKER = ".instrumented_copy_written_by_make_instrumented_v1"
 
 SIGNATURE = ("function ews = find_ews_f(u_c,v_c,currv_anom_c,advcurrv_anom_c,lat_c,"
              "lon_c,time,latgrid,longrid,u,v,currv_anom,rean,level);")
@@ -37,13 +41,21 @@ CLEAR_LINE = "  clear id ch ctid"
 
 PRUNE_END = "    clear keep_id\n  end  \nend"
 
+# The masked, smoothed coarse advection field version 1 hands to its contour call. A
+# review showed why this has to be dumped: two DIFFERENT masked fields can produce the
+# same contour vertices, so a dumped vertex sitting on a zero crossing of the PORT's
+# field is consistent with the two sides holding different fields. Comparing the fields
+# themselves is what settles whether a missing port axis is a contouring difference or a
+# masking one.
+CONTOUR_CALL = "  ch = contours(longrid_c,latgrid_c,acrvt,[tr_thr,tr_thr]);"
+
 
 def patch(source):
     """Return the instrumented text, or raise if any anchor has moved."""
     out = source
     anchors = {"signature": SIGNATURE, "coarse merge": COARSE_MERGE,
                "after coarse": AFTER_COARSE, "clear line": CLEAR_LINE,
-               "prune end": PRUNE_END}
+               "prune end": PRUNE_END, "contour call": CONTOUR_CALL}
     missing = [name for name, text in anchors.items() if text not in out]
     if missing:
         raise SystemExit(
@@ -74,6 +86,22 @@ def patch(source):
     fflush(stdout);
   end
 """ + COARSE_MERGE)
+
+    # The field ITSELF, every unmasked cell, printed before the contour call. A cell
+    # absent from a timestep's FIELD records is masked on version 1's side, which is the
+    # half of the comparison a vertex cannot carry.
+    out = out.replace(CONTOUR_CALL, """  if any(abs(time(t) - AEWDBG_TIMES) < 1e-6);
+    for rr = 1:size(acrvt,1);
+      for cc = 1:size(acrvt,2);
+        if ~isnan(acrvt(rr,cc));
+          printf('FIELD %.4f %.4f %.4f %.12e\\n', time(t), latgrid_c(rr,cc), ...
+                 longrid_c(rr,cc), acrvt(rr,cc));
+        end
+      end
+    end
+    fflush(stdout);
+  end
+""" + CONTOUR_CALL, 1)
 
     out = out.replace(AFTER_COARSE, AFTER_COARSE + """
   if any(abs(time(t) - AEWDBG_TIMES) < 1e-6);
@@ -107,6 +135,45 @@ end""")
     return out
 
 
+def output_path_problems(out_dir, repo=None, archive=None):
+    """Every reason this path must not be written, checked BEFORE anything is removed.
+
+    The next line of main deletes an existing output directory whole. A review found that
+    the first version of this guard, which refused paths starting with the repository plus
+    a separator, ACCEPTED THE REPOSITORY ITSELF and would have deleted it and the archived
+    source it exists to protect. The rule is therefore about the resolved paths and their
+    containment in both directions, and a directory is only replaced when it looks like a
+    previous instrumented copy."""
+    repo = os.path.realpath(repo or REPO)
+    archive = os.path.realpath(archive or ARCHIVE)
+    target = os.path.realpath(out_dir)
+    problems = []
+    if target == repo or target == os.path.dirname(repo) or repo.startswith(target + os.sep):
+        problems.append(
+            f"{out_dir} is the repository or a directory containing it, and this deletes "
+            f"the directory it writes to. The instrumented copy goes somewhere else.")
+    elif target == archive or target.startswith(archive + os.sep):
+        problems.append(f"{out_dir} is the archived source itself, which is the record.")
+    elif target.startswith(repo + os.sep):
+        problems.append(
+            f"{out_dir} is inside the repository. The instrumented copy must live outside "
+            f"it so it cannot be confused with the archived record.")
+    elif target in (os.path.realpath(os.path.expanduser("~")), os.path.realpath(os.sep)):
+        problems.append(f"{out_dir} is a home or root directory, which this deletes whole.")
+    if not problems and os.path.exists(target):
+        if not os.path.isdir(target):
+            problems.append(f"{out_dir} exists and is not a directory.")
+        elif not os.path.exists(os.path.join(target, MARKER)):
+            # HOLDING find_ews_f.m DOES NOT MAKE A DIRECTORY DISPOSABLE, which a review
+            # showed by handing the guard another checkout's archived source: it carries
+            # that file and is the record. Only a directory THIS SCRIPT wrote, and said so
+            # in a marker of its own, may be replaced.
+            problems.append(
+                f"{out_dir} exists and does not hold {MARKER}, so it was not written by "
+                f"this script and it refuses to delete it.")
+    return problems
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--repair-convhull", action="store_true",
@@ -117,16 +184,15 @@ def main(argv=None):
     args = ap.parse_args(argv)
     out_dir = args.out or os.path.join(os.environ["AEW_ORACLE_DIR"], "v1_instrumented")
 
-    # REFUSE TO WRITE INSIDE THE REPOSITORY. The archived record and a modified copy of it
-    # must not be able to end up in the same tree by a mistyped path.
-    if os.path.abspath(out_dir).startswith(os.path.abspath(REPO) + os.sep):
-        raise SystemExit(
-            f"{out_dir} is inside the repository. The instrumented copy must live outside "
-            f"it so it cannot be confused with the archived record.")
+    for why in output_path_problems(out_dir):
+        raise SystemExit(why)
 
     if os.path.exists(out_dir):
         shutil.rmtree(out_dir)
     shutil.copytree(ARCHIVE, out_dir)
+    with open(os.path.join(out_dir, MARKER), "w") as fh:
+        fh.write("Written by scripts/make_instrumented_v1.py. This directory is a "
+                 "disposable instrumented copy and may be replaced by that script.\n")
     target = os.path.join(out_dir, "find_ews_f.m")
     with open(os.path.join(ARCHIVE, "find_ews_f.m")) as fh:
         source = fh.read()
@@ -161,7 +227,7 @@ def main(argv=None):
     with open(os.path.join(ARCHIVE, "find_ews_f.m")) as fh:
         assert fh.read() == source, "the archived source was modified"
     print(f"wrote {target}")
-    print(f"  {len(patched) - len(source)} characters added at 4 points, "
+    print(f"  {len(patched) - len(source)} characters added at 5 points, "
           f"all inert while AEWDBG_TIMES is empty")
     print(f"  the archived source at {ARCHIVE} is unchanged")
     return 0

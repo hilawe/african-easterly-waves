@@ -101,7 +101,7 @@ def main(argv=None):
     if not args.oracle_dir:
         ap.error("set AEW_ORACLE_DIR or pass --oracle-dir")
     v1, port, case, _ = C.load_case(args.oracle_dir, oracle_name=args.oracle)
-    assigned, _ = C.match(v1, port)
+    assigned, eligible_edges = C.match(v1, port)
     matched_v1 = {i for i, _, _, _ in assigned}
     matched_port = {j for _, j, _, _ in assigned}
     pairs = []
@@ -149,14 +149,20 @@ def main(argv=None):
     # (two shared steps within five degrees); if one is, the track was left over by the
     # one-to-one assignment, which is a statement about the assignment and not a
     # classification of the track as a physical duplicate.
+    #
+    # READ FROM THE MATCHING GRAPH'S OWN EDGES, not from the nearest track. A review built
+    # the case that separates them: an unmatched reference track whose NEAREST counterpart
+    # shares one step at zero separation, and another counterpart sharing five steps within
+    # a degree. The nearest is ineligible on overlap, the other is eligible, and the first
+    # version reported no eligible counterpart because it only ever looked at the nearest.
+    v1_eligible = {i for i, _j in eligible_edges}
+    port_eligible = {j for _i, j in eligible_edges}
     for u in v1_un:
-        near = u["nearest_other_side"]
-        u["eligible_counterpart_exists"] = bool(near and near["shared_steps"] >= C.MIN_OVERLAP
-                                                and near["sep_deg"] <= C.TOLERANCE_DEG)
+        u["eligible_counterpart_exists"] = u["index"] in v1_eligible
+        u["eligible_counterparts"] = sorted(j for i, j in eligible_edges if i == u["index"])
     for u in port_un:
-        near = u["nearest_other_side"]
-        u["eligible_counterpart_exists"] = bool(near and near["shared_steps"] >= C.MIN_OVERLAP
-                                                and near["sep_deg"] <= C.TOLERANCE_DEG)
+        u["eligible_counterpart_exists"] = u["index"] in port_eligible
+        u["eligible_counterparts"] = sorted(i for i, j in eligible_edges if j == u["index"])
     res = {"case_id": case, "oracle_file": args.oracle,
            "nonidentical_pairs": len(pairs), "nonidentical_kinds": kinds,
            "nonidentical_extra_kinds": extra_kinds,

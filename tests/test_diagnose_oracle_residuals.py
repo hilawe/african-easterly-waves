@@ -14,6 +14,10 @@ Added after a review found the port's extras dropped whenever version 1 also had
   D6 the worst individual step is taken from pair means;
   D7 an unmatched track with an eligible counterpart under the matching rule is not
      distinguished from one with none.
+Added after a review built the case that separates "eligible" from "nearest":
+  D8 the eligibility flag is read from the NEAREST counterpart rather than from the
+     matching graph's edges, so a leftover whose nearest neighbour is ineligible on
+     overlap is reported as having no eligible counterpart at all.
 """
 import importlib.util
 import json
@@ -108,3 +112,35 @@ def test_classifier_reports_both_sides_extras_worst_step_and_eligibility(tmp_pat
     assert r["port_unmatched"][0]["eligible_counterpart_exists"] is False
     assert r["input_sha256"]["tracker_port.mat"] == M._sha256(str(d / "tracker_port.mat"))
     assert "scripts/compare_tracker_oracle.py" in r["source_sha256"]
+
+
+def test_eligibility_is_read_from_the_matching_graph_not_the_nearest_track(tmp_path):
+    """D8: a review built the case that separates the two. An unmatched reference track
+    whose NEAREST counterpart shares one step at zero separation, and another counterpart
+    sharing enough steps within the tolerance. The nearest is ineligible on overlap, the
+    other is eligible, and reading only the nearest reported no eligible counterpart."""
+    M = _load()
+    d = tmp_path / "oracle"
+    d.mkdir()
+    steps = [0.0, 0.25, 0.5, 0.75]
+    # two identical reference tracks compete for one eligible port track, and a second
+    # port track shares ONE step with the leftover at zero separation
+    v1 = [(steps, [10.0] * 4, [0.0, 1.0, 2.0, 3.0]),
+          (steps, [10.0] * 4, [0.0, 1.0, 2.0, 3.0])]
+    port = [(steps, [10.5] * 4, [0.0, 1.0, 2.0, 3.0]),
+            ([0.0], [10.0], [0.0])]
+    write_tracks(str(d / "tracker_octave_instrumented.mat"), v1, "abc")
+    write_tracks(str(d / "tracker_port.mat"), port, "abc")
+    savemat(str(d / "tracker_case.mat"), {"case_id": "abc"})
+    out = tmp_path / "residuals.json"
+    assert M.main(["--oracle-dir", str(d), "--oracle", "tracker_octave_instrumented.mat",
+                   "--out", str(out)]) == 0
+    r = json.loads(out.read_text())
+    leftover = [u for u in r["v1_unmatched"]][0]
+    # the nearest counterpart is the one-step track at zero separation, which is NOT
+    # eligible, while port track 0 is
+    assert leftover["nearest_other_side"]["shared_steps"] == 1
+    assert leftover["nearest_other_side"]["sep_deg"] == 0.0
+    assert leftover["eligible_counterpart_exists"] is True
+    assert leftover["eligible_counterparts"] == [0]
+    assert r["v1_unmatched_with_eligible_counterpart"] == 1
