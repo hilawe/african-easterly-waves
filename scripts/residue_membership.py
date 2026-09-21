@@ -641,10 +641,12 @@ def experiment_problems(intervention, divergence_steps, control_steps=None,
     experiment compared against a one-injection control is not a comparison, so the counts
     are required to match rather than merely to be nonzero."""
     problems = []
-    if not intervention or not intervention.get("baseline"):
+    if not intervention or not any(isinstance(intervention.get(l), dict)
+                                   for l in REQUIRED_RUNS):
         return ["the artifact records no intervention"]
     absent = [r for r in REQUIRED_RUNS if not intervention.get(r)]
     if absent:
+        # reported ONCE. The label loop below used to append the same absence again.
         problems.append("the experiment records no " + " or ".join(absent) + " replay")
     problems.extend(control_step_problems or [])
     steps = sorted(float(x) for x in (divergence_steps or []))
@@ -682,7 +684,8 @@ def experiment_problems(intervention, divergence_steps, control_steps=None,
     for label in ("intervention", "control", "shape_control") + tuple(required_partials):
         run = intervention.get(label)
         if not run:
-            problems.append(f"the experiment records no {label} replay")
+            if label not in absent:            # the sweep above already named it
+                problems.append(f"the experiment records no {label} replay")
             continue
         problems.extend(axis_problems(label, run, expectations.get(label)))
         requested = [x for x in (run.get("requested_times") or [])]
@@ -817,6 +820,72 @@ def outcome_for(intervention, index, recomputed=None):
 
 
 
+def experiment_recorded(case):
+    """Whether a case records ANY replay evidence.
+
+    A case that records some is a performed OR AN INCOMPLETE experiment and is validated
+    as one. Only a case that records none at all is exempt, which is what a deliberately
+    unperformed case looks like: an intervention block naming what was attempted and why
+    it was not, with no replays. A review deleted one case's BASELINE ALONE, left its
+    intervention, both controls and its partial runs in place, and the whole validation
+    path was skipped, because the test for a performed experiment was the baseline."""
+    iv = case.get("intervention") or {}
+    if not isinstance(iv, dict):
+        return False
+    labels = list(REQUIRED_RUNS) + list(iv.get("partial_runs") or ())
+    if any(isinstance(iv.get(l), dict) for l in labels):
+        return True
+    return bool(iv.get("injected_axes")) or bool(iv.get("declared_steps"))
+
+
+def examined_explains(name, case, residuals, claimed=()):
+    """The indices a case's experiment EXAMINED, in the shape `explains` has, classified
+    by the residual artifact rather than by the case, with the reasons the declaration is
+    not usable. Returns (explains-shaped, problems).
+
+    A review found that a case claiming nothing was never checked at all, and then that
+    the first repair could be walked round three ways: by deleting the declaration, by
+    declaring an index the residual artifact does not know (which the first version
+    silently filtered away to an empty set), and by deleting one replay so the case read
+    as unperformed. A NEGATIVE RESULT RESTS ON THE SAME CONTROLS A POSITIVE ONE DOES, so
+    a performed experiment must say what it examined, every index must be one the residual
+    artifact classifies, the declaration must agree with what the replays recorded
+    outcomes for, and anything claimed must be among them."""
+    declared = list((case.get("parameters") or {}).get("reference_tracks") or ())
+    problems = []
+    pairs = {p["v1_index"] for p in residuals.get("pairs") or ()
+             if p.get("extra_kind") == "extra_v1_only"}
+    tracks = {u["index"] for u in residuals.get("v1_unmatched") or ()}
+    out = {"v1_extra_pairs": [], "unmatched_v1_tracks": []}
+    if not declared:
+        problems.append(f"{name} records replays and declares no reference tracks, so "
+                        f"nothing says which indices its experiment examined")
+    for i in declared:
+        if i in pairs:
+            out["v1_extra_pairs"].append(i)
+        elif i in tracks:
+            out["unmatched_v1_tracks"].append(i)
+        else:
+            # REFUSED, NOT FILTERED. A review set this list to a single unknown index and
+            # the first version quietly produced an empty examined set, which checked
+            # nothing at all.
+            problems.append(f"{name} declares reference track {i}, which the residual "
+                            f"artifact classifies as neither a version-1-extra pair nor "
+                            f"an unmatched track")
+    iv = case.get("intervention") or {}
+    recorded = {r.get("reference_index")
+                for l in list(REQUIRED_RUNS) + list(iv.get("partial_runs") or ())
+                for r in ((iv.get(l) or {}).get("reference_tracks") or ())}
+    if recorded and recorded != set(declared):
+        problems.append(f"{name} declares reference tracks {sorted(declared)} and its "
+                        f"replays record outcomes for {sorted(recorded)}")
+    outside = sorted(i for i in claimed if i not in declared)
+    if outside:
+        problems.append(f"{name} claims {outside}, which its experiment does not declare "
+                        f"among the reference tracks it examined")
+    return out, problems
+
+
 def scope_problems(name, case, residuals, explains):
     """Why the steps a case declares are not the steps its claim is ABOUT.
 
@@ -865,7 +934,7 @@ def walk_problems(name, case, claimed, recomputed=None):
     THE EXPERIMENT IS VALIDATED FIRST, under the same contract the trace applies, with the
     expected divergence and control steps taken from the case's own declared parameters."""
     intervention = case.get("intervention") or {}
-    if not intervention.get("baseline"):
+    if not intervention.get("baseline") and not experiment_recorded(case):
         return ([f"{name} claims {sorted(claimed)} and records no intervention, so nothing "
                  f"in it examined those indices"], {})
     parameters = case.get("parameters") or {}
@@ -898,8 +967,9 @@ CREDIT_BASIS = {
         "an observation and the port's finished counterpart does not, read from the two "
         "pinned outputs by final index, and both the residual record and the case's "
         "declaration must equal that set exactly",
-        "for an UNMATCHED TRACK, every declared step is a time version 1's finished track "
-        "holds an observation, read from the pinned reference output by final index",
+        "for an UNMATCHED TRACK, every declared step and every control step is a time "
+        "version 1's finished track holds an observation, read from the pinned reference "
+        "output by final index",
         "every time-control step is one at which version 1's finished track holds an "
         "observation, and for a pair so does the port's counterpart",
         "the axis vertices the case recorded at the judged steps are every axis its "
@@ -963,23 +1033,36 @@ def membership(residuals, cases, logs=None, log_problems=(), outputs=None):
         ex = case.get("explains") or {}
         per_case[name] = ex
         claimed = list(ex.get("unmatched_v1_tracks", [])) + list(ex.get("v1_extra_pairs", []))
-        if claimed:
+        # A CASE THAT PERFORMED AN EXPERIMENT IS CHECKED WHETHER OR NOT IT CLAIMS ONE.
+        # The indices come from the case's claim where it makes one and from the
+        # experiment's own reference tracks where it does not. A case that declares NO
+        # experiment stays exempt, since there is nothing to validate.
+        performed = experiment_recorded(case)
+        if claimed or performed:
             # THE SCOPE AND THE SOURCE ARE CHECKED BEFORE THE EXPERIMENT. A case judged at
             # steps it chose, or on vertices its reference log does not hold, has nothing
             # for the experiment checks to rest on, however consistent its own fields are
             # with each other. The category checks below run regardless, since they are
             # independent of both and a refusal should name every reason it has.
-            bad = (scope_problems(name, case, residuals, ex)
-                   + evidence_problems(name, case, residuals, ex, outputs)
-                   + source_problems(name, case, logs))
+            # EVERY EXAMINED INDEX IS CHECKED, not only the claimed ones, and a claim
+            # outside what the experiment examined is refused above.
+            checking, bad = examined_explains(name, case, residuals, claimed)
+            if not bad:
+                bad = (scope_problems(name, case, residuals, checking)
+                       + evidence_problems(name, case, residuals, checking, outputs)
+                       + source_problems(name, case, logs))
             problems.extend(bad)
             if not bad:
-                why, recomputed = recomputed_outcomes(name, case, ex, outputs)
+                why, recomputed = recomputed_outcomes(name, case, checking, outputs)
                 problems.extend(why)
                 if not why:
-                    why2, outcomes = walk_problems(name, case, claimed, recomputed)
-                    problems.extend(why2)
-                    by_outcome.update(outcomes)
+                    # the EXPERIMENT contract holds for every performed case; only a
+                    # CLAIMED index goes on to be credited
+                    problems.extend(walk_problems(name, case, [], recomputed)[0])
+                    if claimed:
+                        why2, outcomes = walk_problems(name, case, claimed, recomputed)
+                        problems.extend(why2)
+                        by_outcome.update(outcomes)
         for i in ex.get("unmatched_v1_tracks", []):
             if i not in unmatched_no_eligible:
                 problems.append(f"{name} claims unmatched track {i}, which is not in the "
@@ -1036,9 +1119,10 @@ def membership(residuals, cases, logs=None, log_problems=(), outputs=None):
             "credit_basis_by_index": {
                 **{str(i): "pair: scope fixed by the residual pair's own extra times"
                    for i in explained_pairs},
-                **{str(i): "unmatched track: declared steps checked against the log's "
-                           "track lines and the recorded span, the choice among them "
-                           "the case's own" for i in explained_unmatched}}}
+                **{str(i): "unmatched track: declared steps and control steps checked "
+                           "against version 1's finished track in the pinned reference "
+                           "output, the choice among its observation times the case's own"
+                   for i in explained_unmatched}}}
 
 
 def main(argv=None):

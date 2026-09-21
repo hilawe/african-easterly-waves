@@ -726,6 +726,26 @@ def control_step_problems(case, control_time):
 SHAPE_CONTROL_OFFSET_DEG = 4.0    # two coarse cells west, recorded in the artifact
 
 
+def candidates_at_steps(log, steps):
+    """The port's own detected candidates in the box at each declared step, with the
+    lengths of the tracks that took them.
+
+    THIS IS THE DETECTION STAGE, and it is recorded because a review found this document
+    confusing it with the next one. `observations_at_divergence_in_box` is computed from
+    FINISHED tracks: an empty entry there means no finished track retained the
+    observation, NOT that nothing was detected. On the Sudan track the injected axis
+    restores the candidate at version 1's own position and the track that takes it does
+    not survive, which reads as a detection failure if only the finished tracks are
+    looked at."""
+    out = {}
+    for t in steps:
+        out[step_key(t)] = [{"lat": float(r["lat_mean"]), "lon": float(r["lon_mean"]),
+                             "n_points": int(r["n_points"]),
+                             "taken_by_tracks_of_length": list(r["taken_by_tracks_of_length"])}
+                            for r in log if abs(float(r["time"]) - float(t)) < 1e-6]
+    return out
+
+
 def finished_track_records(final):
     """Every finished track a replay produced, complete, as plain arrays. THE CHECKER
     RECOMPUTES THE OUTCOMES FROM THESE against the pinned reference output: whether any
@@ -740,7 +760,7 @@ def finished_track_records(final):
 
 
 def intervene(case, axes_by_step, reference, control_times, baseline_final,
-              baseline_west, shape_offset=SHAPE_CONTROL_OFFSET_DEG):
+              baseline_west, shape_offset=SHAPE_CONTROL_OFFSET_DEG, baseline_log=()):
     """THE EXPERIMENT SET, because a difference observed at a stage is not a mechanism
     until an intervention at that stage changes the output and one elsewhere does not.
 
@@ -782,14 +802,17 @@ def intervene(case, axes_by_step, reference, control_times, baseline_final,
             "control_step_problems": [w for c in control_times
                                       for w in control_step_problems(case, c)],
             "baseline": {"requested_times": [], "injections_applied": 0, "applied_at": [],
+                         "candidates_at_divergence_in_box":
+                             candidates_at_steps(baseline_log, steps),
                          "finished_tracks": finished_track_records(baseline_final),
                          "reference_tracks": reproduction(baseline_final, reference),
                          "observations_at_divergence_in_box":
                              observations_at_steps(baseline_final, steps),
                          "finished_tracks_in_the_western_box": baseline_west}}
     for label, plan in plans.items():
-        _log, _div, west, _hist, final, applied = replay_port(case, inject=plan)
+        run_log, _div, west, _hist, final, applied = replay_port(case, inject=plan)
         runs[label] = {"requested_times": [float(one["time"]) for one in plan],
+                       "candidates_at_divergence_in_box": candidates_at_steps(run_log, steps),
                        "injections_applied": len(applied), "applied_at": applied,
                        "axes_by_requested_step": {step_key(one["time"]): one["axes"]
                                                   for one in plan},
@@ -890,7 +913,7 @@ def intervention_statements(runs, v1_at=None):
         f"reproduce {counts['control'][0]} of {counts['control'][1]}, and the same vertex "
         f"count moved {runs['shape_control']['longitude_offset_deg']} degrees west of the "
         f"crossing at {where} reproduces {counts['shape_control'][0]} of "
-        f"{counts['shape_control'][1]}; each control carries "
+        f"{counts['shape_control'][1]}, and each control carries "
         f"{len(runs['control']['requested_times'])} injection(s), as the experiment does")
     # EACH STEP ON ITS OWN, because two missing observations do not establish that two
     # injections are needed: restoring one detection can change the tracking that follows.
@@ -907,6 +930,21 @@ def intervention_statements(runs, v1_at=None):
         f"with the injection at {where} {counts_west['intervention']}, with the "
         f"time control {counts_west['control']}, with the shape control "
         f"{counts_west['shape_control']}")
+    # THE DETECTION STAGE, stated beside the track stage because a review found this
+    # project's own document reading the one below as if it were this one. An empty entry
+    # below means no FINISHED track kept the observation, which is not the same as the
+    # port detecting nothing, and on the Sudan track the two differ.
+    if all(runs[l].get("candidates_at_divergence_in_box") is not None
+           for l in ("baseline", "intervention", "control")):
+        def seen(label):
+            return {k: [(round(c["lat"], 4), round(c["lon"], 4),
+                         c["taken_by_tracks_of_length"]) for c in v]
+                    for k, v in runs[label]["candidates_at_divergence_in_box"].items()}
+        statements.append(
+            f"candidates the port DETECTS in the box at the declared steps, with the "
+            f"lengths of the tracks that take them: untouched {seen('baseline')}, with "
+            f"the injection at {where} {seen('intervention')}, with the time control "
+            f"{seen('control')}")
     statements.append(
         f"positions the finished port tracks hold at the declared steps in the box: "
         f"untouched {runs['baseline']['observations_at_divergence_in_box']}, "
@@ -1363,7 +1401,7 @@ def main(argv=None):
                   f"fewer injections than the experiment ({control_used})", flush=True)
             return 2
         intervention = intervene(case, axes_by_step, reference, control_used, final,
-                                 west, args.shape_control_offset)
+                                 west, args.shape_control_offset, log)
     conclusion, missing = derive_conclusion(log, v1, v1_at, port_at, divergence, west,
                                             western, intervention)
     if missing:

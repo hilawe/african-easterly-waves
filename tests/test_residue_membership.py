@@ -58,6 +58,17 @@ and kept the credit, because the comparison checked one array's length and zippe
   R48 a recorded track with a missing or extra coordinate is counted or compared;
   R49 a recorded track with a coordinate that is not finite, or not a number, is counted;
   R50 a pinned output holding a ragged track is accepted as a reference.
+Added after a review found a case that claims nothing escaping every check, so two null
+results rested on control steps their pairs do not both hold:
+  R51 a case that performed an experiment and claims nothing is not validated;
+  R52 a case that declares no experiment at all is refused for having none.
+Added after a review walked round that repair three ways on a null experiment:
+  R53 a performed experiment declaring no reference tracks is validated;
+  R54 an examined index the residual artifact does not know is filtered away rather than
+      refused;
+  R55 a case missing only its baseline reads as unperformed and skips every check;
+  R56 the declared examined indices disagree with the ones the replays record;
+  R57 a case is credited for an index its experiment does not declare as examined.
 """
 import hashlib
 import importlib.util
@@ -236,6 +247,9 @@ def bound(explains, oracle_hash="o2" * 32, intervention=None, parameters=None,
     # selected them, so every case carries them whatever else it declares
     declared = dict(PARAMETERS)
     declared.update(parameters or {})
+    # a performed experiment must say which indices it examined, and the declaration must
+    # agree with the indices its replays record outcomes for
+    declared.setdefault("reference_tracks", list(claimed))
     return {"case_id": CASE, "explains": explains,
             "parameters": declared,
             "at_divergence": {"v1": dict(DUMPED if vertices is None else vertices)},
@@ -288,7 +302,8 @@ def test_membership_checks_every_claim_and_derives_the_remaining_lists():
     M = _load()
     cases = {"a.json": bound({"unmatched_v1_tracks": [19], "v1_extra_pairs": []}),
              "b.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74, 67]}),
-             "c.json": bound({})}                            # declares nothing
+             "c.json": bound({}, intervention={"attempted": "an injection",
+                                               "reason": "version 1 dumps no axis there"})}
     r = _member(M, cases)
     assert r["problems"] == []
     assert r["unmatched_v1_no_eligible_counterpart"] == [6, 19]
@@ -360,9 +375,13 @@ def test_a_claim_the_case_never_walked_is_refused():
     unwalked = bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74, 67]},
                      intervention=walked([74]))
     out = _member(M, {"a.json": unwalked})
-    # the recomputation would FIND 67's track among the recorded ones, since the fixture's
-    # reference tracks are all alike, and it must not stand in for a recorded outcome
-    assert any("replay records no outcome for 67" in w for w in out["problems"])
+    # the claim is refused where it first contradicts the evidence: the case declares it
+    # examined 67 and 74 and its replays record outcomes for 74 alone
+    assert any("declares reference tracks [67, 74] and its replays record outcomes for "
+               "[74]" in w for w in out["problems"])
+    assert out["explained_v1_extra_pairs"] == []
+    # the outcome path, where ONE replay lacks the index while the declaration and the
+    # other replays agree, is the `partial` case immediately below
     # an index one replay does not record is not a walk either
     partial = bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]})
     partial["intervention"]["control"]["reference_tracks"] = []
@@ -1431,7 +1450,7 @@ def test_the_genuine_sahara_track_is_read_by_final_index_not_live_position():
     entries = json.load(open(manifest))["outputs"]
     paths = [os.path.join(HERE, "..", e["file"]) for e in entries]
     got, why = M.verified_outputs(paths, manifest)
-    assert why == [] and len(got) == 3
+    assert why == [] and len(got) == len(entries)
     case = json.load(open(os.path.join(ARTIFACTS, "sahara_case_2026-09-18.json")))
     ref = got[case["input_sha256"]["tracker_octave_instrumented.mat"]]
     assert ref["kind"] == "reference"
@@ -1570,3 +1589,114 @@ def test_a_recorded_track_is_validated_before_it_is_counted_or_compared(tmp_path
     assert not M._same_track(ref, shapes["final latitude deleted"])
     assert not M._same_track(shapes["latitude appended"], ref)
     assert M._same_track(ref, json.loads(json.dumps(ref)))
+
+
+def test_a_performed_experiment_is_validated_whether_or_not_it_claims_anything(tmp_path):
+    """R51 and R52. Every check used to run inside `if claimed`, so a null-result case was
+    never validated at all: two of them carried time controls at steps their pairs do not
+    both hold, and the command still succeeded. A NEGATIVE RESULT RESTS ON THE SAME
+    CONTROLS A POSITIVE ONE DOES. A case that declares no experiment stays exempt, since
+    there is nothing to validate."""
+    M = _load()
+    two = (33035.25, 33035.75)
+    case, axes, moved, V = _mozambique_shaped()
+    silent = json.loads(json.dumps(case))
+    silent["explains"] = {"unmatched_v1_tracks": [], "v1_extra_pairs": []}
+    silent["parameters"]["reference_tracks"] = [74]
+    assert _member(M, {"a.json": silent}, V)["problems"] == []
+    assert _member(M, {"a.json": silent}, V)["explained_v1_extra_pairs"] == []
+    # R51: an invalid control step is now reported, though nothing is claimed
+    bad = json.loads(json.dumps(silent))
+    bad["parameters"]["control_steps"] = [33035.5, 33037.0]        # the port holds neither
+    bad["intervention"]["control"].update(
+        {"requested_times": [33035.5, 33037.0], "applied_at": [33035.5, 33037.0],
+         "axes_by_requested_step": {"33035.5000": axes["33035.2500"],
+                                    "33037.0000": axes["33035.7500"]}})
+    out = _member(M, {"a.json": bad}, V)
+    assert any("declares control step 33037.0000, at which the two sides do not both "
+               "hold an observation" in w for w in out["problems"])
+    assert _refuses(M, tmp_path, bad, "silent-bad", V, two) == (2, False)
+    # and the experiment contract too, with nothing claimed
+    hollow = json.loads(json.dumps(silent))
+    hollow["intervention"].pop("shape_control")
+    assert any("records no shape_control replay" in w
+               for w in _member(M, {"a.json": hollow}, V)["problems"])
+    # R52: a case that declares NO experiment is exempt, not refused
+    none = json.loads(json.dumps(silent))
+    none["intervention"] = {}
+    assert _member(M, {"a.json": none}, V)["problems"] == []
+
+
+def test_an_incomplete_or_undeclared_experiment_cannot_escape_validation(tmp_path):
+    """R53 through R57. The repair that validated unclaimed experiments keyed "performed"
+    on the baseline alone and silently filtered examined indices it could not classify, so
+    a review walked round it three ways on the same invalid null case: by deleting the
+    examined list, by setting it to an unknown index, and by deleting only the baseline
+    while leaving every other replay in place. An experiment that records ANY replay is
+    validated as a performed or incomplete one."""
+    M = _load()
+    two = (33035.25, 33035.75)
+    case, axes, moved, V = _mozambique_shaped()
+    silent = json.loads(json.dumps(case))                  # examines 74, claims nothing
+    silent["explains"] = {"unmatched_v1_tracks": [], "v1_extra_pairs": []}
+    silent["parameters"]["reference_tracks"] = [74]
+    assert _member(M, {"a.json": silent}, V)["problems"] == []
+    # the invalid control this is all built on
+    invalid = json.loads(json.dumps(silent))
+    invalid["parameters"]["control_steps"] = [33035.5, 33037.0]
+    invalid["intervention"]["control"].update(
+        {"requested_times": [33035.5, 33037.0], "applied_at": [33035.5, 33037.0],
+         "axes_by_requested_step": {"33035.5000": axes["33035.2500"],
+                                    "33037.0000": axes["33035.7500"]}})
+    assert any("do not both hold an observation" in w
+               for w in _member(M, {"a.json": invalid}, V)["problems"])
+
+    # R53 and the empty list: no declaration at all
+    for spoil in (lambda c: c["parameters"].pop("reference_tracks"),
+                  lambda c: c["parameters"].__setitem__("reference_tracks", [])):
+        blind = json.loads(json.dumps(invalid)); spoil(blind)
+        out = _member(M, {"a.json": blind}, V)
+        assert any("records replays and declares no reference tracks" in w
+                   for w in out["problems"])
+        assert out["explained_v1_extra_pairs"] == []
+        assert _refuses(M, tmp_path, blind, "blind-examined", V, two) == (2, False)
+
+    # R54: an index the residual artifact does not classify is REFUSED, not filtered
+    unknown = json.loads(json.dumps(invalid))
+    unknown["parameters"]["reference_tracks"] = [9999]
+    out2 = _member(M, {"a.json": unknown}, V)
+    assert any("declares reference track 9999, which the residual artifact classifies as "
+               "neither a version-1-extra pair nor an unmatched track" in w
+               for w in out2["problems"])
+    assert _refuses(M, tmp_path, unknown, "unknown-examined", V, two) == (2, False)
+
+    # R55: every replay is required, the baseline included
+    for label in ("baseline", "intervention", "control", "shape_control"):
+        partial = json.loads(json.dumps(silent)); partial["intervention"].pop(label)
+        out3 = _member(M, {"a.json": partial}, V)
+        assert any(f"records no {label} replay" in w for w in out3["problems"]), label
+        assert sum(1 for w in out3["problems"] if f"records no {label} replay" in w) == 1
+        assert _refuses(M, tmp_path, partial, f"no-{label}", V, two) == (2, False)
+
+    # R56: the declaration must agree with what the replays recorded outcomes for
+    disagree = json.loads(json.dumps(silent))
+    disagree["parameters"]["reference_tracks"] = [67]          # the replays record 74
+    out4 = _member(M, {"a.json": disagree}, V)
+    assert any("declares reference tracks [67] and its replays record outcomes for [74]"
+               in w for w in out4["problems"])
+    assert _refuses(M, tmp_path, disagree, "disagreeing", V, two) == (2, False)
+
+    # R57: a claim outside the examined set
+    overclaim = json.loads(json.dumps(case))                   # claims 74
+    overclaim["parameters"]["reference_tracks"] = []
+    out5 = _member(M, {"a.json": overclaim}, V)
+    assert any("claims [74], which its experiment does not declare among the reference "
+               "tracks it examined" in w for w in out5["problems"])
+    assert out5["explained_v1_extra_pairs"] == []
+
+    # and a genuinely unperformed case, which records no replay at all, stays exempt
+    unperformed = json.loads(json.dumps(silent))
+    unperformed["intervention"] = {"attempted": "an injection at the divergence step",
+                                   "reason": "version 1 dumps no axis there"}
+    unperformed["parameters"]["reference_tracks"] = []
+    assert _member(M, {"a.json": unperformed}, V)["problems"] == []
