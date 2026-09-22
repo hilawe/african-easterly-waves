@@ -34,9 +34,13 @@ from aew.v1port.detection import MAX_ZONAL_WIND, _prepare, trough_axes
 S = os.environ.get("AEW_ORACLE_DIR", os.path.join(os.path.sep, "tmp", "aew-oracle"))
 os.makedirs(S, exist_ok=True)
 D = "data/eraint/v1port_buffered"
-# Six timesteps across the season, including 32886.5, which the merge trace singled out
-# as a case where a wave version 1 keeps is absorbed in the coarse pass.
-TARGETS = [32886.5, 33067.5, 33067.75, 33118.5, 33157.0, 33234.75]
+# Timesteps across the season, including 32886.5, which the merge trace singled out
+# as a case where a wave version 1 keeps is absorbed in the coarse pass, and 33030.5,
+# which is pair 63's one detection difference. At 33030.5 the port's pass 2 drops the
+# feature as a duplicate of a one-point wave 4.38 degrees away, and pass 2 is ORDER
+# DEPENDENT, so whether version 1 makes the same choice is what this export answers.
+# See scripts/trace_pair63_merge.py for the port-side trace of that rejection.
+TARGETS = [32886.5, 33030.5, 33067.5, 33067.75, 33118.5, 33157.0, 33234.75]
 
 with np.load(os.environ.get("AEW_CLIMO_CACHE",
                             os.path.join(S, "climo_buffered.npz")),

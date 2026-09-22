@@ -69,6 +69,14 @@ Added after a review walked round that repair three ways on a null experiment:
   R55 a case missing only its baseline reads as unperformed and skips every check;
   R56 the declared examined indices disagree with the ones the replays record;
   R57 a case is credited for an index its experiment does not declare as examined.
+Added when the binding moved from file bytes to content, after a cleared scratch forced a
+rebuild whose only moving fields were git_head and git_dirty:
+  R58 a reserialization of the same export is refused for its new digest;
+  R59 a changed scientific value in the exported window is accepted;
+  R60 a changed track coordinate in the port output is accepted;
+  R61 a changed executed-source hash is accepted;
+  R62 a changed run setting is accepted;
+  R63 the stored case identifier is trusted instead of recomputed.
 """
 import hashlib
 import importlib.util
@@ -1285,11 +1293,28 @@ def test_the_written_artifact_states_what_a_credit_rests_on(tmp_path):
     assert set(basis) == {"read_from_retained_evidence", "derived_under_a_declared_region",
                           "claimed_by_the_replay_records",
                           "recomputed_from_the_replay_records_against_the_pinned_reference",
+                          "intervention_kinds_this_contract_admits",
+                          "results_this_contract_does_not_carry",
                           "what_a_credit_therefore_means"}
     assert any("produced the finished tracks it records" in line
                for line in basis["claimed_by_the_replay_records"])
     assert any("reproduced_exactly" in line for line in
                basis["recomputed_from_the_replay_records_against_the_pinned_reference"])
+    # THE CONTRACT MUST SAY WHICH INTERVENTION KINDS IT COVERS, added 2026-09-22 after two
+    # final-pair results were established by REORDERING and REMOVAL, which this module's
+    # checks cannot validate: there is no injected geometry to re-read and no meaningful
+    # shape control for a permutation. A contract silent about its own scope reads as
+    # covering everything, and the residue was briefly described as closed on that reading.
+    admits = basis["intervention_kinds_this_contract_admits"]
+    assert any("INJECTION ONLY" in line for line in admits)
+    assert any("REORDERING AND REMOVAL ARE NOT ADMITTED" in line for line in admits)
+    assert any("not counted in explained_v1_extra_pairs" in line for line in admits)
+    outside = basis["results_this_contract_does_not_carry"]
+    assert any("pair63_finished_track.py" in line for line in outside)
+    assert any("pair30_merge_input.py" in line for line in outside)
+    assert any("residue is NOT closed by" in line for line in outside)
+    assert any("sufficient to reproduce" in line for line in outside)
+    assert "INJECTION EXPERIMENTS ONLY" in basis["what_a_credit_therefore_means"]
     assert "does not establish that the replay produced those tracks" in \
         basis["what_a_credit_therefore_means"]
     assert written["explained_v1_extra_pairs"] == [74]
@@ -1700,3 +1725,125 @@ def test_an_incomplete_or_undeclared_experiment_cannot_escape_validation(tmp_pat
                                    "reason": "version 1 dumps no axis there"}
     unperformed["parameters"]["reference_tracks"] = []
     assert _member(M, {"a.json": unperformed}, V)["problems"] == []
+
+
+def _write_case_mat(path, level=700.0, rean="ERA-Int", bump=0.0, compress=True):
+    """An exported window in the shape scripts/export_tracker_case.py writes, with its
+    identifier computed the way that script computes it."""
+    import numpy as np
+    from scipy.io import savemat
+    sys.path.insert(0, os.path.join(HERE, "..", "scripts"))
+    from export_tracker_case import case_id
+    payload = {"lat_c": np.array([10.0, 12.0]), "lon_c": np.array([30.0, 32.0]),
+               "time": np.array([33022.25, 33022.5]),
+               # no singleton dimension, as the real payload's grids and stacks have
+               # none: that is the precondition the squeeze normalization rests on
+               "u": np.array([[[1.0 + bump, 2.0], [3.0, 4.0]],
+                              [[5.0, 6.0], [7.0, 8.0]]]),
+               "rean": rean, "level": float(level)}
+    payload["case_id"] = case_id(payload)
+    savemat(str(path), payload, do_compression=compress)
+    return payload["case_id"]
+
+
+def _write_port_mat(path, case, lat=(10.0, 11.0), source="aa" * 32, exclusive=0.0,
+                    git_head="deadbeef", dirty=False):
+    """A port output in the shape that script writes, with its producer record."""
+    import numpy as np
+    from scipy.io import savemat
+    record = {"case_id": case, "producer": "scripts/export_tracker_case.py",
+              "settings": {"year": 1990, "start": 600, "steps": 60},
+              "source_sha256": {"src/aew/v1port/detection.py": source},
+              "climo_cache_sha256": "cc" * 32, "git_head": git_head, "git_dirty": dirty}
+    savemat(str(path), {"n": 1.0, "case_id": case, "exclusive": exclusive, "absorb": 0.0,
+                        "lat0": np.array(lat), "lon0": np.array([30.0, 31.0]),
+                        "time0": np.array([33022.25, 33022.5]),
+                        "producer_json": json.dumps(record, sort_keys=True)},
+            do_compression=True)
+
+
+def test_an_exchange_input_is_bound_by_its_content_and_not_by_its_bytes(tmp_path):
+    """R58 through R63. savemat is not deterministic, so re-exporting an identical window
+    writes identical numbers under a new digest. On 2026-09-21 the scratch holding the
+    original was cleared and the rebuild differed in git_head and git_dirty alone, while
+    the binding compared bytes and would have refused all sixteen cases for a rewrite. The
+    identity is recomputed from the loaded fields, and it must accept a reserialization
+    while refusing any change to what the evidence says."""
+    M = _load()
+    a, b = tmp_path / "case_a.mat", tmp_path / "case_b.mat"
+    cid = _write_case_mat(a)
+    # the same content in two different serializations, which is what a rebuild produces.
+    # savemat also varies with the clock, but at one-second granularity, so the encoding
+    # is varied here instead to keep the test from depending on timing.
+    assert _write_case_mat(b, compress=False) == cid
+    assert hashlib.sha256(a.read_bytes()).hexdigest() != \
+        hashlib.sha256(b.read_bytes()).hexdigest()
+    id_a, why_a = M.exchange_content_identity(str(a), "tracker_case.mat")
+    id_b, why_b = M.exchange_content_identity(str(b), "tracker_case.mat")
+    assert why_a == [] and why_b == []
+    assert id_a == id_b                                   # R58: the reserialization passes
+
+    # R59: a changed scientific value in the window
+    c = tmp_path / "case_c.mat"; _write_case_mat(c, bump=1e-9)
+    id_c, _ = M.exchange_content_identity(str(c), "tracker_case.mat")
+    assert id_c != id_a
+    # and a changed setting recorded in the window
+    d = tmp_path / "case_d.mat"; _write_case_mat(d, level=650.0)
+    assert M.exchange_content_identity(str(d), "tracker_case.mat")[0] != id_a
+    e = tmp_path / "case_e.mat"; _write_case_mat(e, rean="ERA5")
+    assert M.exchange_content_identity(str(e), "tracker_case.mat")[0] != id_a
+
+    # R63: the stored identifier is recomputed, not trusted
+    import numpy as np
+    from scipy.io import loadmat, savemat
+    raw = {k: v for k, v in loadmat(str(a)).items() if not k.startswith("__")}
+    raw["case_id"] = "0" * 32
+    lying = tmp_path / "case_lying.mat"; savemat(str(lying), raw, do_compression=True)
+    got, why = M.exchange_content_identity(str(lying), "tracker_case.mat")
+    assert got == {} and any("stores case identifier" in w for w in why)
+
+    # the port output, same discrimination
+    pa, pb = tmp_path / "port_a.mat", tmp_path / "port_b.mat"
+    _write_port_mat(pa, cid)
+    _write_port_mat(pb, cid, git_head="feedface", dirty=True)   # labels only
+    ia, wa = M.exchange_content_identity(str(pa), "tracker_port.mat")
+    ib, wb = M.exchange_content_identity(str(pb), "tracker_port.mat")
+    assert wa == [] and wb == []
+    assert ia == ib, "git_head and git_dirty must not change what the evidence is"
+    for name, kwargs in (("track coordinate", {"lat": (10.0, 11.5)}),      # R60
+                         ("executed source", {"source": "bb" * 32}),       # R61
+                         ("run setting", {"exclusive": 1.0})):             # R62
+        q = tmp_path / f"port_{name.replace(' ', '_')}.mat"
+        _write_port_mat(q, cid, **kwargs)
+        assert M.exchange_content_identity(str(q), "tracker_port.mat")[0] != ia, name
+
+
+def test_the_binding_accepts_a_recorded_reserialization_and_nothing_else(tmp_path):
+    """The digest a case declares must name retained evidence, either that file or
+    something a retained file is a recorded reserialization of. An unrelated digest is
+    refused, and so is a retained file whose content has moved since the manifest."""
+    M = _load()
+    old_case, old_port = "1" * 64, "2" * 64
+    a, pa = tmp_path / "case.mat", tmp_path / "port.mat"
+    cid = _write_case_mat(a); _write_port_mat(pa, cid)
+    manifest = tmp_path / "manifest.json"
+    entries = []
+    for role, path, prev in (("tracker_case.mat", a, old_case),
+                             ("tracker_port.mat", pa, old_port)):
+        ident, why = M.exchange_content_identity(str(path), role); assert why == []
+        entries.append({"role": role, "file": str(path), "content_identity": ident,
+                        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                        "reserialization_of": [prev]})
+    manifest.write_text(json.dumps({"logs": [], "outputs": [], "exchange": entries}))
+    ex, why = M.verified_exchange(str(manifest))
+    assert why == []
+    assert M.equivalent_exchange(old_case, "tracker_case.mat", ex)      # the predecessor
+    assert M.equivalent_exchange(entries[0]["sha256"], "tracker_case.mat", ex)
+    assert not M.equivalent_exchange(old_case, "tracker_port.mat", ex)  # wrong role
+    assert not M.equivalent_exchange("9" * 64, "tracker_case.mat", ex)  # unrelated
+    # a retained file whose content moved since the manifest recorded it
+    _write_case_mat(a, bump=1e-9)
+    moved = tmp_path / "moved.json"
+    moved.write_text(json.dumps({"logs": [], "outputs": [], "exchange": entries}))
+    _ex2, why2 = M.verified_exchange(str(moved))
+    assert any("has digest" in w or "content identity" in w for w in why2)

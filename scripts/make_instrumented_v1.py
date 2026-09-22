@@ -16,6 +16,14 @@ WHAT IS ADDED, and it is deliberately the least that answers the question: one g
 five printf blocks, each guarded by a time match against that global. With the global empty
 every guard is false, so the instrumented copy computes exactly what the original does. The
 caller checks that by comparing its finished tracks against the uninstrumented run.
+
+THE MERGE INPUT WAS ADDED LAST, 2026-09-21, and is the only record here that can be replayed
+rather than merely read. Everything else is a summary at %.4f. `POTWV`, `MERGETHR` and
+`CRVT` carry the ordered candidate list, the threshold and the masked curvature field at
+full precision, which are exactly the arguments of the coarse `merge_contours_f` call, so a
+standalone rerun of that function can be checked against the `COARSE` records from the same
+run. It exists because the `AXIS` records are emitted under version 1's first guard only and
+are a SUPERSET of the merge input, and reading them as the input produced a wrong answer.
 """
 import argparse
 import os
@@ -83,6 +91,33 @@ def patch(source):
         printf('\\n');
       end
     end
+    % THE ACTUAL ORDERED MERGE INPUT, which nothing above records. The AXIS and AXISPTS
+    % loops run under version 1's FIRST guard only, while pot_wv is built with two further
+    % conditions on every contour after the first, so those records are a SUPERSET of this
+    % and their count is an upper bound. Reading them as the merge input produced a wrong
+    % answer on pair 63 that was caught from this file's source.
+    %
+    % FULL PRECISION AND IN ORDER. %.17g round-trips a double, and pass 2 of the merge is
+    % order dependent, so the index is printed and the loop runs in the order
+    % merge_contours_f receives. The summary records above use %.4f, which is enough to
+    % locate a wave and not enough to rerun the merge on it.
+    for zz = 1:size(pot_wv,2);
+      printf('POTWV %.17g %d %.17g %.17g %.17g\\n', time(t), zz, ...
+             pot_wv(zz).lat_mean, pot_wv(zz).lon_mean, pot_wv(zz).time);
+    end
+    % The threshold and the MASKED CURVATURE the merge is handed, which is crvt and NOT
+    % the advection field the FIELD records carry. Both are arguments to the call below,
+    % so a standalone rerun of merge_contours_f needs them to reproduce this step.
+    printf('MERGETHR %.17g %.17g\\n', time(t), curv_thr_c);
+    for rr = 1:size(crvt,1);
+      for cc = 1:size(crvt,2);
+        if ~isnan(crvt(rr,cc));
+          printf('CRVT %.17g %d %d %.17g %.17g %.17g\\n', time(t), rr, cc, ...
+                 latgrid_c(rr,cc), longrid_c(rr,cc), crvt(rr,cc));
+        end
+      end
+    end
+    printf('CRVTSHAPE %.17g %d %d\\n', time(t), size(crvt,1), size(crvt,2));
     fflush(stdout);
   end
 """ + COARSE_MERGE)

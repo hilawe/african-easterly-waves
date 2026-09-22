@@ -37,7 +37,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from aew.v1port.geometry import great_circle_distance  # noqa: E402
 
-# version 1's track 41, the feature under investigation
+# version 1's track 41, the eastern Africa wave this was first written for. It is the
+# DEFAULT and no longer the only case: --feature takes another track's positions, so the
+# same instrument serves any pair whose difference is downstream of detection. Added
+# 2026-09-21 for pair 30, rather than writing a second tool for the same question.
 FEATURE = [(33027.00, -8.25, 33.50), (33027.50, -9.25, 32.67),
            (33027.75, -10.55, 32.10), (33028.25, -11.10, 30.60),
            (33028.50, -11.40, 29.10), (33028.75, -11.50, 27.50),
@@ -93,7 +96,29 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dump", default=None,
                     help="the instrumented run's log (default $AEW_ORACLE_DIR/../instrumented.log)")
+    ap.add_argument("--feature", default=None,
+                    help="the track to examine, as time,lat,lon triples separated by "
+                         "semicolons. Defaults to the eastern Africa wave.")
+    ap.add_argument("--label", default="THE EASTERN AFRICA FEATURE",
+                    help="what to call the feature in the printed heading")
+    ap.add_argument("--port-note", default=None,
+                    help="one line stating what the PORT does at these steps, for the "
+                         "closing comparison. Without it the closing note is generic, "
+                         "because the default one describes the eastern Africa wave only.")
     args = ap.parse_args(argv)
+    feature = FEATURE
+    if args.feature:
+        feature = []
+        for chunk in args.feature.split(";"):
+            chunk = chunk.strip()
+            if not chunk:
+                continue
+            bits = chunk.split(",")
+            if len(bits) != 3:
+                raise SystemExit(f"{chunk!r} is not a time,lat,lon triple")
+            feature.append(tuple(float(x) for x in bits))
+        if not feature:
+            raise SystemExit("--feature was given and parsed to nothing")
     dump = args.dump or os.path.join(
         os.path.dirname(os.environ["AEW_ORACLE_DIR"].rstrip("/")), "instrumented.log")
     if not os.path.exists(dump):
@@ -102,11 +127,16 @@ def main(argv=None):
     if not axes:
         raise SystemExit(f"{dump} holds no AXIS lines; the instrumentation did not fire.")
 
-    print("VERSION 1'S OWN INTERMEDIATE STATE AT THE EASTERN AFRICA FEATURE\n")
-    print("The port's figures for the same timesteps are in THE_EASTERN_AFRICA_WAVE.md.\n")
+    print(f"VERSION 1'S OWN INTERMEDIATE STATE AT {args.label}\n")
+    missing = [t for t, _, _ in feature if t not in axes]
+    if missing:
+        raise SystemExit(
+            f"the dump holds no records at {len(missing)} of the {len(feature)} requested "
+            f"steps, first {missing[0]}. Rerun run_tracker_instrumented.m with "
+            f"AEW_DUMP_TIMES covering them, rather than reading a table with holes in it.")
     print(f"  {'time':>9} {'axes':>5} {'longest axis':>13} {'median span':>12} | "
           f"{'coarse':>7} {'nearest':>8} | {'fine':>5} {'nearest':>8}")
-    for t, la, lo in FEATURE:
+    for t, la, lo in feature:
         a = axes.get(t, [])
         spans = np.array([x[3] for x in a]) if a else np.array([0.0])
         longest = spans.max() if a else 0.0
@@ -121,18 +151,25 @@ def main(argv=None):
 
     print("VERSION 1'S LIVE TRACKS NEAR THE FEATURE, within 500 km at each timestep:\n")
     print(f"  {'time':>9} {'live':>5} {'near':>5} | {'the ones near it: obs, last position'}")
-    for t, la, lo in FEATURE:
+    for t, la, lo in feature:
         live = tracks.get(t, [])
         near = [x for x in live
                 if float(great_circle_distance(la, lo, x[2], x[3])) <= 500.0]
         detail = "; ".join(f"{n} obs at ({y:+.1f},{z:+.1f})" for _, n, y, z, _ in near)
         print(f"  {t:9.2f} {len(live):5d} {len(near):5d} | {detail}")
 
-    print("\n  The port builds three fragments here, of 3, 7 and 2 observations, and its")
-    print("  prune discards all three because none exceeds eight. If version 1 carries one")
-    print("  track with a growing count through these rows, its association is holding")
-    print("  together what the port's splits, and the divergence is in association rather")
-    print("  than detection.")
+    if args.port_note:
+        print(f"\n  {args.port_note}")
+    elif feature is FEATURE:
+        print("\n  The port builds three fragments here, of 3, 7 and 2 observations, and its")
+        print("  prune discards all three because none exceeds eight.")
+    print("\n  HOW TO READ THE TRACK ROWS. If version 1 carries ONE track with a growing")
+    print("  observation count through these rows where the port builds several short ones,")
+    print("  its association is holding together what the port's splits, and the divergence")
+    print("  is in association rather than detection. If version 1 ALSO fragments and its")
+    print("  prune keeps the pieces, the divergence is in the prune's input instead.")
+    print("  THIS DUMP RECORDS POSITIONS, NOT DECISIONS, so a link version 1 makes and the")
+    print("  port does not appears here as an outcome and never as a reason.")
     return 0
 
 

@@ -35,7 +35,7 @@ def _sha256(path):
 BINDING_FILES = ("tracker_case.mat", "tracker_port.mat")
 
 
-def binding_problems(residuals, cases):
+def binding_problems(residuals, cases, exchange=None):
     """The reasons a case artifact is NOT a case from the residual artifact's own
     comparison. Track indices are local to a run, so a case must agree with the
     residual artifact on the case identifier, the exported-case digest and the
@@ -43,7 +43,16 @@ def binding_problems(residuals, cases):
     output digests are NOT compared, because instrumented runs with different dump
     schedules legitimately carry different producer metadata over identical tracks.
     A review copied a genuine case artifact, renamed its case and replaced these
-    digests, and the first version credited its claims."""
+    digests, and the first version credited its claims.
+
+    TWO DIGESTS MAY DIFFER AND STILL NAME THE SAME EVIDENCE. `savemat` is not
+    deterministic, so re-exporting an identical window writes identical numbers under a
+    new digest, and on 2026-09-21 that is exactly what happened after the scratch holding
+    the original was cleared. A digest that a RETAINED exchange input records as a
+    verified reserialization of is therefore accepted, and the acceptance is recorded so
+    the artifact says which binding held. The file digests are still required to agree
+    with each other: the relaxation is only that a recorded, recomputed content
+    equivalence stands in for byte identity."""
     problems = []
     r_case = residuals.get("case_id")
     r_hashes = residuals.get("input_sha256") or {}
@@ -57,10 +66,42 @@ def binding_problems(residuals, cases):
         for f in BINDING_FILES:
             if f not in r_hashes or f not in c_hashes:
                 problems.append(f"{name}: the digest of {f} is missing on one side")
-            elif c_hashes[f] != r_hashes[f]:
+            elif c_hashes[f] != r_hashes[f] and not same_exchange(
+                    c_hashes[f], r_hashes[f], f, exchange):
                 problems.append(f"{name}: {f} differs from the residual artifact's, so the "
                                 f"case comes from another export or another port run")
+            elif not equivalent_exchange(c_hashes[f], f, exchange):
+                problems.append(f"{name}: {f} names digest {c_hashes[f][:12]}, which is "
+                                f"neither a retained exchange input nor a verified "
+                                f"reserialization of one")
     return problems
+
+
+def same_exchange(a, b, role, exchange):
+    """Whether two DIFFERENT digests name the same retained exchange input, one of them as
+    a recorded reserialization of the other.
+
+    This is what lets a case built after the 2026-09-21 rebuild bind to a residual
+    artifact written before it. Both digests must resolve, through the retained manifest,
+    to the same file in the same role, whose content identity was recomputed when the
+    manifest was read."""
+    if not exchange:
+        return False
+    x, y = exchange.get(a), exchange.get(b)
+    return bool(x and y) and x["role"] == role and y["role"] == role \
+        and x["path"] == y["path"]
+
+
+def equivalent_exchange(digest, role, exchange):
+    """Whether a declared exchange digest names evidence this project retains, either as
+    itself or as something a retained file is a verified reserialization of.
+
+    With no retained exchange supplied at all the question is not asked, which keeps every
+    caller that does not carry the exchange working as before."""
+    if not exchange:
+        return True
+    known = exchange.get(digest)
+    return bool(known) and known.get("role") == role
 
 
 REQUIRED_RUNS = ("baseline", "intervention", "control", "shape_control")
@@ -379,6 +420,130 @@ def recomputed_outcomes(name, case, explains, outputs):
     return problems, out
 
 
+# WHERE THE CODE WAS CHECKED OUT, not what ran. `source_sha256` inside the same record
+# pins the executed sources by content, so these two are strictly weaker provenance and
+# are the only fields that move when an identical export is reserialized.
+EXCHANGE_LABEL_FIELDS = ("git_head", "git_dirty")
+
+
+def _mat_payload(path, drop=()):
+    """A MAT file's fields, normalized back to the shapes the writer held before
+    serialization: singleton dimensions squeezed, string arrays returned as strings.
+
+    A MAT round trip turns a vector into a row and a scalar into a one-by-one, so a digest
+    taken over the loaded arrays is not the digest the writer took. Squeezing recovers
+    every shape in these payloads, which is checked by recomputing a known identifier.
+
+    THE PRECONDITION: squeezing recovers the original shape only where the original held
+    no singleton dimension of its own. That holds for these payloads, whose arrays are
+    grids and stacks, and it is verified rather than assumed, because a caller compares
+    the recomputed identifier against the one the file stores and REFUSES on disagreement.
+    A payload that broke the precondition would be refused, not silently accepted."""
+    import numpy as np
+    from scipy.io import loadmat
+    out = {}
+    for name, value in loadmat(path).items():
+        if name.startswith("__") or name in drop:
+            continue
+        array = np.asarray(value)
+        out[name] = (str(array.ravel()[0]) if array.dtype.kind in "US"
+                     else np.squeeze(array))
+    return out
+
+
+def exchange_content_identity(path, role):
+    """What an exchange input IS, computed from its loaded fields, never read out of it.
+
+    A review of this project's own binding found it resting on FILE DIGESTS while the
+    thing it stands for is content. `savemat` is not deterministic, so re-exporting an
+    identical window yields identical numbers under a different digest, and the sixteen
+    committed cases would have been refused for a rewrite rather than for any difference
+    in evidence. Measured on the 2026-09-21 rebuild: every field identical, the port's 114
+    tracks identical track for track, and only `git_head` and `git_dirty` moved.
+
+    THE STORED IDENTIFIER IS NOT TRUSTED. For the exported window the identity is
+    `export_tracker_case.case_id` RECOMPUTED over the loaded payload with the stored
+    `case_id` removed, which is a digest over every exported field. For the port output it
+    is the case identifier it carries, its finished tracks, its settings and the provenance
+    that says what ran, with the two label fields above excluded.
+
+    Returns (identity, problems)."""
+    import hashlib
+    import numpy as np
+    here = os.path.dirname(os.path.abspath(__file__))
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    from export_tracker_case import case_id
+    if not os.path.exists(path):
+        return {}, [f"the exchange input {path} is not present"]
+    try:
+        payload = _mat_payload(path, drop=("case_id",))
+        stored = _mat_payload(path).get("case_id")
+        if role == "tracker_case.mat":
+            identity = {"case_id": case_id(payload)}
+        else:
+            h = hashlib.sha256()
+            for name in sorted(k for k in payload if k[:3] in ("lat", "lon", "tim")):
+                h.update(name.encode())
+                h.update(np.ascontiguousarray(
+                    np.asarray(payload[name], dtype=float)).tobytes())
+            record = json.loads(payload.get("producer_json") or "{}")
+            # EVERY OTHER FIELD, not a chosen few. The settings a run was made under sit
+            # at the top level beside the tracks, and an identity that named only the
+            # tracks and the producer record would have called two runs with different
+            # settings the same evidence.
+            other = {}
+            for name in sorted(payload):
+                if name == "producer_json" or name[:3] in ("lat", "lon", "tim"):
+                    continue
+                value = payload[name]
+                other[name] = (value if isinstance(value, str)
+                               else np.asarray(value, dtype=float).ravel().tolist())
+            identity = {"tracks_sha256": h.hexdigest(),
+                        "fields": other,
+                        "provenance": {k: v for k, v in sorted(record.items())
+                                       if k not in EXCHANGE_LABEL_FIELDS}}
+    except (ImportError, KeyError, ValueError, TypeError, OSError) as e:
+        return {}, [f"the exchange input {path} cannot be read as {role}: {e}"]
+    if role == "tracker_case.mat" and str(stored) != identity["case_id"]:
+        # the stored label disagreeing with the recomputed identity is the one case where
+        # the file is refused outright, since it cannot be both
+        return {}, [f"the exchange input {path} stores case identifier {stored} and its "
+                    f"own fields give {identity['case_id']}"]
+    return identity, []
+
+
+def verified_exchange(manifest_path=None):
+    """The retained exchange inputs, keyed by the FILE digest a case may declare for them,
+    including the predecessor digests each one is a verified reserialization of.
+
+    The manifest's own record of a content identity is not taken on trust: each retained
+    file's identity is recomputed here and must agree with it."""
+    accepted, problems = read_manifest(manifest_path)
+    if problems:
+        return {}, problems
+    out = {}
+    for entry in accepted.get("__exchange__", []):
+        path, role = entry.get("file"), entry.get("role")
+        identity, why = exchange_content_identity(path, role)
+        if why:
+            problems.extend(why)
+            continue
+        digest = _sha256(path)
+        if digest != entry.get("sha256"):
+            problems.append(f"the retained exchange input {path} has digest "
+                            f"{digest[:12]} and the manifest names {str(entry.get('sha256'))[:12]}")
+            continue
+        if entry.get("content_identity") != identity:
+            problems.append(f"the retained exchange input {path} does not hold the "
+                            f"content identity the manifest records for it")
+            continue
+        for known in [digest] + list(entry.get("reserialization_of") or ()):
+            out[known] = {"role": role, "path": path, "identity": identity,
+                          "is_reserialization": known != digest}
+    return out, problems
+
+
 def read_manifest(path=None):
     """The reference runs this project accepts, and why they are pinned here.
 
@@ -395,6 +560,7 @@ def read_manifest(path=None):
         manifest = json.load(fh)
     accepted = {e["sha256"]: e for e in manifest.get("logs") or ()}
     accepted["__outputs__"] = list(manifest.get("outputs") or ())
+    accepted["__exchange__"] = list(manifest.get("exchange") or ())
     return accepted, []
 
 
@@ -992,22 +1158,53 @@ CREDIT_BASIS = {
         "replay's own flag required to agree",
         "the count of finished tracks in the western box during the feature's life, for "
         "every replay, with the replay's own list required to agree"],
+    "intervention_kinds_this_contract_admits": [
+        "INJECTION ONLY. Every check above is written for an experiment that ADDS version "
+        "1's dumped axes to the port's own at declared steps, with a TIME control and a "
+        "SHAPE control. The axis-geometry check re-reads the injected vertices from the "
+        "reference log, and the receipts check requires each injection to have been applied "
+        "at the time requested.",
+        "REORDERING AND REMOVAL ARE NOT ADMITTED, and the omission is structural rather "
+        "than an oversight. A reordering injects no geometry, so there is nothing for the "
+        "axis-vertex check to re-read, and a shape control has no meaning for a permutation "
+        "because translating an ordering four degrees west is not an operation. A removal "
+        "likewise adds nothing, and its control is a different removal rather than a "
+        "displaced injection.",
+        "SO A REORDERING OR REMOVAL RESULT IS NOT CREDITED BY THIS ARTIFACT, however strong "
+        "its own evidence. It is not counted in explained_v1_extra_pairs, it does not appear "
+        "in explained_by_outcome, and it does not raise any count here."],
+    "results_this_contract_does_not_carry": [
+        "Two final-pair results are established OUTSIDE this contract, by separate "
+        "diagnostics whose evidence is retained run JSON rather than the case artifacts "
+        "this module reads: a REORDERING at one step (scripts/pair63_finished_track.py) and "
+        "a REMOVAL at one step (scripts/pair30_merge_input.py).",
+        "THEIR BASIS IS DIFFERENT AND IS STATED WHERE THEY LIVE. Each compares COMPLETE "
+        "finished trajectories by exact float equality against a pinned reference track, "
+        "applies no tolerance in any verdict, requires its controls to fail, and refuses "
+        "rather than reporting when a control does not reproduce the baseline exactly.",
+        "WHAT THEY SUPPORT IS SUFFICIENCY IN ONE WINDOW. Each shows an intervention "
+        "sufficient to reproduce one reference track over the 60-timestep 1990 window. "
+        "Neither establishes that the port is wrong, that the same holds in another window, "
+        "or that any other stage of the two programs agrees.",
+        "UNTIL THIS CONTRACT IS EXTENDED TO VALIDATE THEM, the residue is NOT closed by "
+        "this artifact. Its counts remain the authority for what this module credits."],
     "what_a_credit_therefore_means": (
         "a case whose scope, control-step agreement and injected geometry are the retained "
         "runs' own, and whose outcomes are arithmetic on the tracks it records against an "
         "independent reference. It does not establish that the replay produced those "
         "tracks; that needs a rerun, which is a separate audit gate. Read the counts as "
-        "recomputed from recorded replays, not as independently reproduced.")}
+        "recomputed from recorded replays, not as independently reproduced. AND READ THEM "
+        "AS COVERING INJECTION EXPERIMENTS ONLY, per the two entries above.")}
 
 
-def membership(residuals, cases, logs=None, log_problems=(), outputs=None):
+def membership(residuals, cases, logs=None, log_problems=(), outputs=None, exchange=None):
     """The accounting, which grants no credit without the reference logs.
 
     `logs` is the verified reference runs, keyed by the digest of their contents, and it
     is REQUIRED rather than optional. A mode that produces the same answer without them
     would be the escape hatch the ordinary path takes, and a run that skipped the check
     must never report the result of one."""
-    binding = binding_problems(residuals, cases)
+    binding = binding_problems(residuals, cases, exchange)
     if binding:
         return {"problems": binding}
     if log_problems:
@@ -1149,8 +1346,10 @@ def main(argv=None):
             cases[os.path.basename(path)] = json.load(fh)
     logs, log_problems = verified_logs(args.reference_logs, args.manifest)
     outputs, out_problems = verified_outputs(args.reference_outputs, args.manifest)
-    result = membership(residuals, cases, logs, list(log_problems) + list(out_problems),
-                        outputs)
+    exchange, ex_problems = verified_exchange(args.manifest)
+    result = membership(residuals, cases, logs,
+                        list(log_problems) + list(out_problems) + list(ex_problems),
+                        outputs, exchange)
     if result["problems"]:
         print("REFUSED: " + "; ".join(result["problems"]), flush=True)
         return 2
@@ -1169,6 +1368,15 @@ def main(argv=None):
                        # against, by the digest of the log's own contents
                        "reference_logs_sha256": sorted(logs),
                        "reference_outputs_sha256": sorted(outputs),
+                       # WHICH BINDING HELD for each exchange input: its own bytes, or a
+                       # recomputed content equivalence with a retained reserialization
+                       "exchange_binding": {
+                           d: ("reserialization of the retained "
+                               f"{v['path']}" if v["is_reserialization"]
+                               else f"the retained {v['path']}")
+                           for d, v in sorted(exchange.items())
+                           if d in {h for c in cases.values()
+                                    for h in (c.get("input_sha256") or {}).values()}},
                        "source_sha256": {"scripts/residue_membership.py":
                                          _sha256(os.path.abspath(__file__))}})
         with open(args.out, "w") as fh:
