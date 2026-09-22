@@ -49,16 +49,37 @@ def canonical(final):
 
 
 def describe_difference(a, b, label_a, label_b):
-    """Why two run outputs differ, specifically enough to act on."""
+    """Why two run outputs differ, specifically enough to act on, or None if they do not.
+
+    THIS EXPLAINS A DIFFERENCE. IT DOES NOT DECIDE ONE. `require_identical` compares the
+    canonical structures itself and calls this only to say what changed, which is the
+    repair for a real bypass: the first version delegated its VERDICT here, and this
+    function walked latitudes over `range(len(x[1]))`. Two runs whose TIME arrays matched
+    while one carried an EXTRA LATITUDE were reported identical, because the extra entry
+    lay beyond the range walked, and the same pair in the other order raised IndexError
+    rather than returning a verdict. An explainer that misses a case is a wrong message;
+    an explainer trusted as a verdict is a run that passes when it should refuse.
+    """
     ca, cb = canonical(a), canonical(b)
+    if ca == cb:
+        return None
     if len(ca) != len(cb):
-        return (f"{label_a} holds {len(ca)} finished tracks and {label_b} holds {len(cb)}")
+        return f"{label_a} holds {len(ca)} finished tracks and {label_b} holds {len(cb)}"
     for k, (x, y) in enumerate(zip(ca, cb)):
         if x == y:
             continue
-        if len(x[0]) != len(y[0]):
-            return (f"track {k} in canonical order has {len(x[0])} observations in "
-                    f"{label_a} and {len(y[0])} in {label_b}")
+        # A track's own three arrays must agree in length before any of them is compared
+        # position by position, or "observation j" means different things on the two sides.
+        for label, track in ((label_a, x), (label_b, y)):
+            if not (len(track[0]) == len(track[1]) == len(track[2])):
+                return (f"track {k} in {label} is ragged: {len(track[0])} times, "
+                        f"{len(track[1])} latitudes, {len(track[2])} longitudes")
+        for name, ia, ib in (("observations", len(x[0]), len(y[0])),
+                             ("latitudes", len(x[1]), len(y[1])),
+                             ("longitudes", len(x[2]), len(y[2]))):
+            if ia != ib:
+                return (f"track {k} in canonical order has {ia} {name} in {label_a} and "
+                        f"{ib} in {label_b}")
         for j, (ta, tb) in enumerate(zip(x[0], y[0])):
             if ta != tb:
                 return (f"track {k}, observation {j}: time {ta!r} in {label_a} and "
@@ -68,7 +89,11 @@ def describe_difference(a, b, label_a, label_b):
                 return (f"track {k}, observation {j} at time {x[0][j]}: "
                         f"({x[1][j]!r}, {x[2][j]!r}) in {label_a} and "
                         f"({y[1][j]!r}, {y[2][j]!r}) in {label_b}")
-    return None
+    # Reached only if the structures differ in a way no branch above named. It must still
+    # be a difference, because ca != cb was checked first, so this reports rather than
+    # returning None and letting a caller read silence as agreement.
+    return (f"{label_a} and {label_b} differ, and this explainer could not localize it. "
+            f"Treat that as a defect in the explainer, not as agreement.")
 
 
 def require_identical(a, b, label_a, label_b):
@@ -77,13 +102,16 @@ def require_identical(a, b, label_a, label_b):
     A CONTROL THAT DOES NOT MATCH IS A REFUSAL, NOT A LINE IN A TABLE. If the operation a
     control performs changes the output on its own, nothing the intervention shows can be
     attributed to what the intervention changed, so there is no result to report.
+
+    THE VERDICT IS THE STRUCTURAL COMPARISON, never the explainer's return value.
     """
-    why = describe_difference(a, b, label_a, label_b)
-    if why is not None:
-        raise SystemExit(
-            f"REFUSED: {label_b} does not reproduce {label_a} exactly. {why}. The "
-            f"intervention result is therefore unattributable and is not reported.")
-    return True
+    if canonical(a) == canonical(b):
+        return True
+    why = describe_difference(a, b, label_a, label_b) or (
+        f"{label_a} and {label_b} differ")
+    raise SystemExit(
+        f"REFUSED: {label_b} does not reproduce {label_a} exactly. {why}. The "
+        f"intervention result is therefore unattributable and is not reported.")
 
 
 def reference_output(pattern="docs/aewc_v2/evidence/reference_output_*.mat"):

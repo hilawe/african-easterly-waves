@@ -269,6 +269,45 @@ def bound(explains, oracle_hash="o2" * 32, intervention=None, parameters=None,
                              "tracker_octave_instrumented.mat": oracle_hash}}
 
 
+def operated(indices, operation="removal", steps=(33035.25,), **tweak):
+    """A REMOVAL or REORDERING experiment record, the shape the contract gained 2026-09-22.
+
+    Four runs rather than an injection's four: the baseline, the intervention, a
+    REPRESENTATION control whose finished tracks are the baseline's, and a NEGATIVE control
+    that changes something unrelated. `tweak` overrides fields inside the intervention run
+    so a test can break exactly one thing."""
+    def refs(exact):
+        return [{"reference_index": i, "reproduced_exactly": exact} for i in indices]
+
+    base_tracks = [filler(steps, 1.0)]
+    exact = {"baseline": False, "intervention": True,
+             "representation_control": False, "negative_control": False}
+    tracks = {"baseline": base_tracks,
+              # THE REPRESENTATION CONTROL'S TRACKS ARE THE BASELINE'S, which is the whole
+              # point of it and what the checker compares rather than trusting a flag.
+              "representation_control": base_tracks,
+              "negative_control": [filler(steps, 2.0)],
+              "intervention": [reference_track(steps)]}
+    out = {"operation": operation, "partial_runs": []}
+    for label in exact:
+        out[label] = {"reference_tracks": refs(exact[label]),
+                      "finished_tracks": tracks[label],
+                      "finished_tracks_in_the_western_box": [{"steps": 9}]}
+    run = out["intervention"]
+    run["changed_at"] = steps[0]
+    run["population_before"] = 77
+    run["population_after"] = 76 if operation == "removal" else 77
+    if operation == "removal":
+        run["removed"] = {"lat": -3.71, "lon": -87.37}
+        run["identified_by"] = "leave-one-out over all 75 axes at this step"
+    else:
+        run["moved_from"] = 65
+        run["moved_to"] = 58
+        run["positions_unchanged"] = True
+    run.update(tweak)
+    return out
+
+
 def residuals(steps=(33035.25,)):
     """The residual artifact a case is bound to. It records, for each version-1-extra
     pair, the times at which version 1 holds an observation and the port does not, and
@@ -1294,7 +1333,7 @@ def test_the_written_artifact_states_what_a_credit_rests_on(tmp_path):
                           "claimed_by_the_replay_records",
                           "recomputed_from_the_replay_records_against_the_pinned_reference",
                           "intervention_kinds_this_contract_admits",
-                          "results_this_contract_does_not_carry",
+                          "what_the_common_checks_are",
                           "what_a_credit_therefore_means"}
     assert any("produced the finished tracks it records" in line
                for line in basis["claimed_by_the_replay_records"])
@@ -1305,16 +1344,20 @@ def test_the_written_artifact_states_what_a_credit_rests_on(tmp_path):
     # checks cannot validate: there is no injected geometry to re-read and no meaningful
     # shape control for a permutation. A contract silent about its own scope reads as
     # covering everything, and the residue was briefly described as closed on that reading.
+    # THE CONTRACT MUST SAY WHICH OPERATIONS IT COVERS AND ON WHAT TERMS. It once covered
+    # injection alone and said so; since 2026-09-22 it carries removal and reordering with
+    # operation-specific checks, and the two controls those need are not interchangeable.
     admits = basis["intervention_kinds_this_contract_admits"]
-    assert any("INJECTION ONLY" in line for line in admits)
-    assert any("REORDERING AND REMOVAL ARE NOT ADMITTED" in line for line in admits)
-    assert any("not counted in explained_v1_extra_pairs" in line for line in admits)
-    outside = basis["results_this_contract_does_not_carry"]
-    assert any("pair63_finished_track.py" in line for line in outside)
-    assert any("pair30_merge_input.py" in line for line in outside)
-    assert any("residue is NOT closed by" in line for line in outside)
-    assert any("sufficient to reproduce" in line for line in outside)
-    assert "INJECTION EXPERIMENTS ONLY" in basis["what_a_credit_therefore_means"]
+    assert any("INJECTION, REMOVAL and REORDERING" in line for line in admits)
+    assert any("read as an INJECTION" in line for line in admits)
+    assert any("exactly one" in line and "removal" in line for line in admits)
+    assert any("REPRESENTATION CONTROL" in line and "NEGATIVE CONTROL" in line
+               for line in admits)
+    assert any("A credit requires BOTH" in line for line in admits)
+    common = basis["what_the_common_checks_are"]
+    assert any("EVERY OPERATION TAKES THEM" in line for line in common)
+    assert any("ADDED CHECKS AND REMOVED NONE" in line for line in common)
+    assert "three operations" in basis["what_a_credit_therefore_means"]
     assert "does not establish that the replay produced those tracks" in \
         basis["what_a_credit_therefore_means"]
     assert written["explained_v1_extra_pairs"] == [74]
@@ -1847,3 +1890,116 @@ def test_the_binding_accepts_a_recorded_reserialization_and_nothing_else(tmp_pat
     moved.write_text(json.dumps({"logs": [], "outputs": [], "exchange": entries}))
     _ex2, why2 = M.verified_exchange(str(moved))
     assert any("has digest" in w or "content identity" in w for w in why2)
+
+
+# ---------------------------------------------------------------------------------------
+# REMOVAL AND REORDERING, carried by the contract since 2026-09-22.
+#
+# Until then the checker validated INJECTIONS only, and the two final-pair results were a
+# reordering and a removal that it could not carry, so the residue stayed open while the
+# science sat outside the artifact. These tests pin the operation-specific checks AND the
+# common ones, because the point of the extension is that it added checks and removed none.
+# ---------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("operation", ["removal", "reordering"])
+def test_a_removal_or_reordering_is_credited_on_its_own_terms(operation):
+    M = _load()
+    out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
+                                      intervention=operated([74], operation))})
+    assert out["problems"] == []
+    assert out["explained_v1_extra_pairs"] == [74]
+    assert out["explained_by_outcome"]["v1_extra_pairs"]["reproduced"] == [74]
+
+
+@pytest.mark.parametrize("operation, tweak, why", [
+    # The step it changes must be one the case declared, or it is a different experiment.
+    ("removal", {"changed_at": 33035.75}, "does not declare as a divergence step"),
+    ("removal", {"changed_at": None}, "no readable changed_at"),
+    # THE POPULATION ARITHMETIC IS WHAT MAKES THE OPERATION THE ONE IT CLAIMS.
+    ("removal", {"population_after": 75}, "not the removal of exactly one"),
+    ("removal", {"population_after": 77}, "not the removal of exactly one"),
+    ("reordering", {"population_after": 76}, "did not only reorder"),
+    ("removal", {"population_before": None}, "no candidate population"),
+    # A removal must say WHICH and HOW, so a principled choice can be told from a search.
+    ("removal", {"removed": None}, "does not record WHICH candidate"),
+    ("removal", {"identified_by": None}, "does not record how the removed candidate"),
+    # A reordering must name its move and assert the positions are untouched.
+    ("reordering", {"moved_from": None}, "does not record the index it moved from"),
+    ("reordering", {"moved_to": 65}, "records a move to the index it moved from"),
+    ("reordering", {"positions_unchanged": None}, "every candidate POSITION is unchanged"),
+])
+def test_an_operation_that_is_not_what_it_claims_is_refused(operation, tweak, why):
+    M = _load()
+    out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
+                                      intervention=operated([74], operation, **tweak))})
+    assert any(why in w for w in out["problems"]), out["problems"]
+    assert out["explained_v1_extra_pairs"] == []
+
+
+def test_a_representation_control_that_moved_the_run_refuses():
+    M = _load()
+    """It must reproduce the baseline EXACTLY, checked from the tracks and not from a flag."""
+    record = operated([74], "removal")
+    record["representation_control"]["finished_tracks"] = [filler((33035.25,), 9.0)]
+    out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
+                                      intervention=record)})
+    assert any("does not reproduce the baseline exactly" in w for w in out["problems"])
+    assert out["explained_v1_extra_pairs"] == []
+
+
+def test_a_negative_control_that_reproduces_the_track_earns_no_credit():
+    M = _load()
+    """If a comparable operation elsewhere does it too, the intervention shows nothing."""
+    record = operated([74], "removal")
+    record["negative_control"]["finished_tracks"] = [reference_track((33035.25,))]
+    record["negative_control"]["reference_tracks"] = [
+        {"reference_index": 74, "reproduced_exactly": True}]
+    out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
+                                      intervention=record)})
+    assert out["explained_v1_extra_pairs"] == []
+
+
+@pytest.mark.parametrize("dropped", ["representation_control", "negative_control"])
+def test_both_controls_are_required_and_are_not_interchangeable(dropped):
+    M = _load()
+    record = operated([74], "removal")
+    del record[dropped]
+    out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
+                                      intervention=record)})
+    assert any(f"records no {dropped} replay" in w for w in out["problems"]), out["problems"]
+    assert out["explained_v1_extra_pairs"] == []
+
+
+def test_an_unknown_operation_is_refused_rather_than_read_as_an_injection():
+    M = _load()
+    record = operated([74], "removal")
+    record["operation"] = "recolouring"
+    out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
+                                      intervention=record)})
+    assert any("which is not one of" in w for w in out["problems"])
+    assert out["explained_v1_extra_pairs"] == []
+
+
+def test_an_artifact_with_no_operation_is_still_read_as_an_injection():
+    M = _load()
+    """Every case written before the field existed must keep working, unchanged."""
+    out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]})})
+    assert out["problems"] == []
+    assert out["explained_v1_extra_pairs"] == [74]
+    assert M.operation_of({"baseline": {}}) == "injection"
+
+
+def test_the_common_checks_still_run_for_a_removal():
+    M = _load()
+    """The extension added operation checks; it must not have skipped the shared evidence.
+
+    A malformed recorded track is refused for a removal exactly as for an injection, since
+    that rule is about the artifact rather than the operation."""
+    record = operated([74], "removal")
+    record["intervention"]["finished_tracks"] = [{"time": [1.0, 2.0], "lat": [1.0],
+                                                  "lon": [1.0, 2.0]}]
+    out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
+                                      intervention=record)})
+    assert any("cannot be compared" in w for w in out["problems"]), out["problems"]
+    assert out["explained_v1_extra_pairs"] == []

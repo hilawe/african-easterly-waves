@@ -106,6 +106,43 @@ def equivalent_exchange(digest, role, exchange):
 
 REQUIRED_RUNS = ("baseline", "intervention", "control", "shape_control")
 
+# THE OPERATION AN EXPERIMENT PERFORMS, added 2026-09-22. Until then every check here was
+# written for an INJECTION, which adds version 1's axes at declared steps and is controlled
+# in TIME and in SHAPE. Two final-pair results are a REORDERING and a REMOVAL, and neither
+# fits: a reordering supplies no geometry for the axis check to re-read, and a shape control
+# is not an operation on a permutation. The contract named them as excluded, which kept the
+# counts honest and left the results uncarried. This carries them, with checks specific to
+# each operation and EVERY COMMON EVIDENCE CHECK PRESERVED: the exchange binding, the scope
+# and examined-index rules, the recomputation of outcomes from recorded tracks against the
+# pinned reference, and the refusal of malformed tracks all apply unchanged.
+OPERATIONS = ("injection", "removal", "reordering")
+
+# A REPRESENTATION CONTROL performs the same mechanical operation with NO semantic change
+# and MUST reproduce the baseline exactly; when it does not, the apparatus moves the run by
+# itself and the experiment is unattributable. A NEGATIVE CONTROL performs a comparable
+# operation on an UNRELATED target and MUST NOT reproduce the reference track; it is not
+# required to reproduce the baseline whole, because acting elsewhere may legitimately change
+# other tracks. They are different instruments and the first version of this file's successor
+# proposal called both "the control".
+REQUIRED_RUNS_BY_OPERATION = {
+    "injection": REQUIRED_RUNS,
+    "removal": ("baseline", "intervention", "representation_control", "negative_control"),
+    "reordering": ("baseline", "intervention", "representation_control", "negative_control"),
+}
+
+
+def operation_of(intervention):
+    """Which operation an experiment records, defaulting to injection.
+
+    THE DEFAULT IS WHAT MAKES EVERY EXISTING ARTIFACT STILL VALID. Sixteen cases were
+    written before this field existed and none carries it; they are injections and are read
+    as injections. A new artifact states its operation explicitly."""
+    return ((intervention or {}).get("operation") or "injection")
+
+
+def required_runs_for(intervention):
+    return REQUIRED_RUNS_BY_OPERATION.get(operation_of(intervention), REQUIRED_RUNS)
+
 REFERENCE_MANIFEST = "docs/aewc_v2/artifacts/reference_logs.json"
 
 
@@ -370,7 +407,7 @@ def recomputed_outcomes(name, case, explains, outputs):
     claimed = list(explains.get("unmatched_v1_tracks") or ()) \
         + list(explains.get("v1_extra_pairs") or ())
     intervention = case.get("intervention") or {}
-    labels = [l for l in REQUIRED_RUNS if intervention.get(l)] \
+    labels = [l for l in required_runs_for(intervention) if intervention.get(l)] \
         + list(intervention.get("partial_runs") or ())
     for label in labels:
         run = intervention.get(label) or {}
@@ -791,6 +828,75 @@ def _axes_equal(a, b, tol=1e-9):
     return True
 
 
+def operation_problems(operation, intervention, steps):
+    """Why a REMOVAL or a REORDERING is not a recorded experiment of that kind.
+
+    These are the checks an injection's geometry rules cannot stand in for. What they do
+    NOT replace is the common evidence: the exchange binding, the scope and examined-index
+    rules, the refusal of malformed tracks and the recomputation of every outcome from
+    recorded tracks against the pinned reference all run for these operations exactly as
+    they do for an injection, because they are about the artifact rather than the
+    operation."""
+    problems = []
+    run = intervention.get("intervention") or {}
+    changed = run.get("changed_at")
+    try:
+        changed = float(changed)
+    except (TypeError, ValueError):
+        problems.append(f"the {operation} records no readable changed_at step")
+        changed = None
+    if changed is not None and not any(abs(changed - t) < 1e-6 for t in steps):
+        problems.append(f"the {operation} changes the run at {changed}, which the case does "
+                        f"not declare as a divergence step")
+    before, after = run.get("population_before"), run.get("population_after")
+    if not isinstance(before, int) or not isinstance(after, int) or before <= 0:
+        problems.append(f"the {operation} records no candidate population before and after")
+    else:
+        # THE POPULATION ARITHMETIC IS WHAT MAKES THE OPERATION THE ONE IT CLAIMS. A removal
+        # that changed the count by anything but one, or a reordering that changed it at
+        # all, is a different experiment under this experiment's name.
+        if operation == "removal" and after != before - 1:
+            problems.append(f"the removal records {before} candidates before and {after} "
+                            f"after, which is not the removal of exactly one")
+        if operation == "reordering" and after != before:
+            problems.append(f"the reordering records {before} candidates before and {after} "
+                            f"after, so it did not only reorder")
+    if operation == "removal":
+        if not run.get("removed"):
+            problems.append("the removal does not record WHICH candidate it removed")
+        if not run.get("identified_by"):
+            problems.append("the removal does not record how the removed candidate was "
+                            "identified, so the choice cannot be told from a search for one "
+                            "that works")
+    if operation == "reordering":
+        moved_from, moved_to = run.get("moved_from"), run.get("moved_to")
+        if not isinstance(moved_from, int) or not isinstance(moved_to, int):
+            problems.append("the reordering does not record the index it moved from and to")
+        elif moved_from == moved_to:
+            problems.append("the reordering records a move to the index it moved from, "
+                            "which changes nothing")
+        if run.get("positions_unchanged") is not True:
+            problems.append("the reordering does not assert that every candidate POSITION is "
+                            "unchanged, which is the whole claim of a reordering")
+    # THE REPRESENTATION CONTROL MUST REPRODUCE THE BASELINE EXACTLY, and that is checked
+    # here from the recorded tracks rather than taken from a flag, because a control the
+    # apparatus moved is an experiment nothing can be attributed to.
+    baseline = (intervention.get("baseline") or {}).get("finished_tracks")
+    mirror = (intervention.get("representation_control") or {}).get("finished_tracks")
+    if not isinstance(baseline, list) or not isinstance(mirror, list):
+        problems.append("the baseline or the representation control records no finished "
+                        "tracks, so the control cannot be checked against the baseline")
+    else:
+        bad = [w for tr in list(baseline) + list(mirror) for w in _track_problems(tr)]
+        if bad:
+            problems.append(f"a recorded track cannot be compared: {bad[0]}")
+        elif len(baseline) != len(mirror) or not all(
+                any(_same_track(x, y) for y in mirror) for x in baseline):
+            problems.append("the representation control does not reproduce the baseline "
+                            "exactly, so the intervention beside it is unattributable")
+    return problems
+
+
 def experiment_problems(intervention, divergence_steps, control_steps=None,
                         control_step_problems=(), reference_vertices=None):
     """Why a recorded experiment set is not one, checked the SAME WAY wherever it is read.
@@ -807,10 +913,14 @@ def experiment_problems(intervention, divergence_steps, control_steps=None,
     experiment compared against a one-injection control is not a comparison, so the counts
     are required to match rather than merely to be nonzero."""
     problems = []
-    if not intervention or not any(isinstance(intervention.get(l), dict)
-                                   for l in REQUIRED_RUNS):
+    runs = required_runs_for(intervention)
+    if not intervention or not any(isinstance(intervention.get(l), dict) for l in runs):
         return ["the artifact records no intervention"]
-    absent = [r for r in REQUIRED_RUNS if not intervention.get(r)]
+    operation = operation_of(intervention)
+    if operation not in OPERATIONS:
+        return [f"the experiment declares operation {operation!r}, which is not one of "
+                f"{list(OPERATIONS)}"]
+    absent = [r for r in runs if not intervention.get(r)]
     if absent:
         # reported ONCE. The label loop below used to append the same absence again.
         problems.append("the experiment records no " + " or ".join(absent) + " replay")
@@ -825,6 +935,13 @@ def experiment_problems(intervention, divergence_steps, control_steps=None,
             return math.isfinite(float(x))
         except (TypeError, ValueError):
             return False
+
+    if operation != "injection":
+        # EVERY CHECK ABOVE IS COMMON and has already run: the runs are present, the control
+        # steps agree, and the case declares divergence steps. What follows is specific to
+        # adding geometry, so a removal or a reordering takes its own checks instead.
+        problems.extend(operation_problems(operation, intervention, steps))
+        return problems
 
     # THE SCHEDULE THE CASE DECLARES, not the list the artifact happens to carry. A review
     # deleted both single-step records and their names, changed one of them to test the
@@ -926,7 +1043,7 @@ def outcome_for(intervention, index, recomputed=None):
     intervention reproduced nothing was credited beside cases that reproduced their tracks
     exactly, and the weaker case was presented as the stronger one. Requiring an examined
     index was a better stand-in for an outcome, not an outcome."""
-    labels = [l for l in REQUIRED_RUNS if intervention.get(l)]
+    labels = [l for l in required_runs_for(intervention) if intervention.get(l)]
     exact, west = {}, {}
     for label in labels:
         run = intervention[label]
@@ -958,19 +1075,45 @@ def outcome_for(intervention, index, recomputed=None):
     # absence of an axis rather than the absence of that line", which is wider than one
     # placement supports and is withdrawn. Treating shape success as a disqualifier would
     # still refuse a case for being better understood, so it does not.
-    nulls = [l for l in labels if l == "control"]
+    # WHICH RUNS MUST FAIL depends on the operation. An injection is controlled in TIME,
+    # and its shape control may reproduce the track, which narrows the claim rather than
+    # disqualifying it. A REMOVAL or a REORDERING has no shape control and instead carries
+    # two runs that must BOTH fail: the NEGATIVE control, a comparable operation on an
+    # unrelated target, and the REPRESENTATION control, the same operation with no semantic
+    # change, which reproduces the baseline and therefore must not reproduce the reference.
+    if operation_of(intervention) == "injection":
+        nulls = [l for l in labels if l == "control"]
+        missing_null = "no time control was recorded, so nothing tests the null"
+    else:
+        nulls = [l for l in labels if l in ("negative_control", "representation_control")]
+        missing_null = ("no negative or representation control was recorded, so nothing "
+                        "tests the null")
+        if len(nulls) < 2:
+            # BOTH ARE REQUIRED AND THEY ARE NOT INTERCHANGEABLE. One shows the apparatus is
+            # inert, the other that the effect is specific to what was changed, and an
+            # experiment carrying only one of them establishes only half of that.
+            return None, ("a removal or reordering needs BOTH a representation control and "
+                          "a negative control, and this records " + str(sorted(nulls)))
     if not nulls:
         # AN ABSENT NULL IS NOT A PASSED NULL. `not any([])` is True, so without this an
         # experiment with no time control at all read as one the control failed to
         # reproduce. The command never reaches here without one, since the experiment
         # contract refuses first, but this function is public and must hold on its own.
-        return None, "no time control was recorded, so nothing tests the null"
+        return None, missing_null
     if exact["intervention"] and not exact["baseline"] \
             and not any(exact[l] for l in nulls):
         return "reproduced", None
     if exact["baseline"] or any(exact[l] for l in nulls):
-        return None, ("the untouched replay reproduces it" if exact["baseline"]
-                      else "the time control reproduces it as well as the intervention")
+        if exact["baseline"]:
+            return None, "the untouched replay reproduces it"
+        # NAMED AS THE READER KNOWS THEM. The injection's null run is stored under the
+        # label "control" and has always been reported as "the time control"; keeping that
+        # wording matters because it is what the refusal has always said.
+        spoken = {"control": "time control", "negative_control": "negative control",
+                  "representation_control": "representation control"}
+        failed = sorted(spoken.get(l, l) for l in nulls if exact[l])
+        return None, (f"the {' and the '.join(failed)} reproduces it as well as the "
+                      f"intervention")
     if west.get("intervention") is None or west["baseline"] is None:
         return None, "no finished-track measurement to fall back on"
     others = [west[l] for l in ["baseline"] + nulls if west.get(l) is not None]
@@ -998,7 +1141,7 @@ def experiment_recorded(case):
     iv = case.get("intervention") or {}
     if not isinstance(iv, dict):
         return False
-    labels = list(REQUIRED_RUNS) + list(iv.get("partial_runs") or ())
+    labels = list(required_runs_for(iv)) + list(iv.get("partial_runs") or ())
     if any(isinstance(iv.get(l), dict) for l in labels):
         return True
     return bool(iv.get("injected_axes")) or bool(iv.get("declared_steps"))
@@ -1159,42 +1302,50 @@ CREDIT_BASIS = {
         "the count of finished tracks in the western box during the feature's life, for "
         "every replay, with the replay's own list required to agree"],
     "intervention_kinds_this_contract_admits": [
-        "INJECTION ONLY. Every check above is written for an experiment that ADDS version "
-        "1's dumped axes to the port's own at declared steps, with a TIME control and a "
-        "SHAPE control. The axis-geometry check re-reads the injected vertices from the "
-        "reference log, and the receipts check requires each injection to have been applied "
-        "at the time requested.",
-        "REORDERING AND REMOVAL ARE NOT ADMITTED, and the omission is structural rather "
-        "than an oversight. A reordering injects no geometry, so there is nothing for the "
-        "axis-vertex check to re-read, and a shape control has no meaning for a permutation "
-        "because translating an ordering four degrees west is not an operation. A removal "
-        "likewise adds nothing, and its control is a different removal rather than a "
-        "displaced injection.",
-        "SO A REORDERING OR REMOVAL RESULT IS NOT CREDITED BY THIS ARTIFACT, however strong "
-        "its own evidence. It is not counted in explained_v1_extra_pairs, it does not appear "
-        "in explained_by_outcome, and it does not raise any count here."],
-    "results_this_contract_does_not_carry": [
-        "Two final-pair results are established OUTSIDE this contract, by separate "
-        "diagnostics whose evidence is retained run JSON rather than the case artifacts "
-        "this module reads: a REORDERING at one step (scripts/pair63_finished_track.py) and "
-        "a REMOVAL at one step (scripts/pair30_merge_input.py).",
-        "THEIR BASIS IS DIFFERENT AND IS STATED WHERE THEY LIVE. Each compares COMPLETE "
-        "finished trajectories by exact float equality against a pinned reference track, "
-        "applies no tolerance in any verdict, requires its controls to fail, and refuses "
-        "rather than reporting when a control does not reproduce the baseline exactly.",
-        "WHAT THEY SUPPORT IS SUFFICIENCY IN ONE WINDOW. Each shows an intervention "
-        "sufficient to reproduce one reference track over the 60-timestep 1990 window. "
-        "Neither establishes that the port is wrong, that the same holds in another window, "
-        "or that any other stage of the two programs agrees.",
-        "UNTIL THIS CONTRACT IS EXTENDED TO VALIDATE THEM, the residue is NOT closed by "
-        "this artifact. Its counts remain the authority for what this module credits."],
+        "INJECTION, REMOVAL and REORDERING. An experiment declares its operation, and an "
+        "artifact that declares none is read as an INJECTION, which is what every case "
+        "written before 2026-09-22 is.",
+        "AN INJECTION adds version 1's dumped axes at declared steps and is controlled in "
+        "TIME and in SHAPE. Its axis-geometry check re-reads the injected vertices from the "
+        "reference log, and its receipts must show each injection applied at the time "
+        "requested. The shape control MAY reproduce the track, which narrows the claim "
+        "rather than disqualifying it.",
+        "A REMOVAL takes one candidate out, and a REORDERING moves one within the list. "
+        "Neither supplies geometry to re-read and neither has a meaningful shape control, "
+        "since translating a permutation four degrees west is not an operation. Each is "
+        "checked on its own terms instead: the step it changes must be a declared "
+        "divergence step; a removal must change the candidate count by exactly one and "
+        "record WHICH candidate and HOW it was identified, so a principled choice can be "
+        "told from a search for one that works; a reordering must change the count by "
+        "nothing, name the indices it moved between, and assert every position unchanged.",
+        "BOTH CARRY TWO CONTROLS THAT ARE NOT INTERCHANGEABLE. A REPRESENTATION CONTROL "
+        "performs the same mechanical operation with no semantic change and MUST reproduce "
+        "the baseline exactly, checked here from the recorded tracks rather than from a "
+        "flag; when it does not, the apparatus moves the run by itself and the experiment "
+        "is unattributable. A NEGATIVE CONTROL performs a comparable operation on an "
+        "UNRELATED target and MUST NOT reproduce the reference track; it is not required to "
+        "reproduce the baseline whole, because acting elsewhere may legitimately change "
+        "other tracks. A credit requires BOTH, and an experiment recording only one "
+        "establishes half of what it claims."],
+    "what_the_common_checks_are": [
+        "EVERY OPERATION TAKES THEM, because they are about the artifact rather than the "
+        "operation: the exchange binding by content identity, the membership of every "
+        "claimed index in the category claimed for it, the scope rules that fix the "
+        "divergence steps from the two pinned outputs, the requirement that a performed "
+        "experiment declare a valid non-empty examined set, the refusal of any malformed "
+        "recorded track, and the recomputation of every outcome from recorded tracks "
+        "against the pinned reference with the replay's own flag required to agree.",
+        "SO EXTENDING THE CONTRACT ADDED CHECKS AND REMOVED NONE. A removal or reordering "
+        "credit rests on the same evidence an injection credit does, plus the checks above "
+        "that only its own operation can be given."],
     "what_a_credit_therefore_means": (
         "a case whose scope, control-step agreement and injected geometry are the retained "
         "runs' own, and whose outcomes are arithmetic on the tracks it records against an "
         "independent reference. It does not establish that the replay produced those "
         "tracks; that needs a rerun, which is a separate audit gate. Read the counts as "
-        "recomputed from recorded replays, not as independently reproduced. AND READ THEM "
-        "AS COVERING INJECTION EXPERIMENTS ONLY, per the two entries above.")}
+        "recomputed from recorded replays, not as independently reproduced. The scope is "
+        "the three operations named above, each with its own checks and all of them with "
+        "the common ones.")}
 
 
 def membership(residuals, cases, logs=None, log_problems=(), outputs=None, exchange=None):
