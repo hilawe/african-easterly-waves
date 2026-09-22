@@ -78,7 +78,17 @@ def reorder_hook(original, now, mode, record):
             raise SystemExit(f"the pair is not where this expects it at {STEP}: the feature "
                              f"is {df:.3f} deg away and the remover {dr:.3f} deg. Refusing "
                              f"rather than reordering something else.")
-        if mode == "pair":
+        if mode == "identity":
+            # THE REPRESENTATION CONTROL. The same mechanical move with NO semantic change:
+            # the feature's axis is popped and reinserted AT ITS OWN INDEX, so the list is
+            # rebuilt by the identical operation and comes out unchanged. It is the exact
+            # analogue of pair 30's "replace the candidate by itself", and the contract
+            # requires it beside the negative control because they establish different
+            # things: this one that the apparatus is inert, the other that the effect is
+            # specific to the pair whose order was changed.
+            out.insert(feature, out.pop(feature))
+            record.update({"applied": True, "moved_from": feature, "moved_to": feature})
+        elif mode == "pair":
             if feature < remover:
                 raise SystemExit("the feature already precedes its remover, so there is "
                                  "nothing for this intervention to change")
@@ -231,7 +241,8 @@ def main(argv=None):
           f"{vt.min():.2f} to {vt.max():.2f}, holding ({row[0]:.3f}, {row[1]:.3f}) here")
 
     print(f"\nSTAGE 3, the detected candidate at {STEP}, against version 1's (-13.0, -19.0)")
-    for mode, label in (("none", "baseline"), ("pair", "intervention"), ("control", "control")):
+    for mode, label in (("none", "baseline"), ("pair", "intervention"),
+                        ("identity", "representation"), ("control", "negative")):
         pts = candidates_at_step(case, mode)
         d = [float(np.hypot(a + 13.0, b + 19.0)) for a, b in pts]
         k = int(np.argmin(d))
@@ -241,7 +252,8 @@ def main(argv=None):
 
     print("\nSTAGE 5, the finished tracks")
     finals, records = {}, {}
-    for mode, label in (("none", "baseline"), ("pair", "intervention"), ("control", "control")):
+    for mode, label in (("none", "baseline"), ("pair", "intervention"),
+                        ("identity", "representation"), ("control", "negative")):
         final, record = run(case, mode)
         finals[label], records[label] = final, record
         rows = at_step(final)
@@ -252,17 +264,22 @@ def main(argv=None):
 
     # THE CONTROL IS A GATE, NOT A ROW IN A TABLE. It must reproduce the baseline's COMPLETE
     # trajectories exactly, every track and every observation, or there is nothing to report.
-    X.require_identical(finals["baseline"], finals["control"], "the baseline", "the control")
-    print("\n  THE CONTROL REPRODUCES THE BASELINE EXACTLY, over all "
+    # ONLY THE REPRESENTATION CONTROL MUST REPRODUCE THE BASELINE WHOLE. The negative
+    # control moves an UNRELATED axis, which may legitimately change other tracks, and
+    # demanding it match the baseline would reject a sound negative control.
+    X.require_identical(finals["baseline"], finals["representation"],
+                        "the baseline", "the representation control")
+    print("\n  THE REPRESENTATION CONTROL REPRODUCES THE BASELINE EXACTLY, over all "
           f"{len(finals['baseline'])} finished tracks and every observation in them.")
 
     verdicts = {}
-    for label in ("baseline", "control", "intervention"):
+    for label in ("baseline", "representation", "negative", "intervention"):
         verdicts[label] = X.holds_exactly(finals[label], vt, vl, vo)
         print(f"  {label:13s} reproduces version 1's complete track {idx} exactly: "
               f"{verdicts[label]}")
 
-    ok = verdicts["intervention"] and not verdicts["baseline"] and not verdicts["control"]
+    ok = (verdicts["intervention"] and not verdicts["baseline"]
+          and not verdicts["representation"] and not verdicts["negative"])
     print(f"\n  EXACT REPRODUCTION BY THE INTERVENTION ALONE: {ok}")
     if args.retain:
         identity = X.save_run(args.retain, finals, args.case, ref_path, idx, __file__,

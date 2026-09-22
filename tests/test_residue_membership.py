@@ -295,6 +295,8 @@ def operated(indices, operation="removal", steps=(33035.25,), **tweak):
                       "finished_tracks_in_the_western_box": [{"steps": 9}]}
     run = out["intervention"]
     run["changed_at"] = steps[0]
+    run["changed_at_basis"] = ("leave-one-out over every axis at this step, the only one "
+                               "whose removal changes the candidate")
     run["population_before"] = 77
     run["population_after"] = 76 if operation == "removal" else 77
     if operation == "removal":
@@ -1354,6 +1356,9 @@ def test_the_written_artifact_states_what_a_credit_rests_on(tmp_path):
     assert any("REPRESENTATION CONTROL" in line and "NEGATIVE CONTROL" in line
                for line in admits)
     assert any("A credit requires BOTH" in line for line in admits)
+    derived = basis["derived_under_a_declared_region"]
+    assert any("STEP THE INTERVENTION ACTS AT is the case's own" in line for line in derived)
+    assert any("was tried and was WRONG" in line for line in derived)
     common = basis["what_the_common_checks_are"]
     assert any("EVERY OPERATION TAKES THEM" in line for line in common)
     assert any("ADDED CHECKS AND REMOVED NONE" in line for line in common)
@@ -1404,8 +1409,10 @@ def test_the_box_must_hold_the_claimed_index_s_own_location_and_unmatched_steps_
     both = {"a.json": case, "b.json": lone}
     out5 = _member(M, both)
     assert out5["problems"] == []
-    assert out5["credit_basis_by_index"]["74"].startswith("pair:")
-    assert out5["credit_basis_by_index"]["19"].startswith("unmatched track:")
+    # THE PER-INDEX LINE NAMES THE OPERATION, since 2026-09-22 they are not all injections
+    # and the count alone cannot tell a reordering credit from an injection one.
+    assert out5["credit_basis_by_index"]["74"].startswith("pair, by injection:")
+    assert out5["credit_basis_by_index"]["19"].startswith("unmatched track, by injection:")
     assert "the case's own" in out5["credit_basis_by_index"]["19"]
 
 
@@ -1913,9 +1920,13 @@ def test_a_removal_or_reordering_is_credited_on_its_own_terms(operation):
 
 
 @pytest.mark.parametrize("operation, tweak, why", [
-    # The step it changes must be one the case declared, or it is a different experiment.
-    ("removal", {"changed_at": 33035.75}, "does not declare as a divergence step"),
+    # The step it changes is the case's OWN and need not be a divergence step, since a
+    # removal's target is where version 1 has NOTHING. What is required is that it lies in
+    # the region the case declares and that the case says how it was chosen.
+    ("removal", {"changed_at": 99999.0}, "outside the region the case declares"),
     ("removal", {"changed_at": None}, "no readable changed_at"),
+    ("removal", {"changed_at_basis": None}, "does not record HOW its step was chosen"),
+    ("reordering", {"changed_at_basis": "  "}, "does not record HOW its step was chosen"),
     # THE POPULATION ARITHMETIC IS WHAT MAKES THE OPERATION THE ONE IT CLAIMS.
     ("removal", {"population_after": 75}, "not the removal of exactly one"),
     ("removal", {"population_after": 77}, "not the removal of exactly one"),
@@ -2003,3 +2014,18 @@ def test_the_common_checks_still_run_for_a_removal():
                                       intervention=record)})
     assert any("cannot be compared" in w for w in out["problems"]), out["problems"]
     assert out["explained_v1_extra_pairs"] == []
+
+
+def test_the_per_index_basis_names_the_operation_that_earned_it():
+    """A reordering credit and an injection credit rest on different checks, and the
+    artifact must let a reader tell them apart without opening the case."""
+    M = _load()
+    claim = {"unmatched_v1_tracks": [], "v1_extra_pairs": [74]}
+    for operation in ("injection", "removal", "reordering"):
+        case = (bound(claim) if operation == "injection"
+                else bound(claim, intervention=operated([74], operation)))
+        out = _member(M, {"a.json": case})
+        assert out["problems"] == [], (operation, out["problems"])
+        assert out["explained_v1_extra_pairs"] == [74]
+        assert out["credit_basis_by_index"]["74"].startswith(f"pair, by {operation}:"), \
+            out["credit_basis_by_index"]["74"]

@@ -828,7 +828,7 @@ def _axes_equal(a, b, tol=1e-9):
     return True
 
 
-def operation_problems(operation, intervention, steps):
+def operation_problems(operation, intervention, steps, parameters=None, window=None):
     """Why a REMOVAL or a REORDERING is not a recorded experiment of that kind.
 
     These are the checks an injection's geometry rules cannot stand in for. What they do
@@ -845,9 +845,25 @@ def operation_problems(operation, intervention, steps):
     except (TypeError, ValueError):
         problems.append(f"the {operation} records no readable changed_at step")
         changed = None
-    if changed is not None and not any(abs(changed - t) < 1e-6 for t in steps):
-        problems.append(f"the {operation} changes the run at {changed}, which the case does "
-                        f"not declare as a divergence step")
+    # THE INTERVENTION STEP IS THE CASE'S OWN, and requiring it to be a DECLARED DIVERGENCE
+    # STEP was wrong. The first version of this check did require that, and writing pair 30's
+    # artifact is what exposed it: that case's removal acts at 33026.50, where VERSION 1 HAS
+    # NOTHING, which is the entire finding. Divergence steps are the times version 1 holds an
+    # observation and the port does not, so a removal's target can never be one of them, and
+    # the residual record's port_extra times are empty for that pair because the extra
+    # candidate was taken by a FRAGMENT that was later pruned rather than by the paired track.
+    # The step is therefore not derivable from retained evidence at all. What can be required
+    # is that it lies in the region the case declares and that the case says HOW it was found,
+    # and the credit basis grades it as the case's own rather than as read from evidence.
+    region = life if (life := (parameters or {}).get("feature_life")) else window
+    if changed is not None and region and len(region) == 2:
+        low, high = float(region[0]), float(region[1])
+        if not low - 1e-6 <= changed <= high + 1e-6:
+            problems.append(f"the {operation} changes the run at {changed}, outside the "
+                            f"region the case declares, {low} to {high}")
+    if not str(run.get("changed_at_basis") or "").strip():
+        problems.append(f"the {operation} does not record HOW its step was chosen, which is "
+                        f"the case's own judgment and cannot be read from the residual record")
     before, after = run.get("population_before"), run.get("population_after")
     if not isinstance(before, int) or not isinstance(after, int) or before <= 0:
         problems.append(f"the {operation} records no candidate population before and after")
@@ -898,7 +914,8 @@ def operation_problems(operation, intervention, steps):
 
 
 def experiment_problems(intervention, divergence_steps, control_steps=None,
-                        control_step_problems=(), reference_vertices=None):
+                        control_step_problems=(), reference_vertices=None,
+                        parameters=None, window=None):
     """Why a recorded experiment set is not one, checked the SAME WAY wherever it is read.
     This is the shared contract: the trace calls it before it will state anything about an
     experiment, and the membership checker calls it before it will credit one.
@@ -940,7 +957,8 @@ def experiment_problems(intervention, divergence_steps, control_steps=None,
         # EVERY CHECK ABOVE IS COMMON and has already run: the runs are present, the control
         # steps agree, and the case declares divergence steps. What follows is specific to
         # adding geometry, so a removal or a reordering takes its own checks instead.
-        problems.extend(operation_problems(operation, intervention, steps))
+        problems.extend(operation_problems(operation, intervention, steps,
+                                           parameters=parameters, window=window))
         return problems
 
     # THE SCHEDULE THE CASE DECLARES, not the list the artifact happens to carry. A review
@@ -1253,7 +1271,8 @@ def walk_problems(name, case, claimed, recomputed=None):
     # still computes and records it for its own refusal.
     broken = experiment_problems(
         intervention, parameters.get("divergence_steps"), parameters.get("control_steps"),
-        (), dumped_vertices((case.get("at_divergence") or {}).get("v1")))
+        (), dumped_vertices((case.get("at_divergence") or {}).get("v1")),
+        parameters=parameters, window=parameters.get("window"))
     if broken:
         return ([f"{name} claims {sorted(claimed)} and {w}" for w in broken], {})
     problems, outcomes = [], {}
@@ -1290,7 +1309,16 @@ CREDIT_BASIS = {
         "at every declared step, and its extent beyond that is not determined by anything "
         "independent",
         "for an unmatched track, WHICH of the reference track's observation times the "
-        "case declares as divergence steps is the case's own"],
+        "case declares as divergence steps is the case's own",
+        "for a REMOVAL or a REORDERING, the STEP THE INTERVENTION ACTS AT is the case's "
+        "own. It is required to lie inside the region the case declares and to carry a "
+        "recorded basis saying how it was chosen, and it is NOT derived from anything "
+        "here. Requiring it to be a declared divergence step was tried and was WRONG: a "
+        "divergence step is a time version 1 holds an observation and the port does not, "
+        "so a removal's target can never be one, and on the case that forced this the "
+        "residual record carries no port-extra time either, because the extra candidate "
+        "was taken by a fragment that was later pruned rather than by the paired track. "
+        "Read a removal's step as a claim the case makes and states its grounds for."],
     "claimed_by_the_replay_records": [
         "that each injection was applied at the time requested (the receipts are the "
         "replay's own, required to be complete and to agree with the schedule)",
@@ -1377,9 +1405,16 @@ def membership(residuals, cases, logs=None, log_problems=(), outputs=None, excha
         by_kind[k] = sorted(by_kind[k])
     explained_unmatched, explained_pairs, problems, per_case = [], [], [], {}
     by_outcome = {}
+    # WHICH OPERATION EACH CREDITED INDEX WAS EARNED BY, recorded as the cases are walked so
+    # the per-index basis can name it. Read from the case's own experiment record, and
+    # absent means injection, which is what every case written before the field existed is.
+    operation_by_index = {}
     for name, case in cases.items():
         ex = case.get("explains") or {}
         per_case[name] = ex
+        for i in (list(ex.get("unmatched_v1_tracks", []))
+                  + list(ex.get("v1_extra_pairs", []))):
+            operation_by_index[i] = operation_of(case.get("intervention"))
         claimed = list(ex.get("unmatched_v1_tracks", [])) + list(ex.get("v1_extra_pairs", []))
         # A CASE THAT PERFORMED AN EXPERIMENT IS CHECKED WHETHER OR NOT IT CLAIMS ONE.
         # The indices come from the case's claim where it makes one and from the
@@ -1464,12 +1499,18 @@ def membership(residuals, cases, logs=None, log_problems=(), outputs=None, excha
             "credit_basis": CREDIT_BASIS,
             # WHICH GRADE APPLIED TO WHICH INDEX, because a static block cannot say that
             # the pair-scope check ran for a pair and the weaker one for a track
+            # WHICH OPERATION EARNED EACH CREDIT, because since 2026-09-22 they are not
+            # all injections and a reader cannot tell from the count. An index credited by
+            # a REORDERING or a REMOVAL rests on different operation-specific checks than
+            # one credited by an injection, and the per-index line is where that shows.
             "credit_basis_by_index": {
-                **{str(i): "pair: scope fixed by the residual pair's own extra times"
+                **{str(i): (f"pair, by {operation_by_index.get(i, 'injection')}: scope "
+                            f"fixed by the residual pair's own extra times")
                    for i in explained_pairs},
-                **{str(i): "unmatched track: declared steps and control steps checked "
-                           "against version 1's finished track in the pinned reference "
-                           "output, the choice among its observation times the case's own"
+                **{str(i): (f"unmatched track, by {operation_by_index.get(i, 'injection')}"
+                            ": declared steps and control steps checked "
+                            "against version 1's finished track in the pinned reference "
+                            "output, the choice among its observation times the case's own")
                    for i in explained_unmatched}}}
 
 
