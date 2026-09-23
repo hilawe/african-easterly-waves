@@ -37,6 +37,10 @@ def digest(path):
     return h.hexdigest()
 
 
+COMPARISON = ("exact float equality over complete time, meanlat and meanlon arrays; no "
+              "tolerance is applied anywhere in the verdict")
+
+
 def canonical(final):
     """Every track as exact tuples, in a canonical order, for whole-set comparison."""
     out = []
@@ -164,8 +168,7 @@ def save_run(path, runs, case_path, reference_path, reference_index, script_path
             "script_sha256": digest(script_path),
             "git_head": repository_head(os.path.dirname(os.path.dirname(
                 os.path.abspath(script_path)))),
-            "comparison": "exact float equality over complete time, meanlat and meanlon "
-                          "arrays; no tolerance is applied anywhere in the verdict",
+            "comparison": COMPARISON,
         },
         "runs": {name: [{"time": list(t), "meanlat": list(la), "meanlon": list(lo)}
                         for t, la, lo in canonical(final)]

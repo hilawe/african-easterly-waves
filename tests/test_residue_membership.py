@@ -288,7 +288,8 @@ def operated(indices, operation="removal", steps=(33035.25,), **tweak):
               "representation_control": base_tracks,
               "negative_control": [filler(steps, 2.0)],
               "intervention": [reference_track(steps)]}
-    out = {"operation": operation, "partial_runs": []}
+    out = {"operation": operation, "partial_runs": [],
+           "receipts_basis": "declared from a frozen diagnostic, not execution evidence"}
     for label in exact:
         out[label] = {"reference_tracks": refs(exact[label]),
                       "finished_tracks": tracks[label],
@@ -301,11 +302,27 @@ def operated(indices, operation="removal", steps=(33035.25,), **tweak):
     run["population_after"] = 76 if operation == "removal" else 77
     if operation == "removal":
         run["removed"] = {"lat": -3.71, "lon": -87.37}
+        run["removed_index"] = 52
         run["identified_by"] = "leave-one-out over all 75 axes at this step"
+        # RECEIPTS, which the checker demands since an independent review showed a baseline
+        # copy labelled negative_control was accepted. Representation is an identity edit at
+        # the same step; negative removes a DIFFERENT axis at the same step.
+        out["representation_control"]["receipt"] = {
+            "step": steps[0], "identity": True, "population_before": 77,
+            "population_after": 77}
+        out["negative_control"]["receipt"] = {
+            "step": steps[0], "population_before": 77, "population_after": 76,
+            "removed_index": 53}
     else:
         run["moved_from"] = 65
         run["moved_to"] = 58
         run["positions_unchanged"] = True
+        out["representation_control"]["receipt"] = {
+            "step": steps[0], "identity": True, "population_before": 77,
+            "population_after": 77, "moved_from": 65, "moved_to": 65}
+        out["negative_control"]["receipt"] = {
+            "step": steps[0], "population_before": 77, "population_after": 77,
+            "moved_from": 66, "moved_to": 0}
     run.update(tweak)
     return out
 
@@ -359,11 +376,22 @@ def test_membership_checks_every_claim_and_derives_the_remaining_lists():
     assert r["unmatched_v1_with_eligible_counterpart"] == [31]
     assert r["pairs_by_extra_kind"]["extra_v1_only"] == [5, 67, 74]
     assert r["explained_unmatched"] == [19] and r["remaining_unmatched"] == [6]
-    assert r["explained_v1_extra_pairs"] == [67, 74] and r["remaining_v1_extra_pairs"] == [5]
+    assert r["explained_pairs"] == [67, 74]
+    # REMAINING IS OVER EVERY CATEGORY since 2026-09-23, not only reference-extra pairs, so
+    # a count of credits can no longer read as covering categories the walk never reached.
+    # The per-kind breakdown beside it is what makes the widening safe to read.
+    assert r["remaining_pairs"] == [5, 50, 94]
+    assert r["explained_pairs_by_kind"] == {"extra_both_sides": [], "extra_v1_only": [67, 74],
+                                            "no_extra": []}
+    assert r["remaining_pairs_by_kind"] == {"extra_both_sides": [94], "extra_v1_only": [5],
+                                            "no_extra": [50]}
     assert r["counts"] == {"unmatched_no_eligible": 2, "unmatched_explained": 1,
                            "unmatched_explained_by_exact_reproduction": 1,
-                           "v1_extra_pairs": 3, "v1_extra_pairs_explained": 2,
-                           "v1_extra_pairs_explained_by_exact_reproduction": 2,
+                           "v1_extra_pairs": 3, "nonidentical_pairs_all_kinds": 5,
+                           "pairs_explained": 2,
+                           "pairs_explained_by_operation": {"injection": 2},
+                           "pairs_explained_by_exact_reproduction": 2,
+                           "v1_extra_pairs_explained": 2,
                            "both_sides_extra_pairs": 1}
 
 
@@ -371,12 +399,17 @@ def test_wrong_or_duplicate_claims_are_problems(tmp_path):
     M = _load()
     r = _member(M, {"a.json": bound({"unmatched_v1_tracks": [31]})})
     assert any("not in the no-eligible-counterpart set" in p for p in r["problems"])
+    # A pair the residual record does not know at all is refused by name.
+    r = _member(M, {"a.json": bound({"v1_extra_pairs": [999]})})
+    assert any("not a nonidentical pair in the residual record" in p for p in r["problems"])
+    # A both-sides pair IS claimable now, but not by an INJECTION, which needs a reference-
+    # extra step; the default fixture is an injection, so the claim must not be credited.
     r = _member(M, {"a.json": bound({"v1_extra_pairs": [94]})})
-    assert any("not a version-1-extra pair" in p for p in r["problems"])
+    assert r["problems"] and 94 not in r["explained_pairs"]
     r = _member(M, {"a.json": bound({"v1_extra_pairs": [74]}),
                                    "b.json": bound({"v1_extra_pairs": [74]})})
     assert any("claimed by more than one case" in p for p in r["problems"])
-    assert r["counts"]["v1_extra_pairs_explained"] == 1
+    assert r["counts"]["pairs_explained"] == 1
     # and the command refuses with nothing written
     pr, pc, out = tmp_path / "r.json", tmp_path / "c.json", tmp_path / "m.json"
     pr.write_text(json.dumps(residuals()))
@@ -428,7 +461,7 @@ def test_a_claim_the_case_never_walked_is_refused():
     # examined 67 and 74 and its replays record outcomes for 74 alone
     assert any("declares reference tracks [67, 74] and its replays record outcomes for "
                "[74]" in w for w in out["problems"])
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
     # the outcome path, where ONE replay lacks the index while the declaration and the
     # other replays agree, is the `partial` case immediately below
     # an index one replay does not record is not a walk either
@@ -445,7 +478,7 @@ def test_a_claim_the_case_never_walked_is_refused():
     good = bound({"unmatched_v1_tracks": [19], "v1_extra_pairs": [74]})
     out4 = _member(M, {"a.json": good})
     assert out4["problems"] == []
-    assert out4["explained_unmatched"] == [19] and out4["explained_v1_extra_pairs"] == [74]
+    assert out4["explained_unmatched"] == [19] and out4["explained_pairs"] == [74]
 
 
 def test_a_credit_names_the_outcome_it_rests_on():
@@ -463,7 +496,7 @@ def test_a_credit_names_the_outcome_it_rests_on():
     assert out["explained_by_outcome"]["unmatched"]["reproduced"] == []
     assert out["counts"]["unmatched_explained"] == 1
     assert out["counts"]["unmatched_explained_by_exact_reproduction"] == 0
-    assert out["counts"]["v1_extra_pairs_explained_by_exact_reproduction"] == 1
+    assert out["counts"]["pairs_explained_by_exact_reproduction"] == 1
     # an index nothing reproduced and whose counts never move is credited for nothing
     nothing = {"a.json": {**bound({"unmatched_v1_tracks": [19], "v1_extra_pairs": []}),
                           "intervention": walked([19], outcome="nothing")}}
@@ -523,7 +556,7 @@ def test_a_credit_names_the_outcome_it_rests_on():
     out_shifted = _member(M, {"a.json": shifted})
     assert any("injected at [33044.75] and the case declares [33035.25]" in w
                for w in out_shifted["problems"])
-    assert out_shifted["explained_v1_extra_pairs"] == []
+    assert out_shifted["explained_pairs"] == []
     # and a recorded control-step problem is not the checker's to ignore
     flagged = {**bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]}),
                "intervention": walked([74])}
@@ -738,7 +771,7 @@ def test_a_control_covering_a_subset_of_a_longer_declared_schedule_is_refused():
     # the two sides do not both hold an observation
     assert any("declares control step 33036.5000, at which the two sides do not both "
                "hold an observation" in w for w in out["problems"])
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
     # and the contract, asked on its own, still refuses the shape of the schedule: every
     # injected time is a MEMBER of the declared set, and the schedule is still wrong
     why = M.experiment_problems(run, two, [33035.5, 33036.0, 33036.5], (),
@@ -868,7 +901,7 @@ def test_the_expected_axes_are_derived_from_the_case_evidence_not_read_beside_th
     out = _member(M, {"a.json": blind}, V)
     assert any("records no axis vertices at 33035.2500, which its reference log holds"
                in w for w in out["problems"])
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
     assert _refuses(M, tmp_path, blind, "blind", V, (33035.25, 33035.75)) == (2, False)
     half = json.loads(json.dumps(case))
     half["at_divergence"]["v1"].pop("33035.7500")
@@ -889,7 +922,7 @@ def test_the_expected_axes_are_derived_from_the_case_evidence_not_read_beside_th
     out3 = _member(M, {"a.json": swapped}, V)
     assert any("control replay's axes at 33035.5000 are not the ones the case's dumped "
                "vertices give for it" in w for w in out3["problems"])
-    assert out3["explained_v1_extra_pairs"] == []
+    assert out3["explained_pairs"] == []
     assert _refuses(M, tmp_path, swapped, "swapped", V, (33035.25, 33035.75)) == (2, False)
 
     # R20: THE SAME SUBSTITUTION WITH A MAP AGREEING WITH IT. A declaration beside the run
@@ -901,7 +934,7 @@ def test_the_expected_axes_are_derived_from_the_case_evidence_not_read_beside_th
     out4 = _member(M, {"a.json": declared}, V)
     assert any("are not the ones the case's dumped vertices give for it" in w
                for w in out4["problems"])
-    assert out4["explained_v1_extra_pairs"] == []
+    assert out4["explained_pairs"] == []
     assert _refuses(M, tmp_path, declared, "declared", V, (33035.25, 33035.75)) == (2, False)
 
     # R21: THE CONTROL PAIRED WITH THE WRONG STEP. Each control time is paired with one
@@ -913,7 +946,7 @@ def test_the_expected_axes_are_derived_from_the_case_evidence_not_read_beside_th
     out5 = _member(M, {"a.json": crossed}, V)
     assert any("control replay's axes at 33035.5000 are not the ones" in w
                for w in out5["problems"])
-    assert out5["explained_v1_extra_pairs"] == []
+    assert out5["explained_pairs"] == []
     assert _refuses(M, tmp_path, crossed, "crossed", V, (33035.25, 33035.75)) == (2, False)
 
     # and an expectation that does not cover the steps a run recorded is refused on that
@@ -957,7 +990,7 @@ def test_a_geometry_that_cannot_be_compared_is_refused_rather_than_agreed_with(t
         assert any("at 33035.2500 are not the ones its reference log holds" in w
                    or "records no axis vertices at 33035.2500" in w
                    for w in out["problems"]), bad
-        assert out["explained_v1_extra_pairs"] == []
+        assert out["explained_pairs"] == []
         assert _refuses(M, tmp_path, spoiled, f"unusable-{len(out['problems'])}",
                         spoiled["at_divergence"]["v1"]) == (2, False)
     # AND THE DERIVATION REFUSES IT ON ITS OWN, which is where a reader that has already
@@ -974,13 +1007,13 @@ def test_a_geometry_that_cannot_be_compared_is_refused_rather_than_agreed_with(t
     # R23 and R24: the translation.
     for value, expected in (("NaN", "zero or not a finite number"),
                             (0, "zero or not a finite number"),
-                            (1e-12, "leaves its vertices equal to the intervention's")):
+                            (1e-12, "cannot test placement")):
         tiny = json.loads(json.dumps(case))
         tiny["intervention"]["shape_control"]["longitude_offset_deg"] = value
         tiny["intervention"]["shape_control"]["axes_by_requested_step"] = dict(axes)
         out = _member(M, {"a.json": tiny}, V)
         assert any(expected in w for w in out["problems"]), value
-        assert out["explained_v1_extra_pairs"] == []
+        assert out["explained_pairs"] == []
     assert _refuses(M, tmp_path, tiny, "invisible", V, (33035.25, 33035.75)) == (2, False)
 
     # R25: cardinality, which needs more than one axis and more than one vertex to test.
@@ -1040,7 +1073,7 @@ def test_credit_requires_the_original_log_and_not_the_artifact_s_own_copy(tmp_pa
     out = _member(M, {"a.json": together}, V)
     assert any("are not the ones its reference log holds there" in w
                for w in out["problems"])
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
     assert _refuses(M, tmp_path, together, "together", V, (33035.25, 33035.75)) == (2, False)
     # every field the checker used to observe still agrees with every other one, which is
     # the whole point: the experiment checks alone report nothing wrong with it
@@ -1053,7 +1086,7 @@ def test_credit_requires_the_original_log_and_not_the_artifact_s_own_copy(tmp_pa
     assert M.membership(two_step, {"a.json": case}, {})["problems"] == [
         "no reference log was supplied, so no case's recorded axis vertices can be traced "
         "to the run that produced them"]
-    assert "explained_v1_extra_pairs" not in M.membership(two_step, {"a.json": case}, {})
+    assert "explained_pairs" not in M.membership(two_step, {"a.json": case}, {})
 
     # R28 and R29: the manifest is what says a log is one this project accepts, and a
     # digest the candidate supplies names its claimed input rather than authorizing it.
@@ -1081,7 +1114,7 @@ def test_credit_requires_the_original_log_and_not_the_artifact_s_own_copy(tmp_pa
     elsewhere["input_sha256"]["octave1.log"] = "a" * 64
     out2 = _member(M, {"a.json": elsewhere}, V)
     assert any("which was not supplied to this command" in w for w in out2["problems"])
-    assert out2["explained_v1_extra_pairs"] == []
+    assert out2["explained_pairs"] == []
     missing = json.loads(json.dumps(case))
     missing["input_sha256"].pop("octave1.log")
     out3 = _member(M, {"a.json": missing}, V)
@@ -1092,7 +1125,7 @@ def test_credit_requires_the_original_log_and_not_the_artifact_s_own_copy(tmp_pa
     out4 = _member(M, {"a.json": case}, thin)
     assert any("at 33035.7500 and its reference log holds none there" in w
                for w in out4["problems"])
-    assert out4["explained_v1_extra_pairs"] == []
+    assert out4["explained_pairs"] == []
     assert _refuses(M, tmp_path, case, "thin", thin) == (2, False)
 
     # THE SELECTION IS REPRODUCED, NOT ASSUMED, so a log dump outside the case's own
@@ -1106,7 +1139,7 @@ def test_credit_requires_the_original_log_and_not_the_artifact_s_own_copy(tmp_pa
     out6 = _member(M, {"a.json": narrow}, V)
     assert any("at 33035.7500 and its reference log holds none there" in w
                for w in out6["problems"])
-    assert out6["explained_v1_extra_pairs"] == []
+    assert out6["explained_pairs"] == []
 
     # A LOG LINE THAT WILL NOT PARSE, or that holds an odd or nonfinite set of
     # coordinates, is a refusal rather than a line quietly passed over. A parser that
@@ -1126,7 +1159,7 @@ def test_credit_requires_the_original_log_and_not_the_artifact_s_own_copy(tmp_pa
         out = M.membership(residuals((33035.25, 33035.75)), {"a.json": case}, logs, (),
                            outputs((33035.25, 33035.75)))
         assert any(why in w for w in out["problems"]), line
-        assert out["explained_v1_extra_pairs"] == []
+        assert out["explained_pairs"] == []
 
 
 EVIDENCE = os.path.join(HERE, "..", "docs", "aewc_v2", "evidence")
@@ -1233,7 +1266,7 @@ def test_the_steps_a_case_is_judged_at_are_the_residual_pair_s_own(tmp_path):
     assert any("declares divergence steps ['33035.2500'], while the pair's version-1-extra "
                "observations are at ['33035.2500', '33035.7500']" in w
                for w in out["problems"])
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
     pr, pc, o = tmp_path / "r.json", tmp_path / "c.json", tmp_path / "m.json"
     pr.write_text(json.dumps(residuals((33035.25, 33035.75))))
     text = log_text(V)
@@ -1356,7 +1389,11 @@ def test_the_written_artifact_states_what_a_credit_rests_on(tmp_path):
     assert any("REPRESENTATION CONTROL" in line and "NEGATIVE CONTROL" in line
                for line in admits)
     assert any("A credit requires BOTH" in line for line in admits)
+    read = basis["read_from_retained_evidence"]
+    assert any("PORT_EXTRA" in line and "DISPLACED" in line for line in read)
+    assert any("EXACT INEQUALITY rather than a threshold" in line for line in read)
     derived = basis["derived_under_a_declared_region"]
+    assert any("DIFFERENT QUANTITIES AND ARE" in line for line in derived)
     assert any("STEP THE INTERVENTION ACTS AT is the case's own" in line for line in derived)
     assert any("was tried and was WRONG" in line for line in derived)
     common = basis["what_the_common_checks_are"]
@@ -1365,7 +1402,7 @@ def test_the_written_artifact_states_what_a_credit_rests_on(tmp_path):
     assert "three operations" in basis["what_a_credit_therefore_means"]
     assert "does not establish that the replay produced those tracks" in \
         basis["what_a_credit_therefore_means"]
-    assert written["explained_v1_extra_pairs"] == [74]
+    assert written["explained_pairs"] == [74]
     assert len(written["reference_outputs_sha256"]) == 2
 
 
@@ -1391,7 +1428,7 @@ def test_the_box_must_hold_the_claimed_index_s_own_location_and_unmatched_steps_
     assert any("claims pair 74 and its effective selection region does not contain "
                "version 1's own observation at 33035.2500 (-32.00, -60.32)" in w
                for w in out["problems"])
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
     # R36 (revised): an unmatched track whose declared CONTROL step its finished track
     # does not hold
     lone = bound({"unmatched_v1_tracks": [19], "v1_extra_pairs": []})
@@ -1436,7 +1473,7 @@ def test_outcomes_are_recomputed_from_recorded_tracks_and_scope_from_the_pinned_
     out = _member(M, {"a.json": lying}, V)
     assert any("baseline replay records reproduced_exactly=True for 74 and its own "
                "finished tracks give False" in w for w in out["problems"])
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
     assert _refuses(M, tmp_path, lying, "lying", V, two) == (2, False)
     hollow = json.loads(json.dumps(case))
     hollow["intervention"]["intervention"]["finished_tracks"] = []      # flag still True
@@ -1492,7 +1529,7 @@ def test_outcomes_are_recomputed_from_recorded_tracks_and_scope_from_the_pinned_
     out9 = _member(M, {"a.json": elsewhere}, V)
     assert any("effective selection region does not contain version 1's own observation "
                "at 33035.2500" in w for w in out9["problems"])
-    assert out9["explained_v1_extra_pairs"] == []
+    assert out9["explained_pairs"] == []
     assert _refuses(M, tmp_path, elsewhere, "elsewhere", V, two) == (2, False)
 
     # R43: no outputs, and an unpinned one
@@ -1559,7 +1596,7 @@ def test_the_reference_output_kind_the_output_derived_steps_and_exact_equality_a
     out = M.membership(residuals(two), {"a.json": swapped}, logs(V), (), big_port)
     assert any("declares reference output pppppppppppp, which was not supplied" in w
                for w in out["problems"])
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
 
     # R45: the residual record AGREES with the case, and the retained outputs do not. The
     # residual check is silent, and the output-derived steps must refuse on their own.
@@ -1580,7 +1617,7 @@ def test_the_reference_output_kind_the_output_derived_steps_and_exact_equality_a
     # the residual record disagrees with the outputs here as well, and that is reported
     # too; what this binds is that the case's DECLARED steps are checked against the
     # outputs on their own, in a message of their own
-    assert out2["explained_v1_extra_pairs"] == []
+    assert out2["explained_pairs"] == []
 
     # R46 and R47: exact equality means every coordinate and the whole length. A track
     # that matches in time and latitude and not longitude, and one that is a prefix of the
@@ -1596,7 +1633,7 @@ def test_the_reference_output_kind_the_output_derived_steps_and_exact_equality_a
         out3 = _member(M, {"a.json": almost}, V)
         assert any("intervention replay records reproduced_exactly=True for 74 and its own "
                    "finished tracks give False" in w for w in out3["problems"]), name
-        assert out3["explained_v1_extra_pairs"] == []
+        assert out3["explained_pairs"] == []
 
 
 def test_a_recorded_track_is_validated_before_it_is_counted_or_compared(tmp_path):
@@ -1631,7 +1668,7 @@ def test_a_recorded_track_is_validated_before_it_is_counted_or_compared(tmp_path
         out = _member(M, {"a.json": almost}, V)
         assert any("intervention replay records a finished track that cannot be compared"
                    in w for w in out["problems"]), name
-        assert out["explained_v1_extra_pairs"] == [], name
+        assert out["explained_pairs"] == [], name
         # and it is refused even when the replay's flag is lowered to match, since the
         # track is refused before any comparison is made of it
         lowered = json.loads(json.dumps(almost))
@@ -1679,7 +1716,7 @@ def test_a_performed_experiment_is_validated_whether_or_not_it_claims_anything(t
     silent["explains"] = {"unmatched_v1_tracks": [], "v1_extra_pairs": []}
     silent["parameters"]["reference_tracks"] = [74]
     assert _member(M, {"a.json": silent}, V)["problems"] == []
-    assert _member(M, {"a.json": silent}, V)["explained_v1_extra_pairs"] == []
+    assert _member(M, {"a.json": silent}, V)["explained_pairs"] == []
     # R51: an invalid control step is now reported, though nothing is claimed
     bad = json.loads(json.dumps(silent))
     bad["parameters"]["control_steps"] = [33035.5, 33037.0]        # the port holds neither
@@ -1733,7 +1770,7 @@ def test_an_incomplete_or_undeclared_experiment_cannot_escape_validation(tmp_pat
         out = _member(M, {"a.json": blind}, V)
         assert any("records replays and declares no reference tracks" in w
                    for w in out["problems"])
-        assert out["explained_v1_extra_pairs"] == []
+        assert out["explained_pairs"] == []
         assert _refuses(M, tmp_path, blind, "blind-examined", V, two) == (2, False)
 
     # R54: an index the residual artifact does not classify is REFUSED, not filtered
@@ -1767,7 +1804,7 @@ def test_an_incomplete_or_undeclared_experiment_cannot_escape_validation(tmp_pat
     out5 = _member(M, {"a.json": overclaim}, V)
     assert any("claims [74], which its experiment does not declare among the reference "
                "tracks it examined" in w for w in out5["problems"])
-    assert out5["explained_v1_extra_pairs"] == []
+    assert out5["explained_pairs"] == []
 
     # and a genuinely unperformed case, which records no replay at all, stays exempt
     unperformed = json.loads(json.dumps(silent))
@@ -1915,7 +1952,7 @@ def test_a_removal_or_reordering_is_credited_on_its_own_terms(operation):
     out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
                                       intervention=operated([74], operation))})
     assert out["problems"] == []
-    assert out["explained_v1_extra_pairs"] == [74]
+    assert out["explained_pairs"] == [74]
     assert out["explained_by_outcome"]["v1_extra_pairs"]["reproduced"] == [74]
 
 
@@ -1945,7 +1982,7 @@ def test_an_operation_that_is_not_what_it_claims_is_refused(operation, tweak, wh
     out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
                                       intervention=operated([74], operation, **tweak))})
     assert any(why in w for w in out["problems"]), out["problems"]
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
 
 
 def test_a_representation_control_that_moved_the_run_refuses():
@@ -1956,7 +1993,7 @@ def test_a_representation_control_that_moved_the_run_refuses():
     out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
                                       intervention=record)})
     assert any("does not reproduce the baseline exactly" in w for w in out["problems"])
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
 
 
 def test_a_negative_control_that_reproduces_the_track_earns_no_credit():
@@ -1968,7 +2005,7 @@ def test_a_negative_control_that_reproduces_the_track_earns_no_credit():
         {"reference_index": 74, "reproduced_exactly": True}]
     out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
                                       intervention=record)})
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
 
 
 @pytest.mark.parametrize("dropped", ["representation_control", "negative_control"])
@@ -1979,7 +2016,7 @@ def test_both_controls_are_required_and_are_not_interchangeable(dropped):
     out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
                                       intervention=record)})
     assert any(f"records no {dropped} replay" in w for w in out["problems"]), out["problems"]
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
 
 
 def test_an_unknown_operation_is_refused_rather_than_read_as_an_injection():
@@ -1989,7 +2026,7 @@ def test_an_unknown_operation_is_refused_rather_than_read_as_an_injection():
     out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
                                       intervention=record)})
     assert any("which is not one of" in w for w in out["problems"])
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
 
 
 def test_an_artifact_with_no_operation_is_still_read_as_an_injection():
@@ -1997,7 +2034,7 @@ def test_an_artifact_with_no_operation_is_still_read_as_an_injection():
     """Every case written before the field existed must keep working, unchanged."""
     out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]})})
     assert out["problems"] == []
-    assert out["explained_v1_extra_pairs"] == [74]
+    assert out["explained_pairs"] == [74]
     assert M.operation_of({"baseline": {}}) == "injection"
 
 
@@ -2013,7 +2050,7 @@ def test_the_common_checks_still_run_for_a_removal():
     out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
                                       intervention=record)})
     assert any("cannot be compared" in w for w in out["problems"]), out["problems"]
-    assert out["explained_v1_extra_pairs"] == []
+    assert out["explained_pairs"] == []
 
 
 def test_the_per_index_basis_names_the_operation_that_earned_it():
@@ -2026,6 +2063,472 @@ def test_the_per_index_basis_names_the_operation_that_earned_it():
                 else bound(claim, intervention=operated([74], operation)))
         out = _member(M, {"a.json": case})
         assert out["problems"] == [], (operation, out["problems"])
-        assert out["explained_v1_extra_pairs"] == [74]
+        assert out["explained_pairs"] == [74]
         assert out["credit_basis_by_index"]["74"].startswith(f"pair, by {operation}:"), \
             out["credit_basis_by_index"]["74"]
+
+
+# ---------------------------------------------------------------------------------------
+# THE AMENDED SCOPE RULES, validated on SYNTHETIC cases (2026-09-22).
+#
+# Validation phase A found that the 1990 window contains only two residue shapes, and that
+# the contract could express one of them. These cover the shapes it could not: extras on the
+# PORT's side, extras on both, and pairs that differ only in position. They are synthetic on
+# purpose, because the point is the rule and not any particular window.
+#
+# THE SEPARATION IS THE POINT. A pair's DISCREPANCY TIMES are where its two finished tracks
+# differ and are derived from the tracks. Its INTERVENTION TIME is where an experiment acts,
+# is the case's own, and need not be any of them. Pair 30 is the real instance: its removal
+# acts at a step that appears in none of its discrepancy sets.
+# ---------------------------------------------------------------------------------------
+
+
+def _pair_of_tracks(v1_times, port_times, shift_at=()):
+    """Two finished tracks with declared times, optionally displaced at chosen steps."""
+    def make(times, shifted):
+        return {"time": [float(t) for t in times],
+                "lat": [POS[0] + (0.5 if f"{float(t):.4f}" in shifted else 0.0)
+                        for t in times],
+                "lon": [POS[1] for _ in times]}
+    return make(v1_times, set()), make(port_times, {f"{float(t):.4f}" for t in shift_at})
+
+
+def test_derived_discrepancies_separates_the_three_kinds():
+    M = _load()
+    v1, port = _pair_of_tracks([1.0, 2.0, 3.0], [2.0, 3.0, 4.0], shift_at=[3.0])
+    found = M.derived_discrepancies(v1, port)
+    assert found["v1_extra"] == ["1.0000"]
+    assert found["port_extra"] == ["4.0000"]
+    assert found["displaced"] == ["3.0000"]
+
+
+def test_displacement_is_exact_and_not_a_threshold():
+    """A tolerance would put a case's scope boundary at a number nobody chose for it."""
+    M = _load()
+    v1, port = _pair_of_tracks([1.0], [1.0])
+    assert M.derived_discrepancies(v1, port)["displaced"] == []
+    port["lat"][0] += 1e-12
+    assert M.derived_discrepancies(v1, port)["displaced"] == ["1.0000"]
+
+
+def test_a_pair_that_is_not_purely_reference_extra_must_declare_its_discrepancies():
+    """Reading an empty divergence_steps as 'no disagreement' is the failure phase A found."""
+    M = _load()
+    v1, port = _pair_of_tracks([1.0, 2.0], [1.0, 2.0, 3.0])
+    found = M.derived_discrepancies(v1, port)
+    assert found["port_extra"] == ["3.0000"] and found["v1_extra"] == []
+    # declaring nothing is refused, declaring the derived set is accepted, and declaring a
+    # different set is refused with both sides named
+    for declared, ok in (({"v1_extra": [], "port_extra": ["3.0000"], "displaced": []}, True),
+                         ({"v1_extra": [], "port_extra": ["9.0000"], "displaced": []}, False),
+                         ({"v1_extra": [], "port_extra": [], "displaced": []}, False)):
+        want = {k: sorted(f"{float(t):.4f}" for t in (declared.get(k) or ()))
+                for k in ("v1_extra", "port_extra", "displaced")}
+        agrees = all(want[k] == found[k] for k in found)
+        assert agrees is ok, (declared, found)
+
+
+def test_an_injection_still_needs_a_divergence_step_and_a_removal_does_not():
+    """The asymmetry is deliberate. There is nothing to inject without a reference extra."""
+    M = _load()
+    params = {"feature_life": [33030.0, 33040.0],
+              "discrepancy_times": {"v1_extra": [], "port_extra": [33035.25],
+                                    "displaced": []}}
+    inj = M.experiment_problems(walked([74]), [], None, (), None, parameters=params,
+                                window=[33030.0, 33040.0])
+    assert any("declares no divergence step" in w for w in inj)
+    rem = M.experiment_problems(operated([74], "removal"), [], None, (), None,
+                                parameters=params, window=[33030.0, 33040.0])
+    assert not any("divergence step" in w for w in rem), rem
+
+
+def test_an_experiment_naming_no_disagreement_at_all_is_refused():
+    """Neither a divergence step nor a discrepancy time is not a case, whatever it claims."""
+    M = _load()
+    out = M.experiment_problems(operated([74], "removal"), [], None, (), None,
+                                parameters={"feature_life": [33030.0, 33040.0]},
+                                window=[33030.0, 33040.0])
+    assert any("names no disagreement" in w for w in out), out
+
+
+def test_the_intervention_time_need_not_be_a_discrepancy_time():
+    """Pair 30's removal acts at a step in none of its discrepancy sets, which is the finding.
+
+    A rule requiring the two to coincide would make that case unrepresentable, and an earlier
+    version of this contract had exactly that rule."""
+    M = _load()
+    record = operated([74], "removal")
+    record["intervention"]["changed_at"] = 33033.0          # in the region, in no set
+    params = {"feature_life": [33030.0, 33040.0],
+              "discrepancy_times": {"v1_extra": [], "port_extra": [33035.25],
+                                    "displaced": []}}
+    out = M.experiment_problems(record, [], None, (), None, parameters=params,
+                                window=[33030.0, 33040.0])
+    assert not any("changed_at" in w or "outside the region" in w for w in out), out
+    # AND the case is reachable at all, which is the half that fails on the older rule: it
+    # refused any experiment whose reference-extra set was empty, before ever reading a step.
+    assert not any("divergence step" in w for w in out), out
+    # while a step genuinely outside the declared region is still refused
+    record["intervention"]["changed_at"] = 99999.0
+    assert any("outside the region" in w for w in M.experiment_problems(
+        record, [], None, (), None, parameters=params, window=[33030.0, 33040.0]))
+
+
+# ---------------------------------------------------------------------------------------
+# F1 from the independent review: representation equality lost duplicate multiplicity.
+#
+# The check was `all(any(_same_track(x, y) for y in mirror) for x in baseline)` beside a
+# length test, and it did not consume matches, so [A, A] passed against [A, B]. Version 1
+# DUPLICATES TRACKS, so this is the shape its own output takes.
+# ---------------------------------------------------------------------------------------
+
+
+def _tr(seed, n=2):
+    """A track OUTSIDE the fixture's western counting box, so adding one does not change
+    the western-box count and the representation check is what the refusal comes from.
+    The review's own counterexample said to choose both tracks outside that region."""
+    return {"time": [1.0 + i for i in range(n)],
+            "lat": [60.0 + seed + i for i in range(n)],
+            "lon": [120.0 + seed - i for i in range(n)]}
+
+
+def test_representation_equality_rejects_a_swapped_duplicate():
+    M = _load()
+    A, B = _tr(10.0), _tr(20.0)
+    assert M._canonical_tracks([A, A]) != M._canonical_tracks([A, B])
+    assert M._canonical_tracks([A, B]) != M._canonical_tracks([A, A])
+
+
+def test_representation_equality_accepts_equal_duplicate_collections():
+    M = _load()
+    A = _tr(10.0)
+    assert M._canonical_tracks([A, A]) == M._canonical_tracks([dict(A), dict(A)])
+
+
+def test_representation_equality_accepts_a_permutation():
+    """Order is not part of a finished-track collection's identity."""
+    M = _load()
+    A, B = _tr(10.0), _tr(20.0)
+    assert M._canonical_tracks([A, B]) == M._canonical_tracks([B, A])
+
+
+def test_representation_equality_rejects_a_length_change_and_a_tiny_position_change():
+    M = _load()
+    A, B = _tr(10.0), _tr(20.0)
+    assert M._canonical_tracks([A, B]) != M._canonical_tracks([A])
+    nudged = {**A, "lat": [A["lat"][0] + 1e-12, A["lat"][1]]}
+    assert M._canonical_tracks([A]) != M._canonical_tracks([nudged])
+
+
+def test_a_swapped_duplicate_representation_control_is_refused_by_the_operation_checks():
+    """The whole point: the defective check credited this, exactly as the review showed."""
+    M = _load()
+    record = operated([74], "removal")
+    base = record["baseline"]["finished_tracks"]
+    A, B = _tr(1.0), _tr(2.0)
+    record["baseline"]["finished_tracks"] = list(base) + [A, A]
+    record["representation_control"]["finished_tracks"] = list(base) + [A, B]
+    out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
+                                      intervention=record)})
+    assert any("does not reproduce the baseline exactly" in w for w in out["problems"]), \
+        out["problems"]
+    assert out["explained_pairs"] == []
+
+
+# ---------------------------------------------------------------------------------------
+# F3 AND F4 FROM THE INDEPENDENT REVIEW, THROUGH THE REAL COMMAND PATH.
+#
+# F4 said the scope extension was "true of a helper and false of the artifact": a unit test
+# exercised `experiment_problems` while `examined_explains`, `scope_problems` and the credit
+# loop still admitted only reference-extra pairs. So these go through `main(argv)`, with a
+# residual record and two finished outputs written to disk, for every category the amendment
+# admits. F3 said a baseline copy labelled negative_control was accepted, and an intervention
+# declaring moved_from=-500 against a population of 77. Those run through the same path.
+# ---------------------------------------------------------------------------------------
+
+SHARED = (33035.0, 33035.5, 33036.0)          # times both sides hold in every category
+V1_ONLY, PORT_ONLY = 33035.25, 33035.75        # 33035.25 is where the fixture log dumps axes
+
+
+def _track(times, shift=0.0):
+    times = sorted(float(t) for t in times)
+    return {"time": times, "lat": [POS[0] + shift] * len(times), "lon": [POS[1]] * len(times)}
+
+
+def _category(kind):
+    """A reference track and its port counterpart whose finished tracks disagree in the
+    named way, plus the exact discrepancy declaration the checker derives from them."""
+    if kind == "extra_port_only":
+        ref, port = _track(SHARED), _track(SHARED + (PORT_ONLY,))
+        disc = {"v1_extra": [], "port_extra": [PORT_ONLY], "displaced": []}
+    elif kind == "extra_both_sides":
+        ref, port = _track(SHARED + (V1_ONLY,)), _track(SHARED + (PORT_ONLY,))
+        disc = {"v1_extra": [V1_ONLY], "port_extra": [PORT_ONLY], "displaced": []}
+    elif kind == "no_extra":
+        ref, port = _track(SHARED), _track(SHARED, shift=0.5)
+        disc = {"v1_extra": [], "port_extra": [], "displaced": list(SHARED)}
+    else:
+        raise ValueError(kind)
+    return ref, port, disc
+
+
+def _command_for(M, tmp_path, name, kind, operation, mutate=None):
+    """Run the command on one case of the named category, credited by the named operation,
+    with reference and port outputs written so the derived discrepancy is real."""
+    index, port_index = 88, 2
+    ref, port, disc = _category(kind)
+    record = operated([index], operation)
+    # the intervention reproduces the reference track; nothing else does
+    record["intervention"]["finished_tracks"] = [ref]
+    for label in ("baseline", "representation_control", "negative_control"):
+        record[label]["finished_tracks"] = [filler(SHARED, 1.0)]
+    params = {"divergence_steps": list(disc["v1_extra"]),
+              "control_steps": [33035.5] if disc["v1_extra"] else [],
+              "discrepancy_times": disc, "reference_tracks": [index]}
+    case = bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [index]},
+                 intervention=record, parameters=params)
+    if mutate:
+        mutate(case)
+    residual = residuals((V1_ONLY,))
+    residual["pairs"].append({"v1_index": index, "port_index": port_index,
+                              "extra_kind": kind, "mean_lat": -32.0, "mean_lon": -60.3167,
+                              "v1_extra": {"n": len(disc["v1_extra"]),
+                                           "times": list(disc["v1_extra"])}})
+    ref_tracks = [reference_track((V1_ONLY,)) for _ in range(120)]
+    port_tracks = [port_counterpart((V1_ONLY,)) for _ in range(6)]
+    ref_tracks[index], port_tracks[port_index] = ref, port
+    pr, pc, out = (tmp_path / f"{name}-r.json", tmp_path / f"{name}-c.json",
+                   tmp_path / f"{name}-m.json")
+    log, manifest = tmp_path / f"{name}.log", tmp_path / f"{name}-manifest.json"
+    ref_mat, port_mat = tmp_path / f"{name}-ref.mat", tmp_path / f"{name}-port.mat"
+    text = log_text(DUMPED)
+    log.write_text(text)
+    log_digest = hashlib.sha256(text.encode()).hexdigest()
+    ref_digest, port_digest = write_output(ref_mat, ref_tracks), write_output(port_mat, port_tracks)
+    case.setdefault("input_sha256", {}).update(
+        {"octave1.log": log_digest, "tracker_octave_instrumented.mat": ref_digest,
+         "tracker_port.mat": port_digest})
+    residual["input_sha256"]["tracker_port.mat"] = port_digest
+    pr.write_text(json.dumps(residual))
+    pc.write_text(json.dumps(case))
+    manifest.write_text(json.dumps(
+        {"logs": [{"sha256": log_digest, "file": str(log), "bytes": len(text)}],
+         "outputs": [{"sha256": ref_digest, "file": str(ref_mat), "kind": "reference"},
+                     {"sha256": port_digest, "file": str(port_mat), "kind": "port"}]}))
+    code = M.main(["--residuals", str(pr), "--cases", str(pc), "--out", str(out),
+                   "--reference-log", str(log), "--reference-output", str(ref_mat),
+                   str(port_mat), "--manifest", str(manifest)])
+    written = json.loads(out.read_text()) if out.exists() else None
+    return code, written
+
+
+@pytest.mark.parametrize("kind", ["extra_port_only", "extra_both_sides", "no_extra"])
+@pytest.mark.parametrize("operation", ["removal", "reordering"])
+def test_every_admitted_category_reaches_credit_through_the_command(tmp_path, kind, operation):
+    M = _load()
+    code, written = _command_for(M, tmp_path, f"{kind}-{operation}", kind, operation)
+    assert code == 0 and written is not None, (code, written)
+    assert written["problems"] == []
+    assert written["explained_pairs"] == [88]
+    assert 88 in written["explained_pairs_by_kind"][kind]
+    assert written["credit_basis_by_index"]["88"].startswith(f"pair, by {operation}:")
+    # the widened denominator counts this pair, and nothing is credited twice
+    assert written["counts"]["nonidentical_pairs_all_kinds"] == 6
+    assert sum(len(v) for v in written["explained_pairs_by_kind"].values()) == 1
+    # A CREDIT OF ANOTHER KIND IS NOT A VERSION-1-EXTRA CREDIT. The regenerated accounting
+    # once printed two displaced-only pairs under "remaining version-1-extra pairs", and
+    # the count beside `v1_extra_pairs` was a count of every credit under a narrower name.
+    assert written["counts"]["pairs_explained"] == 1
+    assert written["counts"]["v1_extra_pairs_explained"] == 0
+
+
+@pytest.mark.parametrize("kind", ["extra_port_only", "extra_both_sides", "no_extra"])
+def test_a_missing_discrepancy_declaration_is_refused_for_every_new_category(tmp_path, kind):
+    M = _load()
+    def drop(case):
+        del case["parameters"]["discrepancy_times"]
+    code, written = _command_for(M, tmp_path, f"{kind}-nodisc", kind, "removal", drop)
+    assert code != 0 and written is None
+
+
+def test_a_baseline_copy_labelled_negative_control_is_refused_through_the_command(tmp_path):
+    """F3's central counterexample, on the real path."""
+    M = _load()
+    def copy_baseline(case):
+        iv = case["intervention"]
+        iv["negative_control"] = json.loads(json.dumps(iv["baseline"]))   # no receipt
+    code, written = _command_for(M, tmp_path, "neg-copy", "extra_port_only", "removal",
+                                 copy_baseline)
+    assert code != 0 and written is None
+
+
+def test_an_out_of_range_reordering_is_refused_through_the_command(tmp_path):
+    M = _load()
+    def far(case):
+        case["intervention"]["intervention"].update({"moved_from": -500, "moved_to": 500})
+    code, written = _command_for(M, tmp_path, "oob", "extra_both_sides", "reordering", far)
+    assert code != 0 and written is None
+
+
+def test_a_negative_control_removing_the_same_axis_is_refused_through_the_command(tmp_path):
+    M = _load()
+    def same(case):
+        iv = case["intervention"]
+        iv["negative_control"]["receipt"]["removed_index"] = \
+            iv["intervention"]["removed_index"]
+    code, written = _command_for(M, tmp_path, "same-axis", "no_extra", "removal", same)
+    assert code != 0 and written is None
+
+
+def test_a_negative_control_whose_output_equals_the_baseline_is_not_refused_for_that(tmp_path):
+    """The review was explicit: a real input change can legitimately leave the output
+    unchanged, so refusing on output equality would reject sound controls. The control's
+    receipt shows it ACTED; its output equalling the baseline is not a defect."""
+    M = _load()
+    def same_output(case):
+        iv = case["intervention"]
+        iv["negative_control"]["finished_tracks"] = list(iv["baseline"]["finished_tracks"])
+    code, written = _command_for(M, tmp_path, "neg-eq", "extra_port_only", "removal",
+                                 same_output)
+    assert code == 0 and written["explained_pairs"] == [88], written and written["problems"]
+
+
+def test_an_injection_still_cannot_claim_a_pair_with_no_reference_extra_step(tmp_path):
+    """The asymmetry is deliberate: nothing to inject without a reference-extra step."""
+    M = _load()
+    code, written = _command_for(M, tmp_path, "inj-port", "extra_port_only", "injection")
+    assert code != 0 and written is None
+
+
+def test_a_case_claiming_two_pairs_declares_discrepancies_per_pair_through_the_command(tmp_path):
+    """Three real cases claim two or four pairs, eight of the fifteen credited. One set of
+    three lists cannot declare two pairs, so the per-pair form must reach credit on the
+    real path, and a case that declares only the single form for two pairs must not."""
+    M = _load()
+    a_idx, b_idx, a_port, b_port = 88, 89, 2, 3
+    ref_a, port_a, disc_a = _category("extra_port_only")
+    ref_b, port_b, disc_b = _category("no_extra")
+    record = operated([a_idx, b_idx], "removal")
+    record["intervention"]["finished_tracks"] = [ref_a, ref_b]
+    record["intervention"]["finished_tracks_in_the_western_box"] = [{"steps": 9}, {"steps": 9}]
+    for label in ("baseline", "representation_control", "negative_control"):
+        record[label]["finished_tracks"] = [filler(SHARED, 1.0)]
+    params = {"divergence_steps": [], "control_steps": [],
+              "discrepancy_times_by_pair": {str(a_idx): disc_a, str(b_idx): disc_b},
+              "reference_tracks": [a_idx, b_idx]}
+    case = bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [a_idx, b_idx]},
+                 intervention=record, parameters=params)
+    residual = residuals((V1_ONLY,))
+    for idx, pidx, kind in ((a_idx, a_port, "extra_port_only"), (b_idx, b_port, "no_extra")):
+        residual["pairs"].append({"v1_index": idx, "port_index": pidx, "extra_kind": kind,
+                                  "mean_lat": -32.0, "mean_lon": -60.3167,
+                                  "v1_extra": {"n": 0, "times": []}})
+    ref_tracks = [reference_track((V1_ONLY,)) for _ in range(120)]
+    port_tracks = [port_counterpart((V1_ONLY,)) for _ in range(6)]
+    ref_tracks[a_idx], ref_tracks[b_idx] = ref_a, ref_b
+    port_tracks[a_port], port_tracks[b_port] = port_a, port_b
+    pr, pc, out = (tmp_path / "two-r.json", tmp_path / "two-c.json", tmp_path / "two-m.json")
+    log, manifest = tmp_path / "two.log", tmp_path / "two-manifest.json"
+    ref_mat, port_mat = tmp_path / "two-ref.mat", tmp_path / "two-port.mat"
+    text = log_text(DUMPED)
+    log.write_text(text)
+    log_digest = hashlib.sha256(text.encode()).hexdigest()
+    ref_digest, port_digest = write_output(ref_mat, ref_tracks), write_output(port_mat, port_tracks)
+    case["input_sha256"].update({"octave1.log": log_digest,
+                                 "tracker_octave_instrumented.mat": ref_digest,
+                                 "tracker_port.mat": port_digest})
+    residual["input_sha256"]["tracker_port.mat"] = port_digest
+    pr.write_text(json.dumps(residual)); pc.write_text(json.dumps(case))
+    manifest.write_text(json.dumps(
+        {"logs": [{"sha256": log_digest, "file": str(log), "bytes": len(text)}],
+         "outputs": [{"sha256": ref_digest, "file": str(ref_mat), "kind": "reference"},
+                     {"sha256": port_digest, "file": str(port_mat), "kind": "port"}]}))
+    argv = ["--residuals", str(pr), "--cases", str(pc), "--out", str(out),
+            "--reference-log", str(log), "--reference-output", str(ref_mat), str(port_mat),
+            "--manifest", str(manifest)]
+    assert M.main(argv) == 0, "the per-pair form must reach credit"
+    written = json.loads(out.read_text())
+    assert written["problems"] == [] and written["explained_pairs"] == [88, 89]
+    # the single form cannot describe two pairs: same case, single dict, must be refused
+    case["parameters"].pop("discrepancy_times_by_pair")
+    case["parameters"]["discrepancy_times"] = disc_a
+    pc.write_text(json.dumps(case)); out.unlink()
+    assert M.main(argv) != 0 and not out.exists()
+
+
+def test_control_receipts_must_state_their_basis_and_it_is_graded_as_a_claim():
+    """A confirmation review forged a consistent receipt onto a baseline copy and was
+    credited. That is what a consistency check does; the repair is to say so and grade it,
+    not to pretend the receipt shows execution."""
+    M = _load()
+    record = operated([74], "removal")
+    del record["receipts_basis"]
+    out = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
+                                      intervention=record)})
+    assert any("records no receipts_basis" in w for w in out["problems"]), out["problems"]
+    assert out["explained_pairs"] == []
+    ok = _member(M, {"a.json": bound({"unmatched_v1_tracks": [], "v1_extra_pairs": [74]},
+                                     intervention=operated([74], "removal"))})
+    assert ok["explained_pairs"] == [74]
+    claimed = ok["credit_basis"]["claimed_by_the_replay_records"]
+    assert any("a consistent receipt can be written by hand" in line for line in claimed)
+    assert any("neither standing is execution evidence" in line for line in claimed)
+
+
+def test_a_shape_translation_below_the_tracker_scale_is_refused():
+    """A shift of 1e-8 degrees passed the vertex-inequality test and counted as a placement
+    test. The floor is the tracker's smallest resolved scale, and 4.0, which every retained
+    case declares, stays accepted."""
+    M = _load()
+    steps, controls = [33035.25], [33035.5]
+    ref = {"33035.2500": [{"lat": [-21.5, -21.6], "lon": [38.0, 38.2]}]}
+    for value in (1e-8, 0.5, -0.99):
+        out, why = M.expected_axes(steps, controls, ref, value)
+        assert out == {} and any("cannot test placement" in w for w in why), value
+    out, why = M.expected_axes(steps, controls, ref, 4.0)
+    assert why == [] and "shape_control" in out
+
+
+def test_the_contract_no_longer_says_an_operation_step_must_be_a_divergence_step():
+    """A no-folder review found the credit basis describing a rule under which the credited
+    pair 30 is impossible, beside the sentence withdrawing that rule."""
+    M = _load()
+    text = json.dumps(M.CREDIT_BASIS)
+    assert "must be a declared divergence step" not in text
+    assert "tried and was WRONG" in text
+
+
+def test_examined_replays_are_collected_under_the_operations_own_run_labels():
+    """A removal that records an outcome for another index only on its representation
+    control was invisible to the examined-index check, which read injection labels."""
+    M = _load()
+    residuals = {"pairs": [{"v1_index": 88, "port_index": 1}, {"v1_index": 89, "port_index": 2}],
+                 "v1_unmatched": []}
+    case = {"parameters": {"reference_tracks": [88]},
+            "intervention": {"operation": "removal",
+                             "baseline": {"reference_tracks": [{"reference_index": 88}]},
+                             "representation_control": {
+                                 "reference_tracks": [{"reference_index": 89}]}}}
+    _, problems = M.examined_explains("a.json", case, residuals)
+    assert any("record outcomes for [88, 89]" in p for p in problems), problems
+
+
+def test_counts_carry_the_operation_and_the_grade_of_every_credit(tmp_path):
+    M = _load()
+    code, written = _command_for(M, tmp_path, "graded", "no_extra", "removal")
+    assert code == 0 and written["problems"] == []
+    assert written["counts"]["pairs_explained_by_operation"] == {"removal": 1}
+    assert written["credit_grade"].startswith("recorded replay")
+    assert written["credit_basis_by_index"]["88"].startswith("pair, by removal: scope fixed "
+                                                             "by the discrepancy times")
+    assert written["manifest_sha256"]
+
+
+def test_the_credit_summary_does_not_promise_control_step_agreement():
+    """A folder-access confirmation found the summary claiming control-step agreement
+    while credited pair 30 has two control steps where the positions differ. A control
+    step is one both finished tracks hold an observation at, and nothing more."""
+    M = _load()
+    text = json.dumps(M.CREDIT_BASIS)
+    assert "control-step agreement" not in text
+    assert "not agreement of position" in text

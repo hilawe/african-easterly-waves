@@ -106,6 +106,15 @@ def equivalent_exchange(digest, role, exchange):
 
 REQUIRED_RUNS = ("baseline", "intervention", "control", "shape_control")
 
+# THE SMALLEST TRANSLATION A SHAPE CONTROL MAY DECLARE, in degrees of longitude. The check
+# below once required only that the shifted vertices differ from the intervention's by more
+# than 1e-9, so a shift of 1e-8 degrees, which no stage of the tracker can distinguish
+# from none, counted as a placement test. The floor is the tracker's own MIN_EXTENT_DEG
+# (src/aew/v1port/contours.py), the smallest north-south span it treats as a wave: a
+# translation below the smallest scale the tracker resolves cannot test placement. Every
+# retained case declares 4.0. This is a contract parameter and changing it is a decision.
+MIN_SHAPE_TRANSLATION_DEG = 1.0
+
 # THE OPERATION AN EXPERIMENT PERFORMS, added 2026-09-22. Until then every check here was
 # written for an INJECTION, which adds version 1's axes at declared steps and is controlled
 # in TIME and in SHAPE. Two final-pair results are a REORDERING and a REMOVAL, and neither
@@ -258,6 +267,58 @@ def _at(track, key):
     return None
 
 
+def declared_discrepancy_for(params, index):
+    """The discrepancy declaration a case makes for one pair, in either of two forms.
+
+    A case claiming ONE pair declares `discrepancy_times` as three lists. A case claiming
+    SEVERAL, of which this project has three holding eight of the fifteen credited pairs,
+    declares `discrepancy_times_by_pair` keyed by the pair index, because one set of three
+    lists cannot describe two pairs. A first version of the deriver assumed the single form
+    and would have left those eight refused. The per-pair form wins where both are present."""
+    by_pair = (params or {}).get("discrepancy_times_by_pair") or {}
+    if str(index) in by_pair:
+        return by_pair[str(index)]
+    return (params or {}).get("discrepancy_times")
+
+
+def _any_discrepancy_declared(params):
+    single = (params or {}).get("discrepancy_times") or {}
+    if any(single.get(k) for k in ("v1_extra", "port_extra", "displaced")):
+        return True
+    return any(any((d or {}).get(k) for k in ("v1_extra", "port_extra", "displaced"))
+               for d in ((params or {}).get("discrepancy_times_by_pair") or {}).values())
+
+
+def derived_discrepancies(v1, counterpart):
+    """Where two finished tracks disagree, read from the tracks themselves.
+
+    THREE KINDS, AND THEY ARE NOT THE SAME QUESTION. `v1_extra` are times the reference
+    holds an observation and the port does not, `port_extra` the reverse, and `displaced`
+    times BOTH hold one and the positions are not identical. A pair can have any
+    combination, and the 1990 window happens to contain only the first and the third, which
+    is why the contract was written as though the first were the only one.
+
+    DISPLACEMENT IS EXACT INEQUALITY, not a threshold. The residual record classifies a pair
+    as displaced using its own tolerance, which is the right instrument for grouping pairs.
+    For SCOPE the question is where the two finished tracks differ at all, and a tolerance
+    there would put the boundary of a case's scope at a number nobody chose for that purpose.
+
+    THIS IS NOT AN INTERVENTION SCHEDULE. These are the times the two OUTPUTS differ. Where
+    an intervention must act to change that is a separate question this cannot answer, and
+    on pair 30 the answer was a step that appears in none of these three sets, because the
+    port's extra candidate was taken by a fragment that was later pruned. The contract keeps
+    the two apart deliberately and grades them differently."""
+    v1_times, port_times = _times(v1), _times(counterpart)
+    displaced = []
+    for key in sorted(v1_times & port_times):
+        a, b = _at(v1, key), _at(counterpart, key)
+        if a is not None and b is not None and (a[0] != b[0] or a[1] != b[1]):
+            displaced.append(key)
+    return {"v1_extra": sorted(v1_times - port_times),
+            "port_extra": sorted(port_times - v1_times),
+            "displaced": displaced}
+
+
 def evidence_problems(name, case, residuals, explains, outputs):
     """Why the case's scope is not the residual's own, read from the RETAINED OUTPUTS.
 
@@ -328,6 +389,29 @@ def evidence_problems(name, case, residuals, explains, outputs):
             problems.append(f"{name} claims pair {i} and declares divergence steps {steps}, "
                             f"while the retained outputs put version 1's extra observations "
                             f"at {extra}")
+        # THE FULL DISCREPANCY, all three kinds, where the case declares it. Required of any
+        # pair whose disagreement is not purely reference-extra, because `divergence_steps`
+        # cannot express those and reading its emptiness as "no disagreement" is exactly the
+        # failure validation phase A found. A pair that IS purely reference-extra may declare
+        # it and is checked against the same derivation if it does.
+        found = derived_discrepancies(v1, counterpart)
+        declared_disc = declared_discrepancy_for(params, i)
+        purely_v1_extra = not found["port_extra"] and not found["displaced"]
+        if declared_disc is None:
+            if not purely_v1_extra:
+                problems.append(
+                    f"{name} claims pair {i}, whose finished tracks disagree in ways "
+                    f"`divergence_steps` cannot express ({len(found['port_extra'])} port-extra "
+                    f"and {len(found['displaced'])} displaced times), and declares no "
+                    f"discrepancy_times")
+        else:
+            want = {k: sorted(f"{float(t):.4f}" for t in (declared_disc.get(k) or ()))
+                    for k in ("v1_extra", "port_extra", "displaced")}
+            for kind in ("v1_extra", "port_extra", "displaced"):
+                if want[kind] != found[kind]:
+                    problems.append(
+                        f"{name} claims pair {i} and declares {kind} discrepancy times "
+                        f"{want[kind]}, while the retained outputs give {found[kind]}")
         for key in controls:
             if key not in _times(v1) or key not in _times(counterpart):
                 problems.append(f"{name} claims pair {i} and declares control step {key}, at "
@@ -372,6 +456,29 @@ def _track_problems(tr):
             except (TypeError, ValueError):
                 return ["a recorded track holds a coordinate that is not a number"]
     return []
+
+
+def _canonical_tracks(tracks):
+    """A track collection as sorted exact tuples, PRESERVING DUPLICATE MULTIPLICITY.
+
+    THE CHECK THIS REPLACES WAS `all(any(_same_track(x, y) for y in mirror) for x in
+    baseline)` BESIDE A LENGTH TEST, and it did not consume matches. A baseline of [A, A]
+    therefore passed against a control of [A, B]: both copies of A matched the control's
+    single A and B was never examined. Version 1 DUPLICATES TRACKS, holding several at
+    identical positions, so this is the shape its own output takes rather than a contrived
+    one, and a representation control that silently swapped a track for another would have
+    been accepted.
+
+    A multiset comparison is enough BECAUSE `_same_track` IS EXACT. If it ever gained a
+    tolerance this would have to become a complete matching rather than a sort, since
+    tolerant equality is not transitive and sorting would then depend on order.
+    """
+    out = []
+    for tr in tracks:
+        out.append((tuple(float(x) for x in (tr.get("time") or [])),
+                    tuple(float(x) for x in (tr.get("lat") or [])),
+                    tuple(float(x) for x in (tr.get("lon") or []))))
+    return sorted(out)
 
 
 def _same_track(a, b):
@@ -729,6 +836,10 @@ def expected_axes(steps, control_steps, reference_vertices, offset):
         return {}, ["the shape control's recorded translation is zero or not a finite "
                     "number, so its vertices are not shown to differ from the "
                     "intervention's"]
+    if abs(shift) < MIN_SHAPE_TRANSLATION_DEG:
+        return {}, [f"the shape control's recorded translation of {shift} degrees is "
+                    f"below {MIN_SHAPE_TRANSLATION_DEG}, the smallest scale the tracker "
+                    f"resolves, so it cannot test placement"]
     control_map = {f"{c:.4f}": reference[k] for k, c in zip(keys, controls)}
     shape_map = {k: [{"lat": list(g["lat"]),
                       "lon": [float(x) - shift for x in g["lon"]]}
@@ -828,6 +939,107 @@ def _axes_equal(a, b, tol=1e-9):
     return True
 
 
+def _in_range(value, population):
+    return isinstance(value, int) and isinstance(population, int) and 0 <= value < population
+
+
+def _control_receipt_problems(operation, intervention, population):
+    """Why a removal's or reordering's CONTROLS are not the controls they are labelled.
+
+    AN INDEPENDENT REVIEW SHOWED THE CHECKER ACCEPTED A BASELINE COPY LABELLED
+    `negative_control`. Nothing asked what the control CHANGED; a dictionary with that name
+    and finished tracks that fail to reproduce the reference was enough. It also admitted an
+    intervention declaring moved_from=-500 and moved_to=500 against a population of 77. Both
+    are the same defect: the artifact asserted an operation and nothing checked that one
+    occurred.
+
+    A control therefore carries a RECEIPT of what it did, and this checks the receipt:
+      - the REPRESENTATION control acted at the intervention's step and left the population
+        and every position unchanged (an identity edit, so its tracks must equal the baseline,
+        which the caller checks from the tracks themselves);
+      - the NEGATIVE control acted at the same step on a DIFFERENT target, with the same
+        population arithmetic as the intervention, and every index inside the population.
+
+    WHAT IS DELIBERATELY NOT REQUIRED: that a negative control's finished output differ from
+    the baseline. A real input change can legitimately leave the output unchanged, and the
+    review was explicit that refusing on that would reject sound controls.
+
+    WHAT A RECEIPT ESTABLISHES, AND NO MORE. A receipt is a DECLARATION of a consistent
+    operation. A confirmation review copied a baseline into `negative_control`, invented
+    internally consistent receipt fields, and was credited, which is correct behaviour for a
+    consistency check and wrong to describe as showing the control "acted". Whether the
+    declared operation was executed is the replay's own claim, exactly as the tracks
+    themselves are, and it is bound only by the provenance the case records: a retained
+    runs file with its digest, produced by a frozen diagnostic whose digest that file
+    carries. A case must say which of those two standings its receipts have, in
+    `receipts_basis`, and the credit basis grades them as claimed by the replay records."""
+    problems = []
+    run = intervention.get("intervention") or {}
+    if operation == "removal":
+        removed = run.get("removed_index")
+        if not _in_range(removed, population):
+            problems.append(f"the removal records removed_index {removed!r}, which is not an "
+                            f"index inside its population of {population}")
+    if operation == "reordering":
+        for key in ("moved_from", "moved_to"):
+            if not _in_range(run.get(key), population):
+                problems.append(f"the reordering records {key} {run.get(key)!r}, which is "
+                                f"not an index inside its population of {population}")
+    step = run.get("changed_at")
+    basis = str(intervention.get("receipts_basis") or "").strip()
+    if not basis:
+        problems.append("the experiment records no receipts_basis, so it does not say "
+                        "whether its control receipts are bound to retained execution "
+                        "evidence or declared from a frozen diagnostic")
+    for label in ("representation_control", "negative_control"):
+        ctl = intervention.get(label) or {}
+        receipt = ctl.get("receipt")
+        if not isinstance(receipt, dict):
+            problems.append(f"the {label} records no receipt of what it changed, so it "
+                            f"cannot be told from a baseline under another name")
+            continue
+        if receipt.get("step") != step:
+            problems.append(f"the {label} acted at {receipt.get('step')!r}, not at the "
+                            f"intervention's step {step!r}")
+        b, a = receipt.get("population_before"), receipt.get("population_after")
+        if not isinstance(b, int) or not isinstance(a, int) or b != population:
+            problems.append(f"the {label} records population {b!r} -> {a!r} against the "
+                            f"intervention's {population}")
+            continue
+        if label == "representation_control":
+            if receipt.get("identity") is not True or a != b:
+                problems.append("the representation control does not record an identity "
+                                "edit leaving the population unchanged")
+            continue
+        # the negative control, which must be the same KIND of change to a DIFFERENT target
+        if operation == "removal":
+            if a != b - 1:
+                problems.append(f"the negative control records {b} -> {a}, which is not the "
+                                f"removal of exactly one")
+            other = receipt.get("removed_index")
+            if not _in_range(other, population):
+                problems.append(f"the negative control's removed_index {other!r} is not "
+                                f"inside the population")
+            elif other == run.get("removed_index"):
+                problems.append("the negative control removed the SAME axis as the "
+                                "intervention, so it controls nothing")
+        if operation == "reordering":
+            if a != b:
+                problems.append(f"the negative control records {b} -> {a}, so it did not "
+                                f"only reorder")
+            src, dst = receipt.get("moved_from"), receipt.get("moved_to")
+            if not _in_range(src, population) or not _in_range(dst, population):
+                problems.append(f"the negative control's move {src!r} -> {dst!r} is not "
+                                f"inside the population")
+            elif src == run.get("moved_from"):
+                problems.append("the negative control moved the SAME axis as the "
+                                "intervention, so it controls nothing")
+            elif src == dst:
+                problems.append("the negative control moved an axis to its own index, "
+                                "which is an identity and not a negative control")
+    return problems
+
+
 def operation_problems(operation, intervention, steps, parameters=None, window=None):
     """Why a REMOVAL or a REORDERING is not a recorded experiment of that kind.
 
@@ -894,6 +1106,7 @@ def operation_problems(operation, intervention, steps, parameters=None, window=N
         if run.get("positions_unchanged") is not True:
             problems.append("the reordering does not assert that every candidate POSITION is "
                             "unchanged, which is the whole claim of a reordering")
+    problems.extend(_control_receipt_problems(operation, intervention, before))
     # THE REPRESENTATION CONTROL MUST REPRODUCE THE BASELINE EXACTLY, and that is checked
     # here from the recorded tracks rather than taken from a flag, because a control the
     # apparatus moved is an experiment nothing can be attributed to.
@@ -906,8 +1119,7 @@ def operation_problems(operation, intervention, steps, parameters=None, window=N
         bad = [w for tr in list(baseline) + list(mirror) for w in _track_problems(tr)]
         if bad:
             problems.append(f"a recorded track cannot be compared: {bad[0]}")
-        elif len(baseline) != len(mirror) or not all(
-                any(_same_track(x, y) for y in mirror) for x in baseline):
+        elif _canonical_tracks(baseline) != _canonical_tracks(mirror):
             problems.append("the representation control does not reproduce the baseline "
                             "exactly, so the intervention beside it is unattributable")
     return problems
@@ -944,7 +1156,20 @@ def experiment_problems(intervention, divergence_steps, control_steps=None,
     problems.extend(control_step_problems or [])
     steps = sorted(float(x) for x in (divergence_steps or []))
     if not steps:
-        problems.append("the case declares no divergence step")
+        # AN EMPTY REFERENCE-EXTRA SET IS NOT AN EMPTY DISAGREEMENT, which is what phase A
+        # of the validation found. A pair whose extras are on the PORT's side, or which is
+        # merely displaced, has no divergence step by the old definition and is still a real
+        # residue item. An INJECTION still requires one, because there is nothing to inject
+        # without it. A removal or a reordering does not, provided the case declares where
+        # the finished tracks actually disagree.
+        if operation == "injection" or not _any_discrepancy_declared(parameters):
+            problems.append(
+                "the case declares no divergence step" if operation == "injection" else
+                "the case declares neither a divergence step nor any discrepancy time, so "
+                "it names no disagreement for an experiment to be about")
+            return problems
+        problems.extend(operation_problems(operation, intervention, steps,
+                                           parameters=parameters, window=window))
         return problems
 
     def finite(x):
@@ -1180,8 +1405,12 @@ def examined_explains(name, case, residuals, claimed=()):
     outcomes for, and anything claimed must be among them."""
     declared = list((case.get("parameters") or {}).get("reference_tracks") or ())
     problems = []
-    pairs = {p["v1_index"] for p in residuals.get("pairs") or ()
-             if p.get("extra_kind") == "extra_v1_only"}
+    # EVERY NONIDENTICAL PAIR, whatever its category. This once kept only `extra_v1_only`,
+    # so the phase B amendment's new categories could be validated by a helper and never
+    # reach the artifact, which an independent review called "true of a helper and false of
+    # the artifact". The category still matters for INJECTION, which needs a reference-extra
+    # step, and that is enforced where injections are checked rather than by hiding pairs.
+    pairs = {p["v1_index"] for p in residuals.get("pairs") or ()}
     tracks = {u["index"] for u in residuals.get("v1_unmatched") or ()}
     out = {"v1_extra_pairs": [], "unmatched_v1_tracks": []}
     if not declared:
@@ -1201,7 +1430,7 @@ def examined_explains(name, case, residuals, claimed=()):
                             f"an unmatched track")
     iv = case.get("intervention") or {}
     recorded = {r.get("reference_index")
-                for l in list(REQUIRED_RUNS) + list(iv.get("partial_runs") or ())
+                for l in list(required_runs_for(iv)) + list(iv.get("partial_runs") or ())
                 for r in ((iv.get(l) or {}).get("reference_tracks") or ())}
     if recorded and recorded != set(declared):
         problems.append(f"{name} declares reference tracks {sorted(declared)} and its "
@@ -1227,10 +1456,13 @@ def scope_problems(name, case, residuals, explains):
     is the weaker one, that every declared step lies inside it. That is stated as the
     limit it is rather than dressed as the same guarantee."""
     problems = []
-    steps = sorted(f"{float(t):.4f}" for t in
-                   ((case.get("parameters") or {}).get("divergence_steps") or ()))
-    if not steps:
-        return [f"{name} declares no divergence step"]
+    params = case.get("parameters") or {}
+    steps = sorted(f"{float(t):.4f}" for t in (params.get("divergence_steps") or ()))
+    if not steps and not _any_discrepancy_declared(params):
+        # A PAIR WITH NO REFERENCE-EXTRA STEP IS STILL A PAIR, if it declares where its
+        # finished tracks disagree. Refusing here unconditionally is what kept port-extra
+        # and displaced-only pairs out of the public path.
+        return [f"{name} declares neither a divergence step nor any discrepancy time"]
     by_pair = {p["v1_index"]: p for p in residuals.get("pairs") or ()}
     for i in explains.get("v1_extra_pairs") or ():
         pair = by_pair.get(i)
@@ -1238,9 +1470,14 @@ def scope_problems(name, case, residuals, explains):
             continue                     # the category check reports this one
         want = sorted(f"{float(t):.4f}" for t in
                       ((pair.get("v1_extra") or {}).get("times") or ()))
-        if not want:
+        if not want and not declared_discrepancy_for(params, i):
+            # A pair with no reference-extra time is refused ONLY if the case also declares
+            # no discrepancy at all. With discrepancy_times declared, an empty v1_extra is
+            # what a port-only or displaced-only pair looks like, and `steps` must then
+            # equal `want`, both empty, which the branch below checks.
             problems.append(f"{name} claims pair {i}, for which the residual artifact "
-                            f"records no version-1-extra times")
+                            f"records no version-1-extra times and the case declares no "
+                            f"discrepancy times")
         elif steps != want:
             problems.append(f"{name} claims pair {i} and declares divergence steps "
                             f"{steps}, while the pair's version-1-extra observations are "
@@ -1295,6 +1532,16 @@ CREDIT_BASIS = {
         "an observation and the port's finished counterpart does not, read from the two "
         "pinned outputs by final index, and both the residual record and the case's "
         "declaration must equal that set exactly",
+        "A PAIR'S FULL DISCREPANCY IS THREE SETS, not one, derived from the two finished "
+        "tracks: v1_extra as above, PORT_EXTRA the reverse, and DISPLACED where both hold "
+        "an observation and the positions are not identical. Displacement here is EXACT "
+        "INEQUALITY rather than a threshold, because a tolerance would put the boundary of "
+        "a case's scope at a number chosen for grouping pairs and not for this. A pair "
+        "whose disagreement is not purely v1_extra MUST declare discrepancy_times, and the "
+        "declaration must equal the derivation exactly. Added 2026-09-22 after the "
+        "validation's phase A measured that the 1990 window contains only v1_extra and "
+        "displaced pairs, so a rule reading an empty v1_extra set as no disagreement was "
+        "invisible in the window every instrument was built against.",
         "for an UNMATCHED TRACK, every declared step and every control step is a time "
         "version 1's finished track holds an observation, read from the pinned reference "
         "output by final index",
@@ -1310,6 +1557,11 @@ CREDIT_BASIS = {
         "independent",
         "for an unmatched track, WHICH of the reference track's observation times the "
         "case declares as divergence steps is the case's own",
+        "A DISCREPANCY TIME AND AN INTERVENTION TIME ARE DIFFERENT QUANTITIES AND ARE "
+        "GRADED DIFFERENTLY. Discrepancy times are where the two OUTPUTS differ and are "
+        "read from retained evidence. An intervention time is where an experiment ACTS, is "
+        "the case's own, and neither constrains nor is constrained by the other. Pair 30 is "
+        "the instance: its removal acts at a step in none of its discrepancy sets.",
         "for a REMOVAL or a REORDERING, the STEP THE INTERVENTION ACTS AT is the case's "
         "own. It is required to lie inside the region the case declares and to carry a "
         "recorded basis saying how it was chosen, and it is NOT derived from anything "
@@ -1322,7 +1574,13 @@ CREDIT_BASIS = {
     "claimed_by_the_replay_records": [
         "that each injection was applied at the time requested (the receipts are the "
         "replay's own, required to be complete and to agree with the schedule)",
-        "that each replay produced the finished tracks it records"],
+        "that each replay produced the finished tracks it records",
+        "that a control performed the operation its RECEIPT declares. A receipt is checked "
+        "for consistency, step, target and bounds, and a consistent receipt can be written "
+        "by hand, which a confirmation review demonstrated. The experiment's "
+        "receipts_basis says whether the receipts are bound to a retained runs file with a "
+        "recorded digest or declared from a frozen diagnostic, and neither standing is "
+        "execution evidence"],
     "recomputed_from_the_replay_records_against_the_pinned_reference": [
         "reproduced_exactly for every claimed index and every replay, as exact equality "
         "between a recorded finished track and the pinned reference track, with the "
@@ -1341,8 +1599,8 @@ CREDIT_BASIS = {
         "A REMOVAL takes one candidate out, and a REORDERING moves one within the list. "
         "Neither supplies geometry to re-read and neither has a meaningful shape control, "
         "since translating a permutation four degrees west is not an operation. Each is "
-        "checked on its own terms instead: the step it changes must be a declared "
-        "divergence step; a removal must change the candidate count by exactly one and "
+        "checked on its own terms instead: the step it changes is the case's own, graded "
+        "under derived_under_a_declared_region; a removal must change the candidate count by exactly one and "
         "record WHICH candidate and HOW it was identified, so a principled choice can be "
         "told from a search for one that works; a reordering must change the count by "
         "nothing, name the indices it moved between, and assert every position unchanged.",
@@ -1367,10 +1625,12 @@ CREDIT_BASIS = {
         "credit rests on the same evidence an injection credit does, plus the checks above "
         "that only its own operation can be given."],
     "what_a_credit_therefore_means": (
-        "a case whose scope, control-step agreement and injected geometry are the retained "
-        "runs' own, and whose outcomes are arithmetic on the tracks it records against an "
+        "a case whose scope, control-step observation availability (both finished tracks "
+        "hold an observation there, which is not agreement of position) and, for an "
+        "injection only, injected geometry are read from retained evidence, and whose "
+        "outcomes are arithmetic on the tracks it records against an "
         "independent reference. It does not establish that the replay produced those "
-        "tracks; that needs a rerun, which is a separate audit gate. Read the counts as "
+        "tracks. That needs a rerun, which is a separate audit gate. Read the counts as "
         "recomputed from recorded replays, not as independently reproduced. The scope is "
         "the three operations named above, each with its own checks and all of them with "
         "the common ones.")}
@@ -1454,9 +1714,11 @@ def membership(residuals, cases, logs=None, log_problems=(), outputs=None, excha
                 problems.append(f"unmatched track {i} is claimed by more than one case")
             elif i in by_outcome:
                 explained_unmatched.append(i)
+        all_pairs = {i for kind in by_kind.values() for i in kind}
         for i in ex.get("v1_extra_pairs", []):
-            if i not in by_kind.get("extra_v1_only", []):
-                problems.append(f"{name} claims pair {i}, which is not a version-1-extra pair")
+            if i not in all_pairs:
+                problems.append(f"{name} claims pair {i}, which is not a nonidentical pair "
+                                f"in the residual record")
             elif i in explained_pairs:
                 problems.append(f"pair {i} is claimed by more than one case")
             elif i in by_outcome:
@@ -1479,24 +1741,54 @@ def membership(residuals, cases, logs=None, log_problems=(), outputs=None, excha
             "pairs_by_extra_kind": by_kind,
             "explained_unmatched": sorted(explained_unmatched),
             "remaining_unmatched": sorted(set(unmatched_no_eligible) - set(explained_unmatched)),
-            "explained_v1_extra_pairs": sorted(explained_pairs),
-            "remaining_v1_extra_pairs": sorted(set(by_kind.get("extra_v1_only", []))
-                                               - set(explained_pairs)),
+            "explained_pairs": sorted(explained_pairs),
+            # REMAINING IS OVER EVERY CATEGORY NOW, and the per-kind breakdown beside it says
+            # which categories the credits and the remainder fall in, so a count of credits
+            # cannot be read as covering a category the walk never reached.
+            "remaining_pairs": sorted(
+                {i for kind in by_kind.values() for i in kind} - set(explained_pairs)),
+            "explained_pairs_by_kind": {
+                kind: sorted(i for i in members if i in explained_pairs)
+                for kind, members in sorted(by_kind.items())},
+            "remaining_pairs_by_kind": {
+                kind: sorted(i for i in members if i not in explained_pairs)
+                for kind, members in sorted(by_kind.items())},
             "counts": {"unmatched_no_eligible": len(unmatched_no_eligible),
                        "unmatched_explained": len(explained_unmatched),
                        "unmatched_explained_by_exact_reproduction":
                            len([i for i in explained_unmatched
                                 if by_outcome.get(i) == "reproduced"]),
-                       "v1_extra_pairs_explained_by_exact_reproduction":
+                       "pairs_explained_by_exact_reproduction":
                            len([i for i in explained_pairs
                                 if by_outcome.get(i) == "reproduced"]),
                        "v1_extra_pairs": len(by_kind.get("extra_v1_only", [])),
-                       "v1_extra_pairs_explained": len(explained_pairs),
+                       "nonidentical_pairs_all_kinds":
+                           sum(len(v) for v in by_kind.values()),
+                       "pairs_explained": len(explained_pairs),
+                       # BY OPERATION, because an injection credit rests on a time and a
+                       # shape control failing and a removal or reordering credit on a
+                       # negative and a representation control, which are not one kind
+                       # of evidence under one label
+                       "pairs_explained_by_operation": {
+                           op: len([i for i in explained_pairs
+                                    if operation_by_index.get(i, "injection") == op])
+                           for op in sorted({operation_by_index.get(i, "injection")
+                                             for i in explained_pairs})},
+                       # RESTRICTED TO ITS OWN KIND, so that beside `v1_extra_pairs` it is
+                       # a ratio and not a count of every credit under a narrower name
+                       "v1_extra_pairs_explained":
+                           len([i for i in explained_pairs
+                                if i in by_kind.get("extra_v1_only", [])]),
                        "both_sides_extra_pairs": len(by_kind.get("extra_both_sides", []))},
             "per_case": per_case, "problems": problems,
             # WHAT A CREDIT HERE RESTS ON, stated in the artifact because the field names
             # above say "explained" and a reader will take that at its width.
             "credit_basis": CREDIT_BASIS,
+            # THE GRADE OF EVERY CREDIT ABOVE, on the same object as the counts, because a
+            # reader who takes "explained" at its width has not read credit_basis
+            "credit_grade": ("recorded replay: outcomes recomputed from the tracks each "
+                             "replay records against the pinned reference. That the "
+                             "replay executed as declared is not independently audited"),
             # WHICH GRADE APPLIED TO WHICH INDEX, because a static block cannot say that
             # the pair-scope check ran for a pair and the weaker one for a track
             # WHICH OPERATION EARNED EACH CREDIT, because since 2026-09-22 they are not
@@ -1504,8 +1796,12 @@ def membership(residuals, cases, logs=None, log_problems=(), outputs=None, excha
             # a REORDERING or a REMOVAL rests on different operation-specific checks than
             # one credited by an injection, and the per-index line is where that shows.
             "credit_basis_by_index": {
-                **{str(i): (f"pair, by {operation_by_index.get(i, 'injection')}: scope "
-                            f"fixed by the residual pair's own extra times")
+                **{str(i): (f"pair, by {operation_by_index.get(i, 'injection')}: "
+                            + ("scope fixed by the residual pair's own extra times"
+                               if operation_by_index.get(i, "injection") == "injection"
+                               else "scope fixed by the discrepancy times derived from "
+                                    "the pinned outputs, and the step the operation acts "
+                                    "at is the case's own"))
                    for i in explained_pairs},
                 **{str(i): (f"unmatched track, by {operation_by_index.get(i, 'injection')}"
                             ": declared steps and control steps checked "
@@ -1545,15 +1841,23 @@ def main(argv=None):
     if result["problems"]:
         print("REFUSED: " + "; ".join(result["problems"]), flush=True)
         return 2
-    print(json.dumps(result["counts"]))
-    print("credit basis: scope, agreement and geometry read from the retained outputs and "
-          "log; outcomes recomputed from each replay's recorded tracks against the pinned "
-          "reference; the tracks themselves are the replay's own record "
-          "(see credit_basis in the artifact)")
+    print("recorded-replay credit, not execution-audited:", json.dumps(result["counts"]))
+    print("credit basis: scope and shared control-step observations read from the retained "
+          "outputs, injected geometry from the log for injections only. Outcomes recomputed "
+          "from each replay's recorded tracks against the pinned reference. The tracks "
+          "themselves are the replay's own record (see credit_basis in the artifact)")
     print("remaining unmatched:", result["remaining_unmatched"])
-    print("remaining version-1-extra pairs:", result["remaining_v1_extra_pairs"])
+    print("remaining nonidentical pairs, every kind:", result["remaining_pairs"])
+    print("remaining by kind:", json.dumps(result["remaining_pairs_by_kind"]))
     if args.out:
         result.update({"generated_by": "scripts/residue_membership.py",
+                       # THE VALIDATOR'S OWN DIGEST, so an artifact can be told stale. The
+                       # published fifteen-of-fifteen was produced, then the validator was
+                       # changed two commits later, and nothing re-ran it; a gate comparing
+                       # this against the current file catches that shape mechanically.
+                       "validator_sha256": _sha256(os.path.abspath(__file__)),
+                       # THE MANIFEST IS AN INPUT, pinned like the rest
+                       "manifest_sha256": _sha256(args.manifest or REFERENCE_MANIFEST),
                        "input_sha256": {os.path.basename(p): _sha256(p)
                                         for p in [args.residuals] + list(args.cases)},
                        # the runs whose axis vertices every credited case was checked

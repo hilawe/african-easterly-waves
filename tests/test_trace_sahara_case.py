@@ -545,8 +545,9 @@ def test_the_intervention_statement_reports_all_three_replays():
     invisible = _runs()
     invisible["shape_control"]["longitude_offset_deg"] = 1e-12
     said9, why12 = _say(M, invisible)
-    assert said9 == [] and any("leaves its vertices equal to the intervention's" in m
-                               for m in why12)
+    # Since 2026-09-23 the floor is the tracker's smallest resolved scale, not the
+    # comparison tolerance, so the refusal names placement rather than vertex equality.
+    assert said9 == [] and any("cannot test placement" in m for m in why12)
     moved_step = _runs()
     moved_step["shape_control"]["requested_times"] = [33035.5]
     moved_step["shape_control"]["applied_at"] = [33035.5]
