@@ -430,6 +430,11 @@ def main(argv=None):
     ap.add_argument("--items", required=True, help="comma-separated WINDOW:INDEX, e.g. E:3,B:25")
     ap.add_argument("--out", required=True)
     ap.add_argument("--retain", required=True)
+    ap.add_argument("--replay-ceiling", type=int, default=None,
+                    help="a hard ceiling on full replays for the whole command, baselines "
+                         "included. An item is not started if the replays already made plus "
+                         "its worst case (candidate steps and two controls) would exceed it, "
+                         "and is recorded as NOT_RUN")
     ap.add_argument("--operation", choices=("axes", "centers"), default="axes",
                     help="axes: the rounded vertices in merge-input order (the pilot). "
                          "centers: the full-precision merge-input centers as single-point "
@@ -486,6 +491,24 @@ def main(argv=None):
         for index in sorted(wanted[w]):
             item = items[index]
             disc = item_discrepancy(reference, port, item)
+            if args.replay_ceiling is not None:
+                # THE CEILING IS ENFORCED BEFORE AN ITEM STARTS, from the worst case it could
+                # cost, so no item is cut off half way and the ceiling is never exceeded.
+                worst = len([s for s in {float(x) for v in disc.values() for x in v}
+                             if resolve_step(case["time"].ravel(), s) is not None
+                             and f"{resolve_step(case['time'].ravel(), s):.4f}" in capture]) + 2
+                made = B._cost_since(total0)["replay_calls"]
+                if made + worst > args.replay_ceiling:
+                    results.append({"index": index, "kind": item["kind"], "window": w,
+                                    "outcome": "NOT_RUN", "operation": operation,
+                                    "why": f"the replay ceiling of {args.replay_ceiling} would be "
+                                           f"exceeded: {made} made, up to {worst} more needed",
+                                    "candidate_steps": [], "steps_tried": [], "screened_out": [],
+                                    "replays_after_baseline": 0, "screens": 0,
+                                    "processor_seconds": 0.0, "elapsed_seconds": 0.0,
+                                    "achieved_grade": "none", "controls": {}})
+                    print(f"  {w} item {index}: NOT_RUN, replay ceiling", flush=True)
+                    continue
             record, runs = investigate(case, reference, item, disc, baseline, capture,
                                        case["time"].ravel(), mode=args.operation)
             record["window"] = w
@@ -527,6 +550,7 @@ def main(argv=None):
         "inputs_sha256": inputs,
         "capture": capture_report,
         "items": {w: sorted(v) for w, v in wanted.items()},
+        "replay_ceiling": args.replay_ceiling,
         "outcomes": {k: tally[k] for k in sorted(tally)},
         "results": results,
         "retained_files": retained_files,

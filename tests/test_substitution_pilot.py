@@ -340,3 +340,25 @@ def test_the_centers_operation_uses_the_ports_own_centers_as_its_representation_
     assert r["controls"]["representation"]["passed"] is True
     assert "single-point axes" in written["what_is_substituted"]
     assert saved["B_item7_pilot.json"]["extra"]["merge_boundary"]["1.0000"]["exact"] is True
+
+
+def test_the_replay_ceiling_stops_an_item_before_it_starts(tmp_path, monkeypatch):
+    """The ceiling counts every replay including baselines and refuses to start an item
+    whose worst case would exceed it, recording it as NOT_RUN, so the ceiling is a hard
+    bound on the command and no item is cut off half way."""
+    S, replays, _ = _stage(monkeypatch, tmp_path, [1.0, 1.25, 3.0], reproduce_at=(1.0,),
+                           acting=(1.0, 3.0))
+    out = tmp_path / "ceiling.json"
+    # baseline 1 + worst case for the item (2 candidate steps + 2 controls) = 5 > 4
+    code = S.main([str(tmp_path), "--items", "B:7", "--out", str(out),
+                   "--retain", str(tmp_path / "keep_ceiling"), "--replay-ceiling", "4"])
+    assert code == 0
+    written = json.loads(out.read_text())
+    assert written["results"][0]["outcome"] == "NOT_RUN"
+    assert "ceiling of 4" in written["results"][0]["why"]
+    assert written["timing"]["replays_including_baselines"] == 1
+    assert written["replay_ceiling"] == 4
+    out2 = tmp_path / "ceiling_ok.json"
+    code = S.main([str(tmp_path), "--items", "B:7", "--out", str(out2),
+                   "--retain", str(tmp_path / "keep_ok"), "--replay-ceiling", "5"])
+    assert json.loads(out2.read_text())["results"][0]["outcome"] == "EXPLAINED"
