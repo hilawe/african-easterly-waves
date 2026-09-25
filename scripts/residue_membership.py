@@ -108,11 +108,14 @@ REQUIRED_RUNS = ("baseline", "intervention", "control", "shape_control")
 
 # THE SMALLEST TRANSLATION A SHAPE CONTROL MAY DECLARE, in degrees of longitude. The check
 # below once required only that the shifted vertices differ from the intervention's by more
-# than 1e-9, so a shift of 1e-8 degrees, which no stage of the tracker can distinguish
-# from none, counted as a placement test. The floor is the tracker's own MIN_EXTENT_DEG
-# (src/aew/v1port/contours.py), the smallest north-south span it treats as a wave: a
-# translation below the smallest scale the tracker resolves cannot test placement. Every
-# retained case declares 4.0. This is a contract parameter and changing it is a decision.
+# than 1e-9, so a shift of 1e-8 degrees, which changes nothing any stage computes, counted
+# as a placement test. THIS FLOOR IS AN OPERATIONAL CONVENTION, NOT A PHYSICAL THRESHOLD.
+# An earlier comment justified it as the tracker's minimum wave extent, and that was wrong:
+# MIN_EXTENT_DEG is a north-south span test on a merged wave, and it says nothing about how
+# far an axis must move before the merge or the association would treat it differently.
+# The value is one degree because it is well below the four degrees every retained case
+# declares and well above anything indistinguishable from no translation. Changing it is
+# a decision, and it is Hilawe's.
 MIN_SHAPE_TRANSLATION_DEG = 1.0
 
 # THE OPERATION AN EXPERIMENT PERFORMS, added 2026-09-22. Until then every check here was
@@ -838,8 +841,8 @@ def expected_axes(steps, control_steps, reference_vertices, offset):
                     "intervention's"]
     if abs(shift) < MIN_SHAPE_TRANSLATION_DEG:
         return {}, [f"the shape control's recorded translation of {shift} degrees is "
-                    f"below {MIN_SHAPE_TRANSLATION_DEG}, the smallest scale the tracker "
-                    f"resolves, so it cannot test placement"]
+                    f"below the floor of {MIN_SHAPE_TRANSLATION_DEG}, an operational "
+                    f"convention, so it cannot test placement"]
     control_map = {f"{c:.4f}": reference[k] for k, c in zip(keys, controls)}
     shape_map = {k: [{"lat": list(g["lat"]),
                       "lon": [float(x) - shift for x in g["lon"]]}
