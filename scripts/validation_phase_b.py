@@ -76,8 +76,34 @@ def reference_track(reference, index):
             np.asarray(reference[f"lon{index}"], float).ravel())
 
 
+# WHERE THE TIME GOES, counted at the two calls that cost anything: a full replay of the
+# window and a detection screen at one step. Windows B to F cost fifteen times their
+# estimate and the record could not say how much of that was screening and how much was
+# replay, so a benchmark of an exhausted item was asked for with the two reported
+# separately. `investigate` snapshots these before and after each item.
+COST = {"replay_calls": 0, "replay_seconds": 0.0, "screen_calls": 0, "screen_seconds": 0.0}
+
+
+def _cost_snapshot():
+    return dict(COST)
+
+
+def _cost_since(before):
+    return {k: (round(COST[k] - before[k], 3) if isinstance(COST[k], float)
+                else COST[k] - before[k]) for k in COST}
+
+
 def replay(case, hook=None):
     """The port's full pipeline over the window, with an optional axis hook."""
+    started = time.process_time()
+    try:
+        return _replay(case, hook)
+    finally:
+        COST["replay_calls"] += 1
+        COST["replay_seconds"] += time.process_time() - started
+
+
+def _replay(case, hook=None):
     times = case["time"].ravel()
     lat_c, lon_c = case["lat_c"].ravel(), case["lon_c"].ravel()
     latgrid, longrid = np.meshgrid(lat_c, lon_c, indexing="ij")
@@ -176,6 +202,7 @@ def detect_at(case, when, edit=None):
     original = D.trough_axes
     if edit is not None:
         D.trough_axes = lambda *a, **k: edit(list(original(*a, **k)))
+    started = time.process_time()
     try:
         waves = D.detect_troughs(
             float(when), latgrid, longrid, case["u_c"][index], case["currv_anom_c"][index],
@@ -183,6 +210,8 @@ def detect_at(case, when, edit=None):
             case["currv_anom"][index], coarse_threshold=ct, fine_threshold=ft, absorb=False)
     finally:
         D.trough_axes = original
+        COST["screen_calls"] += 1
+        COST["screen_seconds"] += time.process_time() - started
     return candidate_signature(waves)
 
 
@@ -360,6 +389,21 @@ def investigate(case, residuals, reference, item, baseline, axes_by_step=None):
     times = case["time"].ravel()
     out = {"index": index, "kind": item["kind"],
            "discrepancy_counts": item["discrepancy_counts"]}
+    cost_before, item_started = _cost_snapshot(), time.process_time()
+    try:
+        return _investigate(case, residuals, reference, item, baseline, axes_by_step,
+                            target, times, out)
+    finally:
+        out["cost"] = _cost_since(cost_before)
+        out["cost"]["item_seconds"] = round(time.process_time() - item_started, 3)
+        out["cost"]["other_seconds"] = round(out["cost"]["item_seconds"]
+                                             - out["cost"]["replay_seconds"]
+                                             - out["cost"]["screen_seconds"], 3)
+
+
+def _investigate(case, residuals, reference, item, baseline, axes_by_step, target, times, out):
+    index = item["index"]
+    t, la, lo = target
 
     if X.holds_exactly(baseline, t, la, lo):
         out["outcome"] = "ANOMALOUS"
@@ -570,6 +614,126 @@ def build_items(residuals, reference, case):
     return items
 
 
+MERGE_MUST_AGREE = ("contract", "window", "budget", "search_neighborhood_steps",
+                    "inject_radius_deg", "reorder_trial_cap", "axis_capture",
+                    "inputs_sha256", "driver_sha256", "git_head_at_launch", "budget_set",
+                    "items_total", "items_not_investigated", "what_unexplained_means_here")
+
+
+def cost_totals(results):
+    """Screening, replay and everything else, summed over items, from each item's own
+    record, so the split can be read from a window artifact and not only per job."""
+    keys = ("replay_calls", "replay_seconds", "screen_calls", "screen_seconds",
+            "other_seconds")
+    total = {k: 0 for k in keys}
+    for r in results:
+        c = r.get("cost") or {}
+        for k in keys:
+            total[k] += c.get(k, 0)
+    return {k: (round(v, 1) if isinstance(v, float) else v) for k, v in total.items()}
+
+
+def baseline_agreement(jobs):
+    """Every job replayed the baseline itself. Their retained baselines must hold the same
+    trajectories, canonically, or the jobs did not run in one environment on one input."""
+    canon = {}
+    for job in jobs:
+        rdir = job.get("retention_directory")
+        for name, recorded in (job.get("retained_files") or {}).items():
+            path = os.path.join(rdir, name)
+            if not os.path.isfile(path):
+                raise SystemExit(f"REFUSED: retained file {path} named by a job is missing")
+            if X.digest(path) != recorded:
+                raise SystemExit(f"REFUSED: retained file {path} has changed since its job "
+                                 f"recorded it")
+            if "_baseline_" in name:
+                runs = json.load(open(path))["runs"]["baseline"]
+                canon[name] = [(tuple(t["time"]), tuple(t["meanlat"]), tuple(t["meanlon"]))
+                               for t in runs]
+    if not canon:
+        return {"baselines_compared": 0, "identical": None}
+    first = next(iter(canon.values()))
+    differing = sorted(n for n, c in canon.items() if c != first)
+    if differing:
+        raise SystemExit(f"REFUSED: the per-job baselines do not agree: {differing} differ "
+                         f"from {next(iter(canon))}")
+    return {"baselines_compared": len(canon), "identical": True,
+            "tracks": len(first)}
+
+
+def publish(path, payload):
+    """An artifact is published exclusively, like retained evidence. A retry that named an
+    existing --out silently replaced it, and an --out pointed at a retained baseline
+    destroyed that baseline in the same successful invocation."""
+    try:
+        X.publish_json(path, payload, exclusive=True)
+    except FileExistsError:
+        raise SystemExit(f"REFUSED: {path} already exists and artifacts are never "
+                         f"overwritten. Name a fresh output")
+
+
+def merge_jobs(directory, window, out):
+    """One window artifact from the per-job artifacts of a window split across jobs.
+
+    Every job must have run the same frozen search, so every field the procedure fixes
+    must agree across the jobs, and the items the jobs selected must cover the budget set
+    exactly once. Anything else is refused rather than merged around."""
+    paths = sorted(glob.glob(os.path.join(directory, f"phase_b_{window}_job*.json")))
+    if not paths:
+        raise SystemExit(f"REFUSED: no per-job artifacts for window {window} in {directory}")
+    jobs = [json.load(open(p)) for p in paths]
+    first = jobs[0]
+    for p, job in zip(paths, jobs):
+        for key in MERGE_MUST_AGREE:
+            if key not in job:
+                raise SystemExit(f"REFUSED: {os.path.basename(p)} records no {key}")
+            if job.get(key) != first.get(key):
+                raise SystemExit(f"REFUSED: {os.path.basename(p)} disagrees with "
+                                 f"{os.path.basename(paths[0])} on {key}")
+        if not job.get("items_selected_for_this_job"):
+            raise SystemExit(f"REFUSED: {os.path.basename(p)} did not run under --items, "
+                             f"so it cannot be one part of a split window")
+    covered = [i for job in jobs for i in job["items_selected_for_this_job"]]
+    if sorted(covered) != sorted(first["budget_set"]):
+        raise SystemExit(f"REFUSED: the jobs cover {sorted(covered)} and the budget set is "
+                         f"{sorted(first['budget_set'])}, and every item exactly once is required")
+    results = sorted((r for job in jobs for r in job["results"]), key=lambda r: r["index"])
+    ran = [r["index"] for r in results]
+    if ran != sorted(first["budget_set"]):
+        raise SystemExit(f"REFUSED: results cover {ran}, not the budget set")
+    tally = collections.Counter(r["outcome"] for r in results)
+    agreement = baseline_agreement(jobs)
+    payload = {k: v for k, v in first.items()
+               if k not in ("results", "timing", "outcomes", "items_selected_for_this_job",
+                            "items_investigated", "launched_at", "retained_files",
+                            "retention_directory")}
+    payload.update({
+        "items_investigated": len(results),
+        "outcomes": {k: tally[k] for k in sorted(tally)},
+        "results": results,
+        "timing": {"processor_seconds": round(sum(j["timing"]["processor_seconds"]
+                                                  for j in jobs), 1),
+                   **cost_totals(results),
+                   "elapsed_seconds_longest_job": round(max(j["timing"]["elapsed_seconds"]
+                                                            for j in jobs), 1),
+                   "note": "summed processor time over the jobs. Elapsed is the longest "
+                           "single job, since the jobs ran concurrently"},
+        "merged_from": [{"file": os.path.basename(p), "sha256": X.digest(p),
+                         "items": job["items_selected_for_this_job"],
+                         "launched_at": job.get("launched_at"),
+                         "retained_files": job.get("retained_files"),
+                         "retention_directory": job.get("retention_directory")}
+                        for p, job in zip(paths, jobs)],
+        "baseline_agreement": agreement,
+    })
+    publish(out, payload)
+    print(f"window {window}: merged {len(jobs)} jobs covering {len(results)} items")
+    for key in sorted(tally):
+        print(f"  {key:36s} {tally[key]}")
+    print(f"  wrote {out}")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("work")
@@ -581,9 +745,39 @@ def main(argv=None):
     ap.add_argument("--axes", default=None,
                     help="an instrumented capture log holding AXISPTS at this window's "
                          "reference-extra steps, for the injection attempt")
+    ap.add_argument("--items", default=None,
+                    help="comma-separated reference indices to run in THIS job, each of "
+                         "which must be within the budget set. The budget and the order "
+                         "are unchanged, so several jobs together cover exactly one window")
+    ap.add_argument("--merge", default=None,
+                    help="a directory of per-job artifacts for this window, merged into "
+                         "--out; no replay runs in this mode")
     args = ap.parse_args(argv)
+    if args.merge:
+        return merge_jobs(args.merge, args.window, args.out)
+    # THE DRIVER'S IDENTITY IS CAPTURED AT LAUNCH, not when the artifact is written. Window
+    # A's frozen rerun took three and a half hours, the driver was edited while it ran, and
+    # the artifact then named the digest of the edited file rather than the code that ran,
+    # with the repository head of the last commit made during the run. Both are read here,
+    # before anything else, and carried through to the artifact and every retained run.
+    launched = {"driver_sha256": X.digest(__file__),
+                "git_head_at_launch": X.repository_head(
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "launched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
     directory, case, residuals, reference = load_window(args.work, args.window)
+    # THE INPUTS ARE IDENTIFIED BY CONTENT, before anything is computed from them. A review
+    # merged two jobs that had read different axis captures under one basename, and two
+    # that had read different case files, because the artifact named inputs by name. The
+    # digests are part of the launch identity and every job of a window must agree on them.
+    if args.axes and not os.path.isfile(args.axes):
+        raise SystemExit(f"REFUSED: the axis capture {args.axes} cannot be read")
+    consumed = {name: os.path.join(directory, name)
+                for name in ("tracker_case.mat", "residuals.json",
+                             "tracker_octave_instrumented.mat", "tracker_port.mat")}
+    if args.axes:
+        consumed["axis_capture"] = args.axes
+    launched["inputs_sha256"] = {name: X.digest(path) for name, path in consumed.items()}
     from residue_membership import derived_discrepancies
     baseline = replay(case)
     port_out = loadmat(os.path.join(directory, "tracker_port.mat"))
@@ -607,31 +801,69 @@ def main(argv=None):
                                          | set(found["displaced"]))
 
     investigated, deferred = items[:args.budget], items[args.budget:]
+    # ONE JOB MAY TAKE A SUBSET OF THE BUDGET SET, never an item outside it, so that a
+    # window split across scheduler slots is still the same frozen search. The merge mode
+    # requires the jobs to cover the budget set exactly, once.
+    selected = None
+    if args.items:
+        selected = sorted({int(x) for x in args.items.split(",") if x.strip()})
+        budget_set = {i["index"] for i in investigated}
+        outside = [i for i in selected if i not in budget_set]
+        if outside:
+            raise SystemExit(f"REFUSED: --items names {outside}, which are not in window "
+                             f"{args.window}'s budget set {sorted(budget_set)}")
+        investigated = [i for i in investigated if i["index"] in selected]
     axes_by_step = axes_from_capture(args.axes)
-    wall0, cpu0 = time.perf_counter(), time.process_time()
-    results = [investigate(case, residuals, reference, item, baseline, axes_by_step)
-               for item in investigated]
-    wall, cpu = time.perf_counter() - wall0, time.process_time() - cpu0
-    tally = collections.Counter(r["outcome"] for r in results)
 
-    # RETAIN WHAT EACH CREDIT RESTS ON. A verdict whose runs nobody kept is a number in a
-    # table. The baseline is shared by every item so it is retained once.
+    # RETAIN WHAT EACH CREDIT RESTS ON, AS EACH ITEM FINISHES. A verdict whose runs nobody
+    # kept is a number in a table, and a run that retains only at the end cannot be
+    # inspected while it works or resumed if it stops. Window A's frozen rerun retained
+    # nothing for its first hour and there was no first item to check. The baseline is
+    # shared by every item and is retained once, before the first item.
+    case_path = os.path.join(directory, "tracker_case.mat")
+    ref_path = os.path.join(directory, "tracker_octave_instrumented.mat")
+    # EACH JOB RETAINS ITS OWN BASELINE UNDER ITS OWN NAME, and no retained file is ever
+    # overwritten. A review ran two disjoint jobs into one directory and the second job's
+    # baseline replaced the first's, launch identity and all, while the merge accepted
+    # both. The merge compares the per-job baselines by content instead.
+    job_tag = "-".join(str(i) for i in selected) if selected else "all"
+    retained_files = {}
+    provenance = {"script_sha256": launched["driver_sha256"],
+                  "git_head": launched["git_head_at_launch"]}
+
+    def retain(name, runs, index, extra):
+        # EXCLUSIVE AT THE WRITE. A check before the write let two overlapping retries
+        # both pass and the second truncated the first's retained baseline. The serializer
+        # publishes by an atomic link and refuses an existing target itself.
+        path = os.path.join(args.retain, name)
+        try:
+            X.save_run(path, runs, case_path, ref_path, index, __file__,
+                       extra={"window": args.window, **launched, **extra}, exclusive=True,
+                       **provenance)
+        except FileExistsError:
+            raise SystemExit(f"REFUSED: {path} already exists and retained evidence is "
+                             f"never overwritten. Use a fresh retention directory")
+        retained_files[name] = X.digest(path)
+
     if args.retain:
         os.makedirs(args.retain, exist_ok=True)
-        case_path = os.path.join(directory, "tracker_case.mat")
-        ref_path = os.path.join(directory, "tracker_octave_instrumented.mat")
-        X.save_run(os.path.join(args.retain, f"{args.window}_baseline.json"),
-                   {"baseline": baseline}, case_path, ref_path, -1, __file__,
-                   extra={"window": args.window, "role": "shared baseline"})
-        for r in results:
-            if not r.get("runs"):
-                continue
-            X.save_run(
-                os.path.join(args.retain, f"{args.window}_item{r['index']}.json"),
-                r["runs"], case_path, ref_path, r["index"], __file__,
-                extra={"window": args.window, "operation": r.get("operation"),
-                       "outcome": r["outcome"], "detail": r.get("detail"),
-                       "receipts": r.get("receipts")})
+        retain(f"{args.window}_baseline_job{job_tag}.json", {"baseline": baseline}, -1,
+               {"role": "baseline replayed by this job"})
+    wall0, cpu0 = time.perf_counter(), time.process_time()
+    results = []
+    for n, item in enumerate(investigated, 1):
+        r = investigate(case, residuals, reference, item, baseline, axes_by_step)
+        results.append(r)
+        if args.retain and r.get("runs"):
+            retain(f"{args.window}_item{r['index']}.json", r["runs"], r["index"],
+                   {"operation": r.get("operation"), "outcome": r["outcome"],
+                    "detail": r.get("detail"), "receipts": r.get("receipts")})
+        print(f"  item {n}/{len(investigated)} index {r['index']} {r['kind']}: "
+              f"{r['outcome']} by {r.get('operation')} "
+              f"({time.process_time() - cpu0:.0f} s processor so far)", flush=True)
+    wall, cpu = time.perf_counter() - wall0, time.process_time() - cpu0
+    tally = collections.Counter(r["outcome"] for r in results)
+    cost = cost_totals(results)
 
     payload = {
         "generated_by": "scripts/validation_phase_b.py",
@@ -643,23 +875,27 @@ def main(argv=None):
         "inject_radius_deg": INJECT_RADIUS_DEG,
         "reorder_trial_cap": REORDER_TRIALS,
         "axis_capture": os.path.basename(args.axes) if args.axes else None,
-        "driver_sha256": X.digest(__file__),
+        **launched,
         "timing": {"elapsed_seconds": round(wall, 1), "processor_seconds": round(cpu, 1),
+                   **cost,
                    "note": "elapsed exceeds processor time when other work shares the "
                            "machine; processor time is the figure to plan with"},
         "items_total": len(items),
         "items_investigated": len(investigated),
         "items_not_investigated": [i["index"] for i in deferred],
+        "budget_set": [i["index"] for i in items[:args.budget]],
+        "items_selected_for_this_job": selected,
+        "retained_files": retained_files or None,
+        "retention_directory": os.path.abspath(args.retain) if args.retain else None,
         "outcomes": {k: tally[k] for k in sorted(tally)},
         "results": [{k: v for k, v in r.items() if k not in ("final", "runs")}
                     for r in results],
         "what_unexplained_means_here": (
             "the DECLARED SEARCH constructed no intervention that worked. It does not mean "
             "none exists. Pair 30's removal acts at a step no search specified in advance "
-            "would have reached, and injection was not attempted in this run at all."),
+            "would have reached."),
     }
-    with open(args.out, "w") as fh:
-        json.dump(payload, fh, indent=1, sort_keys=True)
+    publish(args.out, payload)
     print(f"window {args.window}: {len(investigated)} of {len(items)} items investigated, "
           f"{len(deferred)} not investigated")
     print(f"  elapsed {wall/60:.1f} min, processor {cpu/60:.1f} min")

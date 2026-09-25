@@ -155,18 +155,35 @@ def repository_head(repo="."):
         return None
 
 
-def save_run(path, runs, case_path, reference_path, reference_index, script_path, extra=None):
-    """Retain each run's complete trajectories beside the identities they were judged against."""
+def save_run(path, runs, case_path, reference_path, reference_index, script_path, extra=None,
+             script_sha256=None, git_head=None, exclusive=False, case_sha256=None,
+             reference_output_sha256=None):
+    """Retain each run's complete trajectories beside the identities they were judged against.
+
+    `script_sha256` and `git_head` default to what is on disk WHEN THIS IS CALLED. A long
+    run that captured its identity at launch passes those values here, because a review
+    showed a retained run naming the digest of a driver edited while it ran, under the
+    very key a reader uses for producer identity.
+
+    `exclusive` publishes the file only if nothing is at `path`, AT THE WRITE, not by a
+    check before it. A review raced two retention attempts through a check-then-write and
+    the second truncated the first's retained baseline. The payload is written to a
+    private temporary file beside the target and published by a hard link, which the
+    filesystem refuses atomically when the target exists, so exactly one writer wins and
+    the winner's bytes are never touched by the loser."""
     payload = {
         "identity": {
             "case_file": os.path.basename(case_path),
-            "case_sha256": digest(case_path),
+            # THE DIGESTS MAY BE SUPPLIED by a caller that read the inputs once as bytes and
+            # parsed those bytes, so the retained identity names what was consumed rather
+            # than whatever is at the path when this runs
+            "case_sha256": case_sha256 or digest(case_path),
             "reference_output": os.path.basename(reference_path),
-            "reference_output_sha256": digest(reference_path),
+            "reference_output_sha256": reference_output_sha256 or digest(reference_path),
             "reference_track_index": reference_index,
             "script": os.path.basename(script_path),
-            "script_sha256": digest(script_path),
-            "git_head": repository_head(os.path.dirname(os.path.dirname(
+            "script_sha256": script_sha256 or digest(script_path),
+            "git_head": git_head or repository_head(os.path.dirname(os.path.dirname(
                 os.path.abspath(script_path)))),
             "comparison": COMPARISON,
         },
@@ -176,7 +193,29 @@ def save_run(path, runs, case_path, reference_path, reference_index, script_path
     }
     if extra:
         payload["identity"].update(extra)
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    with open(path, "w") as fh:
-        json.dump(payload, fh, indent=1, sort_keys=True)
+    publish_json(path, payload, exclusive=exclusive)
     return payload["identity"]
+
+
+def publish_json(path, payload, exclusive=True):
+    """Write a JSON document, and with `exclusive` publish it only if nothing is at `path`.
+
+    The document goes to a temporary file made by `tempfile.mkstemp` beside the target,
+    so two processes cannot share a temporary name (a review forced identical names and
+    the loser mutated the winner's published inode through its own link), and it is
+    published by a hard link, which the filesystem refuses atomically when the target
+    exists. The temporary file is removed on every path, including a refusal."""
+    import tempfile
+    directory = os.path.dirname(os.path.abspath(path))
+    os.makedirs(directory, exist_ok=True)
+    if not exclusive:
+        with open(path, "w") as fh:
+            json.dump(payload, fh, indent=1, sort_keys=True)
+        return
+    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".writing-", dir=directory)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            json.dump(payload, fh, indent=1, sort_keys=True)
+        os.link(tmp, path)
+    finally:
+        os.unlink(tmp)
