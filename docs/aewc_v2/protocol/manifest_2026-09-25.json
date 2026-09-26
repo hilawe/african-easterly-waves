@@ -1,0 +1,60 @@
+{
+  "protocol": "docs/aewc_v2/REANALYSIS_COMPARISON_PROTOCOL.md",
+  "agreed": "2026-09-25",
+  "years": [1979, 2010],
+  "level_hpa": 700,
+  "hours": ["00:00", "06:00", "12:00", "18:00"],
+  "grid": {
+    "area_nwse": [50.0, -155.0, -50.0, 55.0],
+    "spacing_deg": 1.0,
+    "shape": [101, 211],
+    "lat_first": 50.0,
+    "lat_last": -50.0,
+    "lon_first": -155.0,
+    "lon_last": 55.0,
+    "row_order": "descending"
+  },
+  "decimation": {
+    "nominal_deg": 2.5,
+    "stride_on_one_degree_input": 2,
+    "achieved_spacing_deg": 2.0,
+    "order": "advection on the native grid, decimate, crop both grids, smooth and flip the southern-hemisphere sign inside detection"
+  },
+  "domain": {"lat": [-35.0, 35.0], "lon": [-140.0, 40.0]},
+  "smoothing": {"passes": 1, "where": "inside detection, on each cropped field"},
+  "sign_convention": "southern-hemisphere curvature reversed so cyclonic is positive in both hemispheres, in detection and in the calibration population",
+  "wind_mask": "applied to the coarse fields only",
+  "tracker_flags": {"exclusive": false, "absorb": false},
+  "initialization": "each calendar year from January 1 00Z, started cold, both datasets",
+  "calibration": {
+    "rule": "A",
+    "percentiles": {"coarse": 55.0, "fine": 66.0},
+    "population": "every finite cell of the smoothed, sign-reversed curvature vorticity anomaly over the tracking domain at every six-hourly step of the protocol years, coarse from the decimated grid and fine from the input grid",
+    "climatology_years": [1979, 2010],
+    "population_years": [1979, 2010],
+    "estimator": "exact, linear interpolation",
+    "wind_mask_in_population": false,
+    "smoothing_adjustment": "none",
+    "applied_to": "both datasets separately under this rule; the archived ERA-Interim constants are a labeled sensitivity and not a production rule"
+  },
+  "membership": {
+    "rule": "the archive's source-region rule: the first observation, each coordinate rounded to the nearest quarter degree with ties away from zero, tested against the region polygons in priority order, the first containing polygon naming the region, else OTH",
+    "regions_dir": "data/aewc_v2_pilot/v1_src",
+    "priority": ["NEP", "SEP", "CAM", "SAM", "NAL", "SAL", "AFR"],
+    "product_region": "AFR"
+  },
+  "reporting": {
+    "season_months": [6, 7, 8, 9],
+    "membership": "first observation inside the season",
+    "crossing_in": "first observation before June 1 00Z and last observation at or after June 1 00Z",
+    "crossing_out": "first observation at or after June 1 00Z and before October 1 00Z, and last observation at or after October 1 00Z",
+    "year_end": "last observation on December 31, counted as potentially censored",
+    "lifetime": "observations recorded, with duration in days apart",
+    "genesis_and_lysis": "the first and the last recorded observation",
+    "contrasts": "every measured contrast reported, small and null included"
+  },
+  "datasets": {
+    "eraint": {"directory": "data/eraint/v1port_buffered", "prefix": "eraint", "label": "ERA-Interim"},
+    "era5": {"directory": "data/era5/v1port_buffered", "prefix": "era5", "label": "ERA5"}
+  }
+}
