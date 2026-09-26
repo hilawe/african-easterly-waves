@@ -60,9 +60,12 @@ def write_file(path, year, *, steps=None, lat_shift=0.0, garbage=False,
             lv[:] = [level]
         ds.createVariable("latitude", "f8", ("latitude",))[:] = lat
         ds.createVariable("longitude", "f8", ("longitude",))[:] = lon
-        ds.createVariable("u", "f4", ("valid_time", "pressure_level", "latitude",
-                                      "longitude"))[:] = \
-            np.zeros((n, 1, lat.size, lon.size))
+        wind = ds.createVariable("u", "f4", ("valid_time", "pressure_level", "latitude",
+                                             "longitude"))
+        # THE FIXTURE CARRIES UNITS AND A VARYING FIELD, as a real file does, since the
+        # validator now refuses a unitless or constant payload
+        wind.units = "m s**-1"
+        wind[:] = np.arange(n * lat.size * lon.size, dtype=np.float32).reshape(n, 1, lat.size, lon.size) % 7 - 3
 
 
 def test_a_complete_year_validates(tmp_path):
@@ -125,7 +128,9 @@ def test_a_wrong_epoch_is_refused_not_decoded_as_luck(tmp_path):
     path = str(tmp_path / "eraint_u700_1981_6h_region.nc")
     write_file(path, 1981, time_units="hours since 1800-01-01")
     reason = dl.validate_file(path, 1981, "u700", AREA, GRID)
-    assert reason is not None and "unreadable" in reason
+    # refused before the loader decodes it: the validator names the epoch now, where the
+    # loader named it unreadable, and either is a refusal and not a decode
+    assert reason is not None and ("epoch" in reason or "unreadable" in reason)
 
 
 def test_a_wrong_year_with_valid_everything_else_is_refused(tmp_path):

@@ -160,7 +160,11 @@ def _level_hpa(ds):
     import numpy as np
     for name in LEVEL_NAMES:
         if name in ds.variables:
-            values = np.asarray(ds[name][:], dtype=float).ravel()
+            raw = np.ma.asarray(ds[name][:], dtype=float).ravel()
+            # THE MASK IS KEPT: a masked level is a level that cannot be established
+            if np.ma.is_masked(raw) or not np.all(np.isfinite(np.ma.filled(raw, np.nan))):
+                return None, f"{name} holds a masked or nonfinite value; the level cannot be established"
+            values = np.asarray(raw, dtype=float)
             if values.size != 1:
                 return None, f"{name} holds {values.size} levels, expected exactly one"
             units = str(getattr(ds[name], "units", "")).lower()
@@ -181,6 +185,25 @@ def expected_coordinates(area, grid):
     lat = np.arange(north, south - dlat / 2, -dlat)
     lon = np.arange(west, east + dlon / 2, dlon)
     return lat, lon
+
+
+def _payload_reason(variable):
+    """Why the wind payload is unusable, or None. Read in time chunks so a year fits in
+    memory, masks preserved: any masked or nonfinite value, or a payload that is one
+    constant, is refused. A review promoted a file whose winds were entirely fill."""
+    import numpy as np
+    steps = variable.shape[0]
+    lo = hi = None
+    for start in range(0, steps, 256):
+        block = np.ma.asarray(variable[start:start + 256], dtype=float)
+        filled = np.ma.filled(block, np.nan)
+        if np.ma.is_masked(block) or not np.all(np.isfinite(filled)):
+            return f"the wind payload holds masked or nonfinite values (first in steps {start} to {start + 255})"
+        lo = float(filled.min()) if lo is None else min(lo, float(filled.min()))
+        hi = float(filled.max()) if hi is None else max(hi, float(filled.max()))
+    if lo is None or lo == hi:
+        return f"the wind payload is a single constant ({lo}), not a wind field"
+    return None
 
 
 def validate_file(path, year, var_key, area, grid):
@@ -210,16 +233,61 @@ def validate_file(path, year, var_key, area, grid):
             # timestamp values, so 1,460 zeros passed, and so did a file whose units
             # were hours since 1800, because nothing ever decoded them. _time_days
             # accepts exactly what the loader accepts and refuses the rest.
+            # THE EPOCH DATE IS CHECKED HERE, before the loader decodes. The loader accepts
+            # any "seconds since 1970..." string, and a review showed a file dated
+            # "seconds since 1970-02-01" passing with every date a month off. The loader
+            # is provenance-bound to committed artifacts, so the check lives in the
+            # validator, which is where the retrieval's acceptance is decided.
+            time_name = "valid_time" if "valid_time" in ds.variables else "time"
+            # COORDINATES ARE READ RAW, MASKS KEPT. The loader's np.asarray drops a mask and
+            # keeps the fill number underneath, and a confirmation round passed a masked
+            # timestamp that way. Any masked or nonfinite coordinate value is a refusal.
+            for coord in (time_name, "latitude", "longitude"):
+                raw_coord = np.ma.asarray(ds.variables[coord][:], dtype=float)
+                if np.ma.is_masked(raw_coord) or not np.all(np.isfinite(np.ma.filled(raw_coord, np.nan))):
+                    return f"the {coord} coordinate holds masked or nonfinite values"
+            time_units = str(getattr(ds.variables[time_name], "units", "")).strip().lower()
+            epoch_forms = ("", " 00:00:00", "t00:00:00", " 00:00", " 00:00:00.0", "z", " 00:00:00z")
+            if not (any(time_units == "seconds since 1970-01-01" + f for f in epoch_forms)
+                    or any(time_units == "days since 1900-01-01" + f for f in epoch_forms)):
+                return f"time units {time_units!r} are not the epoch's midnight the loader assumes"
             times = L._time_days(ds)
             level, level_reason = _level_hpa(ds)
             var_name = short if short in ds.variables else var_key
             if var_name not in ds.variables:
                 return f"no {short} variable (has {sorted(ds.variables)[:6]})"
-            shape = ds[var_name].shape
+            variable = ds[var_name]
+            shape = variable.shape
+            dims = tuple(variable.dimensions)
+            # THE WIND'S DIMENSIONS ARE BOUND TO THE VALIDATED COORDINATES, by name and by
+            # length: the time coordinate's own dimension first, then an optional level
+            # dimension of length one that is the level coordinate's, then latitude's and
+            # longitude's. A confirmation round promoted a two-level wind beside a
+            # singleton level coordinate.
+            coord_dims = {"time": ds.variables[time_name].dimensions, "lat": ds.variables["latitude"].dimensions,
+                          "lon": ds.variables["longitude"].dimensions}
+            level_dims = tuple(ds.variables[n].dimensions for n in LEVEL_NAMES if n in ds.variables)
+            wanted = [coord_dims["time"][0]] + ([level_dims[0][0]] if level_dims and len(dims) == 4 else []) \
+                     + [coord_dims["lat"][0], coord_dims["lon"][0]]
+            dim_lengths = {d: ds.dimensions[d].size for d in dims}
+            units_wind = str(getattr(variable, "units", "")).replace("**", "").replace(" ", "")
+            payload_reason = _payload_reason(variable)
     except Exception as exc:                          # noqa: BLE001
         return f"unreadable ({exc.__class__.__name__}: {str(exc)[:120]})"
+    # DIMENSIONS BY NAME, not by outer lengths. A review passed a (1460, 2, 3, 3) variable
+    # on (valid_time, member, latitude, longitude) beside an unrelated singleton level.
+    # THE LEVEL VERDICT COMES FIRST, so a file whose level cannot be established is named
+    # for that and not for the dimension mismatch it also carries
     if level_reason is not None:
         return level_reason
+    if list(dims) != wanted:
+        return f"variable dimensions {dims} are not the coordinates' own {tuple(wanted)}"
+    if len(dims) == 4 and dim_lengths[dims[1]] != 1:
+        return f"the level dimension {dims[1]} has length {dim_lengths[dims[1]]}, not one"
+    if units_wind not in ("ms-1", "m/s", "ms^-1"):
+        return f"wind units {getattr(variable, 'units', None)!r} are not m s**-1"
+    if payload_reason is not None:
+        return payload_reason
     if level != float(LEVEL):
         return f"pressure level is {level} hPa where the request was {LEVEL}"
     want_lat, want_lon = expected_coordinates(area, grid)
@@ -233,14 +301,22 @@ def validate_file(path, year, var_key, area, grid):
     expected_steps = days * 4
     jan1 = float((datetime.date(year, 1, 1) - datetime.date(1900, 1, 1)).days)
     one_second = 1.0 / 86400.0
+    # THE TIME VECTOR MUST BE ONE-DIMENSIONAL, UNMASKED AND FINITE, and it is compared
+    # whole against the calendar it claims. A review passed 1,460 NaN timestamps, since
+    # every comparison with NaN is false.
+    times = np.ma.filled(np.ma.asarray(times, dtype=float), np.nan)
+    if times.ndim != 1 or not np.all(np.isfinite(times)):
+        return "the time axis is not a one-dimensional finite vector"
     if times.size != expected_steps:
         return f"{times.size} timesteps where a complete {year} is {expected_steps}"
-    if abs(times[0] - jan1) > one_second:
-        return (f"first timestamp is day {times[0]:.3f} since 1900 where January 1 of "
-                f"{year} is {jan1:.1f}; the data is not the requested year")
-    if np.any(np.abs(np.diff(times) - 0.25) > one_second):
-        return "timestamps are not strictly six-hourly"
-    if shape[0] != times.size or shape[-2:] != (lat.size, lon.size):
+    expected_times = jan1 + np.arange(expected_steps) / 4.0
+    if not np.all(np.abs(times - expected_times) <= one_second):
+        worst = int(np.argmax(np.abs(times - expected_times)))
+        return (f"timestamp {worst} is day {times[worst]:.4f} since 1900 where the complete "
+                f"six-hourly {year} has {expected_times[worst]:.4f}; the data is not the "
+                f"requested year, or is not strictly six-hourly")
+    if shape[0] != times.size or shape[-2:] != (lat.size, lon.size) \
+            or any(dim_lengths[d] != n for d, n in zip(dims, shape)):
         return f"variable shape {shape} disagrees with its own axes"
     return None
 
