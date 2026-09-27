@@ -23,7 +23,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 
-LABEL = {"v1": "ERA-Interim", "port": "ERA5"}
+LABEL = {"v1": "ERA-Interim", "port": "ERA5"}       # the campaign's sides; the sensitivity passes its own
 COLOR = {"v1": "#1f5fa8", "port": "#c8552d", "archive": "#6b6b6b"}
 
 
@@ -35,10 +35,14 @@ def _band_label(key):
     return f"{side(a)} to {side(b)}"
 
 
-def render(summary, out, dpi=150):
+def render(summary, out, dpi=150, labels=None, title=None):
+    """`labels` names side A ("v1") and side B ("port"); the campaign's defaults are the
+    two reanalyses, the sensitivity passes the two threshold pairs. Every axis label and
+    the difference's sense (B minus A) follow from them."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    LABEL = dict(globals()["LABEL"], **(labels or {}))
     rows, ag = summary["years"], summary["aggregates"]
     years = np.array(sorted(int(y) for y in rows))
     v1 = np.array([rows[str(y)]["africa_origin"]["v1"] for y in years], float)
@@ -67,23 +71,26 @@ def render(summary, out, dpi=150):
     if spread:
         for s in (spread, -spread):
             b.axhline(s, color=COLOR["archive"], lw=0.8, ls=":")
-        b.text(years[-1] + 0.6, spread, "published record interannual spread", fontsize=7, va="bottom", ha="right", color=COLOR["archive"])
-    b.set_ylabel("ERA5 minus ERA-Interim, tracks")
+        # the caption sits on whichever spread line the bars leave clear
+        clear = -spread if diff.min() > -spread and diff.max() > spread else spread
+        b.text(years[-1] + 0.6, clear, "published record interannual spread", fontsize=7,
+               va="bottom" if clear > 0 else "top", ha="right", color=COLOR["archive"])
+    b.set_ylabel(f"{LABEL['port']} minus {LABEL['v1']}, tracks")
     b.set_xlabel("Year")
 
     lo, hi = min(v1.min(), port.min()) - 5, max(v1.max(), port.max()) + 5
     c.plot([lo, hi], [lo, hi], color="k", lw=0.8, ls="--")
     c.scatter(v1, port, s=18, color=COLOR["port"], edgecolor="k", linewidth=0.4)
-    for y, x1, x2 in zip(years, v1, port):
-        if abs(x2 - x1) > (spread or 0):
-            c.annotate(str(y), (x1, x2), fontsize=6.5, xytext=(3, 2), textcoords="offset points")
+    beyond = [(abs(x2 - x1), y, x1, x2) for y, x1, x2 in zip(years, v1, port) if abs(x2 - x1) > (spread or 0)]
+    for _, y, x1, x2 in sorted(beyond, reverse=True)[:10]:            # the ten largest, so a wholesale shift stays legible
+        c.annotate(str(y), (x1, x2), fontsize=6.5, xytext=(3, 2), textcoords="offset points")
     r = ag["africa_origin"]["pearson_correlation_v1_port"]
     c.text(0.96, 0.05, f"Pearson correlation {r:.3f}\n{len(years)} years, means {ag['africa_origin']['mean']['v1']:.1f} and {ag['africa_origin']['mean']['port']:.1f}",
            transform=c.transAxes, fontsize=8, va="bottom", ha="right")
     c.set_xlim(lo, hi)
     c.set_ylim(lo, hi)
-    c.set_xlabel("ERA-Interim, tracks in season")
-    c.set_ylabel("ERA5, tracks in season")
+    c.set_xlabel(f"{LABEL['v1']}, tracks in season")
+    c.set_ylabel(f"{LABEL['port']}, tracks in season")
     c.set_aspect("equal")
 
     months = ag["months_mean_starts"]
@@ -109,7 +116,7 @@ def render(summary, out, dpi=150):
     for ax, tag in zip((a, b, c, d), "abcd"):
         panel_label(ax, tag, size=11)
         ax.tick_params(labelsize=8)
-    fig.suptitle("Protocol campaign, 1979 to 2010, one implementation and one set of rules on both reanalyses", fontsize=10)
+    fig.suptitle(title or "Protocol campaign, 1979 to 2010, one implementation and one set of rules on both reanalyses", fontsize=10)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     fig.savefig(out, dpi=dpi)
     plt.close(fig)
@@ -122,11 +129,15 @@ def main(argv=None):
     ap.add_argument("--summary", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--dpi", type=int, default=150)
+    ap.add_argument("--side-a", default=None, help="the label of side A (v1), the campaign's default is ERA-Interim")
+    ap.add_argument("--side-b", default=None, help="the label of side B (port), the campaign's default is ERA5")
+    ap.add_argument("--title", default=None)
     args = ap.parse_args(argv)
     if os.path.exists(args.out):
         raise SystemExit(f"REFUSED: {args.out} exists and figures beside artifacts are never overwritten")
     summary = json.load(open(args.summary))
-    render(summary, args.out, args.dpi)
+    labels = {k: v for k, v in (("v1", args.side_a), ("port", args.side_b)) if v}
+    render(summary, args.out, args.dpi, labels=labels, title=args.title)
     print(f"wrote {args.out} from {args.summary}")
     return 0
 

@@ -74,6 +74,7 @@ WAVE_SEPARATION_DEG = 1.0
 BAND_EDGES = list(range(-60, 61, 10))      # ten-degree bands of genesis longitude, [lo, hi)
 PERCENTILES = (10, 50, 90)
 RECORD_YEARS = "1983-2007"                 # the published record's years, the scale's default
+TRANSFER_DRIVER = "scripts/run_threshold_sensitivity.py"   # the one source a declared threshold transfer may add
 DISTRIBUTIONS = ("lifetime", "genesis_lon", "genesis_lat", "lysis_lon", "lysis_lat")
 
 
@@ -392,7 +393,11 @@ def producer_problems(record, manifest, manifest_sha256, year, side):
     # THE SOURCE INVENTORY MUST BE COMPLETE: every tracking source in this tree, each
     # with a full digest, so two records can only agree on the whole inventory
     sources = record.get("source_sha256") or {}
-    if set(sources) != expected_tracking_sources() or not all(isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v) for v in sources.values()):
+    # a record replayed by the sensitivity driver carries the driver as one more source
+    # beside the complete tracking inventory, and says so with its sensitivity block
+    allowed = expected_tracking_sources() | ({TRANSFER_DRIVER} if record.get("sensitivity") else set())
+    if not (expected_tracking_sources() <= set(sources) <= allowed) \
+            or not all(isinstance(v, str) and re.fullmatch(r"[0-9a-f]{64}", v) for v in sources.values()):
         problems.append(f"{side}: the source inventory is not the complete tracking inventory with full digests")
     return problems
 
@@ -486,6 +491,8 @@ def main(argv=None):
                          "differ and whose producer records must carry equal protocol settings; the "
                          "artifact keys v1 and port then denote side A and side B, labeled by dataset")
     ap.add_argument("--manifest", default=None, help="the retained protocol manifest, required in reanalysis mode")
+    ap.add_argument("--declared-threshold-transfer", action="store_true",
+                    help="reanalysis mode only: accept one side replayed by the sensitivity driver on the other side's numerical thresholds")
     ap.add_argument("--v1", required=True, help="side A's tracks (.mat): version 1's, or dataset A's")
     ap.add_argument("--port", required=True, help="side B's tracks (.mat): the port's, or dataset B's")
     ap.add_argument("--year", type=int, required=True)
@@ -554,8 +561,43 @@ def main(argv=None):
         if problems:
             raise SystemExit("REFUSED: " + "; ".join(problems))
         differing = settings_difference(prod_a, prod_b)
+        transfer = None
+        # A RECORD WITH A SENSITIVITY BLOCK IS NEVER A PROTOCOL SIDE. Whether or not the two
+        # inventories differ, a replay by the sensitivity driver enters this mode only as a
+        # declared transfer, and only one side may be one.
+        transferred = [s for s, p in (("v1", prod_a), ("port", prod_b)) if p.get("sensitivity")]
+        if transferred and not args.declared_threshold_transfer:
+            raise SystemExit(f"REFUSED: side(s) {transferred} carry a sensitivity block, which the protocol comparison never accepts")
+        if args.declared_threshold_transfer and len(transferred) != 1:
+            raise SystemExit(f"REFUSED: a declared threshold transfer needs exactly one replayed side, got {transferred}")
+        if args.declared_threshold_transfer and not differing:
+            differing = [f"source {TRANSFER_DRIVER}"] if TRANSFER_DRIVER in (prod_a.get("source_sha256") or {}) or TRANSFER_DRIVER in (prod_b.get("source_sha256") or {}) else []
+            if not differing:
+                raise SystemExit("REFUSED: a declared threshold transfer needs the replayed side's inventory to carry the sensitivity driver")
         if differing:
-            raise SystemExit(f"REFUSED: the two runs differ in {differing}")
+            # A DECLARED THRESHOLD TRANSFER is the one difference this mode accepts, and only
+            # when asked for by name: one side was replayed by the sensitivity driver with the
+            # other dataset's numerical thresholds, so its inventory carries the driver and its
+            # record a sensitivity block, and the two sides then hold the same coarse and fine
+            # values. The artifact says so in its own block, so it cannot pass as the protocol
+            # comparison, whose two sides differ in the data and in their own calibrations.
+            if not (args.declared_threshold_transfer and differing == [f"source {TRANSFER_DRIVER}"] and len(transferred) == 1):
+                raise SystemExit(f"REFUSED: the two runs differ in {differing}")
+            side = transferred[0]
+            p_t = prod_b if side == "port" else prod_a
+            p_o = prod_a if side == "port" else prod_b
+            sens, ds_t, ds_o = p_t["sensitivity"], p_t["dataset_specific"], p_o["dataset_specific"]
+            pair = (ds_t.get("coarse_threshold"), ds_t.get("fine_threshold"))
+            others = (ds_o.get("coarse_threshold"), ds_o.get("fine_threshold"), sens.get("coarse_threshold"), sens.get("fine_threshold"))
+            if not all(isinstance(v, (int, float)) and not isinstance(v, bool) and np.isfinite(v) and v > 0 for v in pair + others):
+                raise SystemExit(f"REFUSED: a declared threshold transfer needs present, finite, positive thresholds on both sides and in the block, got {pair + others}")
+            if pair != (ds_o.get("coarse_threshold"), ds_o.get("fine_threshold")) or pair != (sens.get("coarse_threshold"), sens.get("fine_threshold")):
+                raise SystemExit(f"REFUSED: a declared threshold transfer needs both sides on one numerical pair, got {pair} against "
+                                 f"{(ds_o.get('coarse_threshold'), ds_o.get('fine_threshold'))} and the block's {(sens.get('coarse_threshold'), sens.get('fine_threshold'))}")
+            transfer = {"side": side, "label": sens.get("label"), "coarse_threshold": pair[0], "fine_threshold": pair[1],
+                        "replaces_rule_a": sens.get("replaces_rule_a"), "source": sens.get("source"),
+                        "driver_sha256": (p_t.get("source_sha256") or {}).get(TRANSFER_DRIVER),
+                        "note": "a common numerical threshold-pair comparison: each side keeps its own climatology and anomaly fields"}
         if prod_a["dataset_specific"]["dataset"] == prod_b["dataset_specific"]["dataset"]:
             raise SystemExit("REFUSED: both sides name the same dataset")
         if not case_v1 or not case_port or case_v1 == case_port:
@@ -570,7 +612,9 @@ def main(argv=None):
                                "case_id": case_v1, "manifest_sha256": prod_a["protocol_settings"].get("manifest_sha256")},
                         "port": {"label": prod_b["dataset_specific"].get("label"), "dataset": prod_b["dataset_specific"].get("dataset"),
                                  "case_id": case_port, "manifest_sha256": prod_b["protocol_settings"].get("manifest_sha256")},
-                        "protocol_settings_equal": True, "tracking_sources_equal": True}
+                        "protocol_settings_equal": True,
+                        "tracking_sources_equal": True if transfer is None else f"equal apart from {TRANSFER_DRIVER} on side {transfer['side']}, a declared threshold transfer",
+                        "threshold_transfer": transfer}
     sides_all = {"v1": v1_all, "port": port_all}
     whole = {"v1": [t for t in v1_all if in_season(t, args.year)],
              "port": [t for t in port_all if in_season(t, args.year)]}
@@ -619,6 +663,7 @@ def main(argv=None):
                                                      - columns["v1"]["duplication"]["fraction"]),
         "comparison": comparison, "groups_reported_as_counts_only": counts_only,
         "published_spread": spread,
+        "threshold_transfer": (sides_record or {}).get("threshold_transfer") if args.mode == "reanalysis" else None,
     }
     if args.published_year_file:
         pub = [t for t in read_record_bytes(raw["published_year_file"]) if in_season(t, args.year)]

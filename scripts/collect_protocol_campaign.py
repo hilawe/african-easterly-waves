@@ -175,7 +175,9 @@ def row_from_artifact(path):
     s = art["comparison"]["season"]
     return {
             "artifact": os.path.basename(path), "artifact_sha256": hashlib.sha256(blob).hexdigest(),
-            "sides": {k: art["sides"][k].get("case_id") for k in ("v1", "port")},
+            # reanalysis mode records a sides block; implementation mode records one case id
+            # at the top level for both sides, and the row carries it for both
+            "sides": {k: ((art.get("sides") or {}).get(k) or {}).get("case_id", art.get("case_id")) for k in ("v1", "port")},
             "tracks_in_year": {k: art["columns"][k]["tracks_all"] for k in ("v1", "port")},
             "season_whole_domain": {k: art["columns"][k]["tracks_in_season_whole_domain"] for k in ("v1", "port")},
             "africa_origin": {"v1": s["v1"], "port": s["port"], "port_minus_v1": s["port_minus_v1"],

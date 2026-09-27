@@ -1,0 +1,2735 @@
+{
+ "case_id": "4faed0de236ce7f134bdeb2998fd1e77",
+ "columns": {
+  "port": {
+   "boundaries": {
+    "crossing_in": {
+     "observations_at_or_after_june_1": 265,
+     "predicate": "first observation before June 1 00Z and last at or after it",
+     "tracks": 29
+    },
+    "crossing_out": {
+     "predicate": "first observation at or after June 1 00Z and before October 1 00Z, last at or after October 1 00Z",
+     "tracks": 39
+    },
+    "year_end_potentially_censored": {
+     "predicate": "last observation on December 31, not a demonstrated truncation",
+     "tracks": 57
+    }
+   },
+   "distinct_waves": 139,
+   "duplication": {
+    "duplicated": 990,
+    "fraction": 0.32662487627845593,
+    "observations": 3031
+   },
+   "source_regions_in_season": {
+    "AFR": 206,
+    "CAM": 25,
+    "NAL": 139,
+    "NEP": 116,
+    "OTH": 41,
+    "SAL": 84,
+    "SAM": 86,
+    "SEP": 106
+   },
+   "spacing": {
+    "duration_days_percentiles": {
+     "10": 2.75,
+     "50": 4.0,
+     "90": 7.0
+    },
+    "endpoint_convention": "duration is the last observation's time minus the first's, so a track of n contiguous observations spans (n - 1) timesteps",
+    "fraction_of_intervals_one_timestep": 0.7407903549899532,
+    "intervals": 2986,
+    "largest_interval_days": 0.5,
+    "timestep_days": 0.25,
+    "tracks": 206,
+    "tracks_with_a_gap": 197
+   },
+   "tracks_all": 2344,
+   "tracks_in_season_record_domain": 206,
+   "tracks_in_season_whole_domain": 803
+  },
+  "v1": {
+   "boundaries": {
+    "crossing_in": {
+     "observations_at_or_after_june_1": 256,
+     "predicate": "first observation before June 1 00Z and last at or after it",
+     "tracks": 26
+    },
+    "crossing_out": {
+     "predicate": "first observation at or after June 1 00Z and before October 1 00Z, last at or after October 1 00Z",
+     "tracks": 14
+    },
+    "year_end_potentially_censored": {
+     "predicate": "last observation on December 31, not a demonstrated truncation",
+     "tracks": 44
+    }
+   },
+   "distinct_waves": 93,
+   "duplication": {
+    "duplicated": 610,
+    "fraction": 0.32848680667743674,
+    "observations": 1857
+   },
+   "source_regions_in_season": {
+    "AFR": 135,
+    "CAM": 21,
+    "NAL": 79,
+    "NEP": 83,
+    "OTH": 41,
+    "SAL": 50,
+    "SAM": 56,
+    "SEP": 78
+   },
+   "spacing": {
+    "duration_days_percentiles": {
+     "10": 2.75,
+     "50": 4.0,
+     "90": 6.75
+    },
+    "endpoint_convention": "duration is the last observation's time minus the first's, so a track of n contiguous observations spans (n - 1) timesteps",
+    "fraction_of_intervals_one_timestep": 0.6930258099945085,
+    "intervals": 1821,
+    "largest_interval_days": 0.5,
+    "timestep_days": 0.25,
+    "tracks": 135,
+    "tracks_with_a_gap": 132
+   },
+   "tracks_all": 1628,
+   "tracks_in_season_record_domain": 135,
+   "tracks_in_season_whole_domain": 543
+  }
+ },
+ "comparison": {
+  "band +0..+10": {
+   "difference_over_published_sd": 1.831807462629248,
+   "distinct_waves": {
+    "difference_over_published_sd": 1.7007533576245188,
+    "port": 23,
+    "port_minus_v1": 7,
+    "published_mean": 17.24,
+    "published_sd": 4.115823125451335,
+    "v1": 16
+   },
+   "distributions": {
+    "genesis_lat": {
+     "ks_statistic": 0.12105263157894736,
+     "percentiles": {
+      "10": {
+       "port": 8.9,
+       "port_minus_v1": 2.5,
+       "v1": 6.4
+      },
+      "50": {
+       "port": 22.875,
+       "port_minus_v1": 0.375,
+       "v1": 22.5
+      },
+      "90": {
+       "port": 31.650000000000002,
+       "port_minus_v1": 2.150000000000002,
+       "v1": 29.5
+      }
+     }
+    },
+    "genesis_lon": {
+     "ks_statistic": 0.1280701754385965,
+     "percentiles": {
+      "10": {
+       "port": 1.0,
+       "port_minus_v1": -0.3999999999999999,
+       "v1": 1.4
+      },
+      "50": {
+       "port": 3.5,
+       "port_minus_v1": -1.0,
+       "v1": 4.5
+      },
+      "90": {
+       "port": 8.275,
+       "port_minus_v1": -0.3249999999999993,
+       "v1": 8.6
+      }
+     }
+    },
+    "lifetime": {
+     "ks_statistic": 0.2087719298245614,
+     "percentiles": {
+      "10": {
+       "port": 9.0,
+       "port_minus_v1": -1.5999999999999996,
+       "v1": 10.6
+      },
+      "50": {
+       "port": 14.0,
+       "port_minus_v1": 0.0,
+       "v1": 14.0
+      },
+      "90": {
+       "port": 24.200000000000003,
+       "port_minus_v1": 1.0000000000000036,
+       "v1": 23.2
+      }
+     }
+    },
+    "lysis_lat": {
+     "ks_statistic": 0.27543859649122804,
+     "percentiles": {
+      "10": {
+       "port": 6.0,
+       "port_minus_v1": -4.5,
+       "v1": 10.5
+      },
+      "50": {
+       "port": 18.0,
+       "port_minus_v1": 3.5,
+       "v1": 14.5
+      },
+      "90": {
+       "port": 26.925000000000004,
+       "port_minus_v1": 4.1250000000000036,
+       "v1": 22.8
+      }
+     }
+    },
+    "lysis_lon": {
+     "ks_statistic": 0.29298245614035084,
+     "percentiles": {
+      "10": {
+       "port": -37.05,
+       "port_minus_v1": -8.049999999999997,
+       "v1": -29.0
+      },
+      "50": {
+       "port": -14.0,
+       "port_minus_v1": 5.5,
+       "v1": -19.5
+      },
+      "90": {
+       "port": 3.850000000000005,
+       "port_minus_v1": -0.34999999999998543,
+       "v1": 4.19999999999999
+      }
+     }
+    }
+   },
+   "duplication": {
+    "difference_over_published_sd": -0.4622646064069524,
+    "port_fraction": 0.13577586206896552,
+    "port_minus_v1_points": -4.86901573485102,
+    "published_mean_fraction": 0.16181074227327275,
+    "published_sd_fraction": 0.10532962436160657,
+    "v1_fraction": 0.18446601941747573
+   },
+   "port": 30,
+   "port_minus_v1": 11,
+   "published_mean": 21.32,
+   "published_sd": 6.004997918400972,
+   "v1": 19
+  },
+  "band +10..+20": {
+   "difference_over_published_sd": 2.642301174147292,
+   "distinct_waves": {
+    "difference_over_published_sd": 3.614972896172879,
+    "port": 34,
+    "port_minus_v1": 18,
+    "published_mean": 27.28,
+    "published_sd": 4.979290444765533,
+    "v1": 16
+   },
+   "distributions": {
+    "genesis_lat": {
+     "ks_statistic": 0.2019914651493599,
+     "percentiles": {
+      "10": {
+       "port": -14.7,
+       "port_minus_v1": -0.5,
+       "v1": -14.2
+      },
+      "50": {
+       "port": 1.5,
+       "port_minus_v1": -10.5,
+       "v1": 12.0
+      },
+      "90": {
+       "port": 22.299999999999997,
+       "port_minus_v1": -1.8000000000000043,
+       "v1": 24.1
+      }
+     }
+    },
+    "genesis_lon": {
+     "ks_statistic": 0.1351351351351351,
+     "percentiles": {
+      "10": {
+       "port": 11.3,
+       "port_minus_v1": -0.6499999999999986,
+       "v1": 11.95
+      },
+      "50": {
+       "port": 14.5,
+       "port_minus_v1": -0.5,
+       "v1": 15.0
+      },
+      "90": {
+       "port": 18.5,
+       "port_minus_v1": 0.8999999999999986,
+       "v1": 17.6
+      }
+     }
+    },
+    "lifetime": {
+     "ks_statistic": 0.13798008534850625,
+     "percentiles": {
+      "10": {
+       "port": 9.0,
+       "port_minus_v1": 0.0,
+       "v1": 9.0
+      },
+      "50": {
+       "port": 13.0,
+       "port_minus_v1": -1.0,
+       "v1": 14.0
+      },
+      "90": {
+       "port": 22.4,
+       "port_minus_v1": 2.600000000000005,
+       "v1": 19.799999999999994
+      }
+     }
+    },
+    "lysis_lat": {
+     "ks_statistic": 0.22759601706970134,
+     "percentiles": {
+      "10": {
+       "port": -13.7,
+       "port_minus_v1": 1.3000000000000007,
+       "v1": -15.0
+      },
+      "50": {
+       "port": 4.5,
+       "port_minus_v1": -5.5,
+       "v1": 10.0
+      },
+      "90": {
+       "port": 21.349999999999998,
+       "port_minus_v1": 0.6500000000000057,
+       "v1": 20.699999999999992
+      }
+     }
+    },
+    "lysis_lon": {
+     "ks_statistic": 0.3271692745376955,
+     "percentiles": {
+      "10": {
+       "port": -17.75,
+       "port_minus_v1": 11.05,
+       "v1": -28.8
+      },
+      "50": {
+       "port": 3.0,
+       "port_minus_v1": 1.0,
+       "v1": 2.0
+      },
+      "90": {
+       "port": 15.5,
+       "port_minus_v1": 6.60000000000001,
+       "v1": 8.89999999999999
+      }
+     }
+    }
+   },
+   "duplication": {
+    "difference_over_published_sd": -0.8233708964979057,
+    "port_fraction": 0.10617760617760617,
+    "port_minus_v1_points": -4.7048200274006735,
+    "published_mean_fraction": 0.16168952736576517,
+    "published_sd_fraction": 0.05714095612817959,
+    "v1_fraction": 0.1532258064516129
+   },
+   "port": 37,
+   "port_minus_v1": 18,
+   "published_mean": 33.64,
+   "published_sd": 6.812243878977519,
+   "v1": 19
+  },
+  "band +20..+30": {
+   "difference_over_published_sd": 2.75510700398314,
+   "distinct_waves": {
+    "difference_over_published_sd": 3.1283963709622054,
+    "port": 39,
+    "port_minus_v1": 15,
+    "published_mean": 29.64,
+    "published_sd": 4.794788837894742,
+    "v1": 24
+   },
+   "distributions": {
+    "genesis_lat": {
+     "ks_statistic": 0.0976190476190475,
+     "percentiles": {
+      "10": {
+       "port": -11.5,
+       "port_minus_v1": -1.4000000000000004,
+       "v1": -10.1
+      },
+      "50": {
+       "port": 2.5,
+       "port_minus_v1": -0.125,
+       "v1": 2.625
+      },
+      "90": {
+       "port": 23.0,
+       "port_minus_v1": 1.3500000000000014,
+       "v1": 21.65
+      }
+     }
+    },
+    "genesis_lon": {
+     "ks_statistic": 0.1412698412698413,
+     "percentiles": {
+      "10": {
+       "port": 21.0,
+       "port_minus_v1": 0.07499999999999929,
+       "v1": 20.925
+      },
+      "50": {
+       "port": 25.0,
+       "port_minus_v1": -1.75,
+       "v1": 26.75
+      },
+      "90": {
+       "port": 29.0,
+       "port_minus_v1": -0.5,
+       "v1": 29.5
+      }
+     }
+    },
+    "lifetime": {
+     "ks_statistic": 0.10634920634920636,
+     "percentiles": {
+      "10": {
+       "port": 9.0,
+       "port_minus_v1": -1.0,
+       "v1": 10.0
+      },
+      "50": {
+       "port": 13.0,
+       "port_minus_v1": -0.5,
+       "v1": 13.5
+      },
+      "90": {
+       "port": 21.6,
+       "port_minus_v1": 1.0,
+       "v1": 20.6
+      }
+     }
+    },
+    "lysis_lat": {
+     "ks_statistic": 0.21031746031746046,
+     "percentiles": {
+      "10": {
+       "port": -11.099999999999998,
+       "port_minus_v1": -0.5999999999999979,
+       "v1": -10.5
+      },
+      "50": {
+       "port": 4.5,
+       "port_minus_v1": -3.25,
+       "v1": 7.75
+      },
+      "90": {
+       "port": 17.700000000000003,
+       "port_minus_v1": -5.299999999999997,
+       "v1": 23.0
+      }
+     }
+    },
+    "lysis_lon": {
+     "ks_statistic": 0.19285714285714284,
+     "percentiles": {
+      "10": {
+       "port": 2.600000000000001,
+       "port_minus_v1": 7.600000000000001,
+       "v1": -5.0
+      },
+      "50": {
+       "port": 16.0,
+       "port_minus_v1": 2.0,
+       "v1": 14.0
+      },
+      "90": {
+       "port": 38.8,
+       "port_minus_v1": 1.4499999999999957,
+       "v1": 37.35
+      }
+     }
+    }
+   },
+   "duplication": {
+    "difference_over_published_sd": 0.4430638031094039,
+    "port_fraction": 0.1723076923076923,
+    "port_minus_v1_points": 2.342431761786601,
+    "published_mean_fraction": 0.20244783809074415,
+    "published_sd_fraction": 0.052868949016992794,
+    "v1_fraction": 0.1488833746898263
+   },
+   "port": 45,
+   "port_minus_v1": 17,
+   "published_mean": 37.64,
+   "published_sd": 6.170359254803024,
+   "v1": 28
+  },
+  "band +30..+40": {
+   "difference_over_published_sd": 1.0618406509117697,
+   "distinct_waves": {
+    "difference_over_published_sd": 1.601450529823602,
+    "port": 45,
+    "port_minus_v1": 9,
+    "published_mean": 33.2,
+    "published_sd": 5.619905100029122,
+    "v1": 36
+   },
+   "distributions": {
+    "genesis_lat": {
+     "ks_statistic": 0.08114035087719307,
+     "percentiles": {
+      "10": {
+       "port": -12.1,
+       "port_minus_v1": -0.5500000000000007,
+       "v1": -11.549999999999999
+      },
+      "50": {
+       "port": 3.5,
+       "port_minus_v1": 0.25,
+       "v1": 3.25
+      },
+      "90": {
+       "port": 22.049999999999997,
+       "port_minus_v1": -2.600000000000005,
+       "v1": 24.650000000000002
+      }
+     }
+    },
+    "genesis_lon": {
+     "ks_statistic": 0.1875,
+     "percentiles": {
+      "10": {
+       "port": 30.5,
+       "port_minus_v1": -0.8500000000000014,
+       "v1": 31.35
+      },
+      "50": {
+       "port": 34.5,
+       "port_minus_v1": -1.5,
+       "v1": 36.0
+      },
+      "90": {
+       "port": 39.35,
+       "port_minus_v1": -0.14999999999999858,
+       "v1": 39.5
+      }
+     }
+    },
+    "lifetime": {
+     "ks_statistic": 0.13157894736842105,
+     "percentiles": {
+      "10": {
+       "port": 9.0,
+       "port_minus_v1": 0.0,
+       "v1": 9.0
+      },
+      "50": {
+       "port": 13.0,
+       "port_minus_v1": 1.0,
+       "v1": 12.0
+      },
+      "90": {
+       "port": 22.0,
+       "port_minus_v1": 1.0999999999999872,
+       "v1": 20.900000000000013
+      }
+     }
+    },
+    "lysis_lat": {
+     "ks_statistic": 0.1918859649122806,
+     "percentiles": {
+      "10": {
+       "port": -8.5,
+       "port_minus_v1": 5.399999999999999,
+       "v1": -13.899999999999999
+      },
+      "50": {
+       "port": 4.0,
+       "port_minus_v1": 1.75,
+       "v1": 2.25
+      },
+      "90": {
+       "port": 16.0,
+       "port_minus_v1": 0.0,
+       "v1": 16.0
+      }
+     }
+    },
+    "lysis_lon": {
+     "ks_statistic": 0.20394736842105265,
+     "percentiles": {
+      "10": {
+       "port": 12.8,
+       "port_minus_v1": -3.1999999999999993,
+       "v1": 16.0
+      },
+      "50": {
+       "port": 31.5,
+       "port_minus_v1": -2.25,
+       "v1": 33.75
+      },
+      "90": {
+       "port": 39.0,
+       "port_minus_v1": -0.32500000000000284,
+       "v1": 39.325
+      }
+     }
+    }
+   },
+   "duplication": {
+    "difference_over_published_sd": -0.9561551755944113,
+    "port_fraction": 0.22927461139896374,
+    "port_minus_v1_points": -6.286022006171041,
+    "published_mean_fraction": 0.25856151585687337,
+    "published_sd_fraction": 0.0657426970707262,
+    "v1_fraction": 0.29213483146067415
+   },
+   "port": 57,
+   "port_minus_v1": 9,
+   "published_mean": 46.44,
+   "published_sd": 8.475848040166836,
+   "v1": 48
+  },
+  "band +40..+50": {
+   "distinct_waves": {
+    "port": 1,
+    "port_minus_v1": 1,
+    "published_mean": 0.4,
+    "published_sd": 0.6454972243679029,
+    "v1": 0
+   },
+   "duplication": {
+    "port_fraction": 0.0,
+    "port_minus_v1_points": NaN,
+    "published_mean_fraction": 0.05078125,
+    "published_sd_fraction": 0.14363106492851746,
+    "v1_fraction": NaN
+   },
+   "port": 1,
+   "port_minus_v1": 1,
+   "published_mean": 0.44,
+   "published_sd": 0.7118052168020874,
+   "reported_as": "counts only",
+   "v1": 0,
+   "why": "fewer than 5 tracks on a side"
+  },
+  "band +50..+60": {
+   "distinct_waves": {
+    "port": 0,
+    "port_minus_v1": 0,
+    "published_mean": 0.0,
+    "published_sd": 0.0,
+    "v1": 0
+   },
+   "duplication": {
+    "port_fraction": NaN,
+    "port_minus_v1_points": NaN,
+    "published_mean_fraction": null,
+    "published_sd_fraction": null,
+    "v1_fraction": NaN
+   },
+   "port": 0,
+   "port_minus_v1": 0,
+   "published_mean": 0.0,
+   "published_sd": 0.0,
+   "reported_as": "counts only",
+   "v1": 0,
+   "why": "fewer than 5 tracks on a side"
+  },
+  "band -10..+0": {
+   "difference_over_published_sd": 2.4485830280592444,
+   "distinct_waves": {
+    "difference_over_published_sd": 1.288090573126193,
+    "port": 18,
+    "port_minus_v1": 4,
+    "published_mean": 17.68,
+    "published_sd": 3.105371690045063,
+    "v1": 14
+   },
+   "distributions": {
+    "genesis_lat": {
+     "ks_statistic": 0.16249999999999998,
+     "percentiles": {
+      "10": {
+       "port": 12.8,
+       "port_minus_v1": 1.1750000000000007,
+       "v1": 11.625
+      },
+      "50": {
+       "port": 20.0,
+       "port_minus_v1": -1.0,
+       "v1": 21.0
+      },
+      "90": {
+       "port": 25.450000000000003,
+       "port_minus_v1": -3.049999999999997,
+       "v1": 28.5
+      }
+     }
+    },
+    "genesis_lon": {
+     "ks_statistic": 0.295,
+     "percentiles": {
+      "10": {
+       "port": -7.4,
+       "port_minus_v1": 2.0999999999999996,
+       "v1": -9.5
+      },
+      "50": {
+       "port": -4.0,
+       "port_minus_v1": 1.75,
+       "v1": -5.75
+      },
+      "90": {
+       "port": -1.5,
+       "port_minus_v1": 1.25,
+       "v1": -2.75
+      }
+     }
+    },
+    "lifetime": {
+     "ks_statistic": 0.2925,
+     "percentiles": {
+      "10": {
+       "port": 9.0,
+       "port_minus_v1": -0.5,
+       "v1": 9.5
+      },
+      "50": {
+       "port": 16.0,
+       "port_minus_v1": 3.0,
+       "v1": 13.0
+      },
+      "90": {
+       "port": 37.000000000000014,
+       "port_minus_v1": 14.000000000000014,
+       "v1": 23.0
+      }
+     }
+    },
+    "lysis_lat": {
+     "ks_statistic": 0.27749999999999997,
+     "percentiles": {
+      "10": {
+       "port": 10.4,
+       "port_minus_v1": -0.09999999999999964,
+       "v1": 10.5
+      },
+      "50": {
+       "port": 18.5,
+       "port_minus_v1": 2.0,
+       "v1": 16.5
+      },
+      "90": {
+       "port": 31.1,
+       "port_minus_v1": 9.600000000000001,
+       "v1": 21.5
+      }
+     }
+    },
+    "lysis_lon": {
+     "ks_statistic": 0.2875,
+     "percentiles": {
+      "10": {
+       "port": -50.6,
+       "port_minus_v1": -20.85,
+       "v1": -29.75
+      },
+      "50": {
+       "port": -28.5,
+       "port_minus_v1": -2.5,
+       "v1": -26.0
+      },
+      "90": {
+       "port": -16.5,
+       "port_minus_v1": -8.0,
+       "v1": -8.5
+      }
+     }
+    }
+   },
+   "duplication": {
+    "difference_over_published_sd": 1.1748083906991562,
+    "port_fraction": 0.19168591224018475,
+    "port_minus_v1_points": 10.372294927722178,
+    "published_mean_fraction": 0.16895465527287834,
+    "published_sd_fraction": 0.08828924793045938,
+    "v1_fraction": 0.08796296296296297
+   },
+   "port": 25,
+   "port_minus_v1": 9,
+   "published_mean": 21.48,
+   "published_sd": 3.675595189897821,
+   "v1": 16
+  },
+  "band -20..-10": {
+   "difference_over_published_sd": 1.584811631386123,
+   "distinct_waves": {
+    "difference_over_published_sd": 1.731358402661109,
+    "port": 10,
+    "port_minus_v1": 5,
+    "published_mean": 10.44,
+    "published_sd": 2.8879058156387307,
+    "v1": 5
+   },
+   "distributions": {
+    "genesis_lat": {
+     "ks_statistic": 0.4,
+     "percentiles": {
+      "10": {
+       "port": 11.25,
+       "port_minus_v1": 1.8499999999999996,
+       "v1": 9.4
+      },
+      "50": {
+       "port": 17.0,
+       "port_minus_v1": -3.0,
+       "v1": 20.0
+      },
+      "90": {
+       "port": 22.0,
+       "port_minus_v1": 0.3999999999999986,
+       "v1": 21.6
+      }
+     }
+    },
+    "genesis_lon": {
+     "ks_statistic": 0.1090909090909091,
+     "percentiles": {
+      "10": {
+       "port": -14.0,
+       "port_minus_v1": 0.5999999999999996,
+       "v1": -14.6
+      },
+      "50": {
+       "port": -12.5,
+       "port_minus_v1": 0.0,
+       "v1": -12.5
+      },
+      "90": {
+       "port": -10.5,
+       "port_minus_v1": 0.1999999999999993,
+       "v1": -10.7
+      }
+     }
+    },
+    "lifetime": {
+     "ks_statistic": 0.4363636363636364,
+     "percentiles": {
+      "10": {
+       "port": 10.0,
+       "port_minus_v1": 1.0,
+       "v1": 9.0
+      },
+      "50": {
+       "port": 16.0,
+       "port_minus_v1": 6.0,
+       "v1": 10.0
+      },
+      "90": {
+       "port": 22.0,
+       "port_minus_v1": 6.199999999999999,
+       "v1": 15.8
+      }
+     }
+    },
+    "lysis_lat": {
+     "ks_statistic": 0.23636363636363644,
+     "percentiles": {
+      "10": {
+       "port": 3.0,
+       "port_minus_v1": 0.5,
+       "v1": 2.5
+      },
+      "50": {
+       "port": 14.5,
+       "port_minus_v1": 4.0,
+       "v1": 10.5
+      },
+      "90": {
+       "port": 22.5,
+       "port_minus_v1": 1.6000000000000014,
+       "v1": 20.9
+      }
+     }
+    },
+    "lysis_lon": {
+     "ks_statistic": 0.3454545454545454,
+     "percentiles": {
+      "10": {
+       "port": -44.5,
+       "port_minus_v1": -6.200000000000003,
+       "v1": -38.3
+      },
+      "50": {
+       "port": -32.5,
+       "port_minus_v1": -8.0,
+       "v1": -24.5
+      },
+      "90": {
+       "port": -16.0,
+       "port_minus_v1": 1.6999999999999993,
+       "v1": -17.7
+      }
+     }
+    }
+   },
+   "duplication": {
+    "difference_over_published_sd": 0.4433730653449856,
+    "port_fraction": 0.038461538461538464,
+    "port_minus_v1_points": 3.8461538461538463,
+    "published_mean_fraction": 0.08481835786969297,
+    "published_sd_fraction": 0.08674757550193492,
+    "v1_fraction": 0.0
+   },
+   "port": 11,
+   "port_minus_v1": 6,
+   "published_mean": 11.8,
+   "published_sd": 3.7859388972001824,
+   "v1": 5
+  },
+  "band -30..-20": {
+   "distinct_waves": {
+    "port": 0,
+    "port_minus_v1": 0,
+    "published_mean": 0.0,
+    "published_sd": 0.0,
+    "v1": 0
+   },
+   "duplication": {
+    "port_fraction": NaN,
+    "port_minus_v1_points": NaN,
+    "published_mean_fraction": null,
+    "published_sd_fraction": null,
+    "v1_fraction": NaN
+   },
+   "port": 0,
+   "port_minus_v1": 0,
+   "published_mean": 0.0,
+   "published_sd": 0.0,
+   "reported_as": "counts only",
+   "v1": 0,
+   "why": "fewer than 5 tracks on a side"
+  },
+  "band -40..-30": {
+   "distinct_waves": {
+    "port": 0,
+    "port_minus_v1": 0,
+    "published_mean": 0.0,
+    "published_sd": 0.0,
+    "v1": 0
+   },
+   "duplication": {
+    "port_fraction": NaN,
+    "port_minus_v1_points": NaN,
+    "published_mean_fraction": null,
+    "published_sd_fraction": null,
+    "v1_fraction": NaN
+   },
+   "port": 0,
+   "port_minus_v1": 0,
+   "published_mean": 0.0,
+   "published_sd": 0.0,
+   "reported_as": "counts only",
+   "v1": 0,
+   "why": "fewer than 5 tracks on a side"
+  },
+  "band -50..-40": {
+   "distinct_waves": {
+    "port": 0,
+    "port_minus_v1": 0,
+    "published_mean": 0.0,
+    "published_sd": 0.0,
+    "v1": 0
+   },
+   "duplication": {
+    "port_fraction": NaN,
+    "port_minus_v1_points": NaN,
+    "published_mean_fraction": null,
+    "published_sd_fraction": null,
+    "v1_fraction": NaN
+   },
+   "port": 0,
+   "port_minus_v1": 0,
+   "published_mean": 0.0,
+   "published_sd": 0.0,
+   "reported_as": "counts only",
+   "v1": 0,
+   "why": "fewer than 5 tracks on a side"
+  },
+  "band -60..-50": {
+   "distinct_waves": {
+    "port": 0,
+    "port_minus_v1": 0,
+    "published_mean": 0.0,
+    "published_sd": 0.0,
+    "v1": 0
+   },
+   "duplication": {
+    "port_fraction": NaN,
+    "port_minus_v1_points": NaN,
+    "published_mean_fraction": null,
+    "published_sd_fraction": null,
+    "v1_fraction": NaN
+   },
+   "port": 0,
+   "port_minus_v1": 0,
+   "published_mean": 0.0,
+   "published_sd": 0.0,
+   "reported_as": "counts only",
+   "v1": 0,
+   "why": "fewer than 5 tracks on a side"
+  },
+  "month 6": {
+   "difference_over_published_sd": 2.114602732299179,
+   "distinct_waves": {
+    "difference_over_published_sd": 0.2228282589107932,
+    "port": 19,
+    "port_minus_v1": 1,
+    "published_mean": 25.84,
+    "published_sd": 4.487761134463375,
+    "v1": 18
+   },
+   "distributions": {
+    "genesis_lat": {
+     "ks_statistic": 0.19585253456221197,
+     "percentiles": {
+      "10": {
+       "port": -5.8999999999999995,
+       "port_minus_v1": 0.6000000000000005,
+       "v1": -6.5
+      },
+      "50": {
+       "port": 13.0,
+       "port_minus_v1": 1.0,
+       "v1": 12.0
+      },
+      "90": {
+       "port": 24.95,
+       "port_minus_v1": 3.9499999999999993,
+       "v1": 21.0
+      }
+     }
+    },
+    "genesis_lon": {
+     "ks_statistic": 0.24423963133640547,
+     "percentiles": {
+      "10": {
+       "port": -6.599999999999998,
+       "port_minus_v1": -2.599999999999998,
+       "v1": -4.0
+      },
+      "50": {
+       "port": 15.75,
+       "port_minus_v1": -9.25,
+       "v1": 25.0
+      },
+      "90": {
+       "port": 34.4,
+       "port_minus_v1": -4.100000000000001,
+       "v1": 38.5
+      }
+     }
+    },
+    "lifetime": {
+     "ks_statistic": 0.20967741935483875,
+     "percentiles": {
+      "10": {
+       "port": 9.100000000000001,
+       "port_minus_v1": -0.8999999999999986,
+       "v1": 10.0
+      },
+      "50": {
+       "port": 17.5,
+       "port_minus_v1": 2.5,
+       "v1": 15.0
+      },
+      "90": {
+       "port": 24.9,
+       "port_minus_v1": 1.8999999999999986,
+       "v1": 23.0
+      }
+     }
+    },
+    "lysis_lat": {
+     "ks_statistic": 0.24500768049155142,
+     "percentiles": {
+      "10": {
+       "port": -6.0,
+       "port_minus_v1": -3.5,
+       "v1": -2.5
+      },
+      "50": {
+       "port": 6.0,
+       "port_minus_v1": -1.0,
+       "v1": 7.0
+      },
+      "90": {
+       "port": 20.749999999999996,
+       "port_minus_v1": 6.2499999999999964,
+       "v1": 14.5
+      }
+     }
+    },
+    "lysis_lon": {
+     "ks_statistic": 0.20276497695852533,
+     "percentiles": {
+      "10": {
+       "port": -28.5,
+       "port_minus_v1": -1.5,
+       "v1": -27.0
+      },
+      "50": {
+       "port": -1.125,
+       "port_minus_v1": -3.125,
+       "v1": 2.0
+      },
+      "90": {
+       "port": 39.0,
+       "port_minus_v1": 0.0,
+       "v1": 39.0
+      }
+     }
+    }
+   },
+   "duplication": {
+    "difference_over_published_sd": 0.0027251402404137,
+    "port_fraction": 0.44677871148459386,
+    "port_minus_v1_points": 0.023783098144919412,
+    "published_mean_fraction": 0.32345467048996873,
+    "published_sd_fraction": 0.0872729329383391,
+    "v1_fraction": 0.44654088050314467
+   },
+   "port": 42,
+   "port_minus_v1": 11,
+   "published_mean": 39.68,
+   "published_sd": 5.201922721455981,
+   "v1": 31
+  },
+  "month 7": {
+   "difference_over_published_sd": 2.2900987005173774,
+   "distinct_waves": {
+    "difference_over_published_sd": 4.311222663223011,
+    "port": 35,
+    "port_minus_v1": 16,
+    "published_mean": 28.24,
+    "published_sd": 3.7112441759244748,
+    "v1": 19
+   },
+   "distributions": {
+    "genesis_lat": {
+     "ks_statistic": 0.07471264367816091,
+     "percentiles": {
+      "10": {
+       "port": -10.15,
+       "port_minus_v1": -0.5500000000000007,
+       "v1": -9.6
+      },
+      "50": {
+       "port": 10.0,
+       "port_minus_v1": 0.0,
+       "v1": 10.0
+      },
+      "90": {
+       "port": 25.875000000000007,
+       "port_minus_v1": -0.6249999999999929,
+       "v1": 26.5
+      }
+     }
+    },
+    "genesis_lon": {
+     "ks_statistic": 0.1285919540229885,
+     "percentiles": {
+      "10": {
+       "port": -6.15,
+       "port_minus_v1": 0.8499999999999988,
+       "v1": -6.999999999999999
+      },
+      "50": {
+       "port": 20.75,
+       "port_minus_v1": 5.75,
+       "v1": 15.0
+      },
+      "90": {
+       "port": 38.0,
+       "port_minus_v1": -0.6000000000000014,
+       "v1": 38.6
+      }
+     }
+    },
+    "lifetime": {
+     "ks_statistic": 0.16738505747126436,
+     "percentiles": {
+      "10": {
+       "port": 9.0,
+       "port_minus_v1": -0.8000000000000007,
+       "v1": 9.8
+      },
+      "50": {
+       "port": 13.0,
+       "port_minus_v1": 0.0,
+       "v1": 13.0
+      },
+      "90": {
+       "port": 22.60000000000001,
+       "port_minus_v1": 3.20000000000001,
+       "v1": 19.4
+      }
+     }
+    },
+    "lysis_lat": {
+     "ks_statistic": 0.14727011494252884,
+     "percentiles": {
+      "10": {
+       "port": -6.75,
+       "port_minus_v1": 0.25,
+       "v1": -7.0
+      },
+      "50": {
+       "port": 12.5,
+       "port_minus_v1": 2.0,
+       "v1": 10.5
+      },
+      "90": {
+       "port": 20.0,
+       "port_minus_v1": 1.0,
+       "v1": 19.0
+      }
+     }
+    },
+    "lysis_lon": {
+     "ks_statistic": 0.14224137931034486,
+     "percentiles": {
+      "10": {
+       "port": -29.0,
+       "port_minus_v1": 0.0,
+       "v1": -29.0
+      },
+      "50": {
+       "port": 14.5,
+       "port_minus_v1": 13.0,
+       "v1": 1.5
+      },
+      "90": {
+       "port": 34.85000000000002,
+       "port_minus_v1": -3.6499999999999773,
+       "v1": 38.5
+      }
+     }
+    }
+   },
+   "duplication": {
+    "difference_over_published_sd": -0.18345734589830281,
+    "port_fraction": 0.30559540889526543,
+    "port_minus_v1_points": -1.3711521797803883,
+    "published_mean_fraction": 0.34046603572730916,
+    "published_sd_fraction": 0.0747395626523709,
+    "v1_fraction": 0.3193069306930693
+   },
+   "port": 48,
+   "port_minus_v1": 19,
+   "published_mean": 45.8,
+   "published_sd": 8.296585643102429,
+   "v1": 29
+  },
+  "month 8": {
+   "difference_over_published_sd": 2.34340039765483,
+   "distinct_waves": {
+    "difference_over_published_sd": 3.511234415883917,
+    "port": 43,
+    "port_minus_v1": 15,
+    "published_mean": 28.2,
+    "published_sd": 4.272001872658765,
+    "v1": 28
+   },
+   "distributions": {
+    "genesis_lat": {
+     "ks_statistic": 0.10517241379310345,
+     "percentiles": {
+      "10": {
+       "port": -11.8,
+       "port_minus_v1": -2.8000000000000007,
+       "v1": -9.0
+      },
+      "50": {
+       "port": 8.0,
+       "port_minus_v1": -1.25,
+       "v1": 9.25
+      },
+      "90": {
+       "port": 29.050000000000015,
+       "port_minus_v1": 0.3500000000000121,
+       "v1": 28.700000000000003
+      }
+     }
+    },
+    "genesis_lon": {
+     "ks_statistic": 0.13793103448275856,
+     "percentiles": {
+      "10": {
+       "port": -5.3,
+       "port_minus_v1": -1.2000000000000002,
+       "v1": -4.1
+      },
+      "50": {
+       "port": 17.625,
+       "port_minus_v1": -4.5,
+       "v1": 22.125
+      },
+      "90": {
+       "port": 35.300000000000004,
+       "port_minus_v1": -2.6999999999999957,
+       "v1": 38.0
+      }
+     }
+    },
+    "lifetime": {
+     "ks_statistic": 0.12672413793103443,
+     "percentiles": {
+      "10": {
+       "port": 9.0,
+       "port_minus_v1": 0.0,
+       "v1": 9.0
+      },
+      "50": {
+       "port": 11.5,
+       "port_minus_v1": -1.5,
+       "v1": 13.0
+      },
+      "90": {
+       "port": 21.300000000000004,
+       "port_minus_v1": 1.1000000000000014,
+       "v1": 20.200000000000003
+      }
+     }
+    },
+    "lysis_lat": {
+     "ks_statistic": 0.2112068965517241,
+     "percentiles": {
+      "10": {
+       "port": -10.049999999999999,
+       "port_minus_v1": -2.2249999999999996,
+       "v1": -7.824999999999999
+      },
+      "50": {
+       "port": 8.5,
+       "port_minus_v1": -2.0,
+       "v1": 10.5
+      },
+      "90": {
+       "port": 25.5,
+       "port_minus_v1": 2.0499999999999936,
+       "v1": 23.450000000000006
+      }
+     }
+    },
+    "lysis_lon": {
+     "ks_statistic": 0.15862068965517245,
+     "percentiles": {
+      "10": {
+       "port": -18.4,
+       "port_minus_v1": 10.600000000000001,
+       "v1": -29.0
+      },
+      "50": {
+       "port": 12.25,
+       "port_minus_v1": 7.0,
+       "v1": 5.25
+      },
+      "90": {
+       "port": 37.5,
+       "port_minus_v1": -1.0,
+       "v1": 38.5
+      }
+     }
+    }
+   },
+   "duplication": {
+    "difference_over_published_sd": -0.8466478876993573,
+    "port_fraction": 0.27103960396039606,
+    "port_minus_v1_points": -6.696389866657415,
+    "published_mean_fraction": 0.3257845713749765,
+    "published_sd_fraction": 0.0790929731703918,
+    "v1_fraction": 0.3380035026269702
+   },
+   "port": 58,
+   "port_minus_v1": 18,
+   "published_mean": 44.0,
+   "published_sd": 7.681145747868608,
+   "v1": 40
+  },
+  "month 9": {
+   "difference_over_published_sd": 3.8354647392991525,
+   "distinct_waves": {
+    "difference_over_published_sd": 3.3101999662751345,
+    "port": 42,
+    "port_minus_v1": 13,
+    "published_mean": 26.44,
+    "published_sd": 3.9272551907577045,
+    "v1": 29
+   },
+   "distributions": {
+    "genesis_lat": {
+     "ks_statistic": 0.09507389162561575,
+     "percentiles": {
+      "10": {
+       "port": -15.15,
+       "port_minus_v1": 3.649999999999997,
+       "v1": -18.799999999999997
+      },
+      "50": {
+       "port": 11.0,
+       "port_minus_v1": -1.0,
+       "v1": 12.0
+      },
+      "90": {
+       "port": 24.300000000000004,
+       "port_minus_v1": -0.49999999999999645,
+       "v1": 24.8
+      }
+     }
+    },
+    "genesis_lon": {
+     "ks_statistic": 0.1172413793103449,
+     "percentiles": {
+      "10": {
+       "port": -1.65,
+       "port_minus_v1": 0.3499999999999983,
+       "v1": -1.9999999999999982
+      },
+      "50": {
+       "port": 22.0,
+       "port_minus_v1": -6.5,
+       "v1": 28.5
+      },
+      "90": {
+       "port": 35.90000000000001,
+       "port_minus_v1": -1.6999999999999886,
+       "v1": 37.6
+      }
+     }
+    },
+    "lifetime": {
+     "ks_statistic": 0.23152709359605916,
+     "percentiles": {
+      "10": {
+       "port": 9.0,
+       "port_minus_v1": 0.0,
+       "v1": 9.0
+      },
+      "50": {
+       "port": 15.0,
+       "port_minus_v1": 3.0,
+       "v1": 12.0
+      },
+      "90": {
+       "port": 26.60000000000001,
+       "port_minus_v1": 3.200000000000003,
+       "v1": 23.400000000000006
+      }
+     }
+    },
+    "lysis_lat": {
+     "ks_statistic": 0.16403940886699508,
+     "percentiles": {
+      "10": {
+       "port": -14.0,
+       "port_minus_v1": 5.599999999999998,
+       "v1": -19.599999999999998
+      },
+      "50": {
+       "port": 9.5,
+       "port_minus_v1": -0.5,
+       "v1": 10.0
+      },
+      "90": {
+       "port": 22.25,
+       "port_minus_v1": 3.4499999999999993,
+       "v1": 18.8
+      }
+     }
+    },
+    "lysis_lon": {
+     "ks_statistic": 0.24433497536945814,
+     "percentiles": {
+      "10": {
+       "port": -30.1,
+       "port_minus_v1": -9.700000000000003,
+       "v1": -20.4
+      },
+      "50": {
+       "port": 9.125,
+       "port_minus_v1": -4.375,
+       "v1": 13.5
+      },
+      "90": {
+       "port": 31.5,
+       "port_minus_v1": -0.40000000000000213,
+       "v1": 31.900000000000002
+      }
+     }
+    }
+   },
+   "duplication": {
+    "difference_over_published_sd": 1.569178406080685,
+    "port_fraction": 0.29433497536945813,
+    "port_minus_v1_points": 13.631028401143345,
+    "published_mean_fraction": 0.348637117555161,
+    "published_sd_fraction": 0.08686729532041786,
+    "v1_fraction": 0.1580246913580247
+   },
+   "port": 58,
+   "port_minus_v1": 23,
+   "published_mean": 43.28,
+   "published_sd": 5.99666574022598,
+   "v1": 35
+  },
+  "season": {
+   "difference_over_published_sd": 4.058645109951165,
+   "distinct_waves": {
+    "difference_over_published_sd": 4.89435562471017,
+    "port": 139,
+    "port_minus_v1": 46,
+    "published_mean": 106.6,
+    "published_sd": 9.39858145324779,
+    "v1": 93
+   },
+   "distributions": {
+    "genesis_lat": {
+     "ks_statistic": 0.04203523912261775,
+     "percentiles": {
+      "10": {
+       "port": -11.5,
+       "port_minus_v1": -1.1999999999999993,
+       "v1": -10.3
+      },
+      "50": {
+       "port": 10.5,
+       "port_minus_v1": -1.0,
+       "v1": 11.5
+      },
+      "90": {
+       "port": 25.0,
+       "port_minus_v1": 0.0,
+       "v1": 25.0
+      }
+     }
+    },
+    "genesis_lon": {
+     "ks_statistic": 0.11438331535418911,
+     "percentiles": {
+      "10": {
+       "port": -5.125,
+       "port_minus_v1": -0.5250000000000004,
+       "v1": -4.6
+      },
+      "50": {
+       "port": 19.875,
+       "port_minus_v1": -3.375,
+       "v1": 23.25
+      },
+      "90": {
+       "port": 37.0,
+       "port_minus_v1": -1.3000000000000043,
+       "v1": 38.300000000000004
+      }
+     }
+    },
+    "lifetime": {
+     "ks_statistic": 0.07490111470694005,
+     "percentiles": {
+      "10": {
+       "port": 9.0,
+       "port_minus_v1": 0.0,
+       "v1": 9.0
+      },
+      "50": {
+       "port": 13.0,
+       "port_minus_v1": 0.0,
+       "v1": 13.0
+      },
+      "90": {
+       "port": 24.0,
+       "port_minus_v1": 1.3999999999999915,
+       "v1": 22.60000000000001
+      }
+     }
+    },
+    "lysis_lat": {
+     "ks_statistic": 0.05433297375044949,
+     "percentiles": {
+      "10": {
+       "port": -8.75,
+       "port_minus_v1": 0.05000000000000071,
+       "v1": -8.8
+      },
+      "50": {
+       "port": 8.75,
+       "port_minus_v1": -1.0,
+       "v1": 9.75
+      },
+      "90": {
+       "port": 22.375,
+       "port_minus_v1": -0.27500000000000213,
+       "v1": 22.650000000000002
+      }
+     }
+    },
+    "lysis_lon": {
+     "ks_statistic": 0.11413160733549077,
+     "percentiles": {
+      "10": {
+       "port": -29.25,
+       "port_minus_v1": -0.75,
+       "v1": -28.5
+      },
+      "50": {
+       "port": 9.875,
+       "port_minus_v1": -0.125,
+       "v1": 10.0
+      },
+      "90": {
+       "port": 37.75,
+       "port_minus_v1": -0.9000000000000057,
+       "v1": 38.650000000000006
+      }
+     }
+    }
+   },
+   "duplication": {
+    "difference_over_published_sd": -0.037306330299132974,
+    "port_fraction": 0.32662487627845593,
+    "port_minus_v1_points": -0.18619303989808045,
+    "published_mean_fraction": 0.35362093977722175,
+    "published_sd_fraction": 0.04990923481487744,
+    "v1_fraction": 0.32848680667743674
+   },
+   "port": 206,
+   "port_minus_v1": 71,
+   "published_mean": 172.76,
+   "published_sd": 17.49352261076463,
+   "v1": 135
+  }
+ },
+ "definitions": {
+  "bands": "ten-degree bands of genesis longitude, [lo, hi)",
+  "boundaries": "each column's boundaries block: crossing in, crossing out and the potentially censored year end, by predicates on the first and last retained observation",
+  "distinct_waves": "connected components sharing at least 3 timesteps at mean separation at most 1.0 deg",
+  "distributions": "two-sample KS statistic and percentiles (10, 50, 90)",
+  "domain": "the archive's own source-region rule: the first observation, rounded to the quarter degree, tested against the region polygons in the archive's priority order, and the comparison is over the tracks assigned AFR; whole-domain totals are reported beside it and enter no ratio",
+  "genesis_and_lysis": "the first and the last recorded observation, operational definitions and not physical onset or decay",
+  "lifetime": "the number of observations recorded, not a duration; see each column's spacing block for intervals, gaps and duration in days",
+  "scale": "interannual standard deviation, ddof 1, empty years counted as zero",
+  "season_membership": "first observation in June to September of the year",
+  "sparse_rule": "fewer than 5 tracks on a side, or zero published variance, means counts only"
+ },
+ "descriptive": true,
+ "duplication_port_minus_v1_points": -0.18619303989808045,
+ "elapsed_seconds": 11.5,
+ "generated_by": "scripts/season_metrics.py",
+ "git_head_at_launch": "278f4d36bf345e4ba2dbb37d859d6432f4ea315d",
+ "groups_reported_as_counts_only": [
+  "band -60..-50",
+  "band -50..-40",
+  "band -40..-30",
+  "band -30..-20",
+  "band +40..+50",
+  "band +50..+60"
+ ],
+ "inputs_sha256": {
+  "port": {
+   "path": "scratch/sens_try/evidence/eraint_1990/tracker_port.mat",
+   "sha256": "621fe48f828dc6b9a475dc252983b488178ad80d2caf3a6260c37d5c4f4708c5"
+  },
+  "published_year_file": {
+   "path": "data/aewc/ERA-Int_ew_700hPa_1990_AFR.nc",
+   "sha256": "ff4f31275a757fcd2b2d70fb043f85b8774a62d7c047838af47e95ada5d132dc"
+  },
+  "v1": {
+   "path": "docs/aewc_v2/evidence/validation/protocol_campaign/eraint_1990/tracker_port.mat",
+   "sha256": "dcdddc03ff727dad2a86fb7e4cb5df39aa8ba9207347df6c3fc632452e6000c7"
+  }
+ },
+ "launched_at": "2026-09-27T03:26:28Z",
+ "mode": "implementation",
+ "published_context_column": {
+  "distinct_waves": 124,
+  "duplication": {
+   "duplicated": 1130,
+   "fraction": 0.37566489361702127,
+   "observations": 3008
+  },
+  "note": "the archived run over the full year, filtered by the same membership rule as the compared sides. This artifact does not record the archived run's initialization or inputs, and each compared side's initialization is in its own producer record, so no difference against the archive is attributed here",
+  "source_regions_by_the_rule": {
+   "AFR": 201
+  },
+  "spacing": {
+   "duration_days_percentiles": {
+    "10": 2.75,
+    "50": 3.75,
+    "90": 7.75
+   },
+   "endpoint_convention": "duration is the last observation's time minus the first's, so a track of n contiguous observations spans (n - 1) timesteps",
+   "fraction_of_intervals_one_timestep": 0.7468483816013629,
+   "intervals": 2935,
+   "largest_interval_days": 0.5,
+   "timestep_days": 0.25,
+   "tracks": 201,
+   "tracks_with_a_gap": 197
+  },
+  "starts_per_month": {
+   "6": 34,
+   "7": 51,
+   "8": 61,
+   "9": 55
+  },
+  "tracks_in_season": 201
+ },
+ "published_record_sha256": {
+  "1983": "b157c09469a46f0fc310366959f97dfd1317434ae3ee858a42160c3c985578c9",
+  "1984": "879150ef72886e877682425efca7cea285c212da8c8c98edbe0f80e893092f7a",
+  "1985": "2c01263b18a7ce5a59930dd32eb6b599d55524621bc8b4db25556feaa015f3de",
+  "1986": "3de3deb56ab284689179e1c1d849e3808ea1c632b5c8db89945f2f1f497676eb",
+  "1987": "269366987928e848c90a734f0c5b4f7d09e9d8ad630bdde68b11529ab8d7cb77",
+  "1988": "d953bbc28e784a703dba08eb1a9f48bfd4b2d5d5b4e6b857a7ea25a789782278",
+  "1989": "d07c90458149e6a8181dbbbab8ad1832d6b4feaca6ce809026003873d2727155",
+  "1990": "ff4f31275a757fcd2b2d70fb043f85b8774a62d7c047838af47e95ada5d132dc",
+  "1991": "3ef430355869a24f5cc38284ea4ead179af53fbe01814ca55cd80f485068347e",
+  "1992": "fef935260012f88b0112f540d85238ec408abb0e864801ea4e016075ec3eea7a",
+  "1993": "b6b15107ec61315a4b5e19697032967a719ce1161da4013f4e848c3eaeb7f77b",
+  "1994": "48d76a93b25c07bb1d7586424aeff8431ac7bdff6c3d0beb7ab80be2e6c1f9a3",
+  "1995": "f88750511e9975ee5470a0fe85afcee9d722f72243ea99f5d2a221de92102801",
+  "1996": "af083f9f4c96ca94023a5a510551aedb0a51c98c4a72d6d04314b814c3ef7a4d",
+  "1997": "fe495d1a7e91cf517e32703330d2fa4c174c35bd0c095a6e9004434ff775d489",
+  "1998": "d8bfc07d176d80e7cf06b3100c952b0b0f19233c3822bfe590357be8975893cd",
+  "1999": "b0964c90f0171b2c8ff54c080422aed93d009523fb4074570a1ceb99b818dbf1",
+  "2000": "83d4e097fd1a65347b31a905e84863aed82a0fa8ee5487e6d24a1f82f1061c1e",
+  "2001": "94298d42bce0d0ed4d60290ed28851934aa8a0e8b932e61d8f4ec119d5c621cf",
+  "2002": "2776602797b70cf6a622491000b3e650414279c0f58cf01103afb3da60d68585",
+  "2003": "03208d357ec9282d8c7dace5482106031ade2ecf44545205003005b971a02713",
+  "2004": "5564ea1cdbb9e03f7db4c5fb42663f773b34f881fb373c7b6cc21e52a845db09",
+  "2005": "82233f45ff766fb0de4d599242a6d7154d72404726a6dfddd328b7106171137c",
+  "2006": "b1c090b02a9993c08123f2d8beb28caf0bbc9b49919d4a21900d22a51119dcd0",
+  "2007": "b1220bb866867dc21b0fc6cadab54dff51cff606d4c1ce71f573235bb23ecce0"
+ },
+ "published_spread": {
+  "band +0..+10": {
+   "counts_by_year": {
+    "1983": 27,
+    "1984": 17,
+    "1985": 24,
+    "1986": 21,
+    "1987": 26,
+    "1988": 10,
+    "1989": 16,
+    "1990": 30,
+    "1991": 27,
+    "1992": 29,
+    "1993": 28,
+    "1994": 18,
+    "1995": 16,
+    "1996": 11,
+    "1997": 16,
+    "1998": 23,
+    "1999": 21,
+    "2000": 23,
+    "2001": 24,
+    "2002": 29,
+    "2003": 17,
+    "2004": 11,
+    "2005": 21,
+    "2006": 28,
+    "2007": 20
+   },
+   "distinct_waves_mean": 17.24,
+   "distinct_waves_sd": 4.115823125451335,
+   "duplication_fraction_mean": 0.16181074227327275,
+   "duplication_fraction_sd": 0.10532962436160657,
+   "mean": 21.32,
+   "percentiles": {
+    "genesis_lat": {
+     "10": 9.0,
+     "50": 18.5,
+     "90": 29.5
+    },
+    "genesis_lon": {
+     "10": 1.0,
+     "50": 5.0,
+     "90": 8.75
+    },
+    "lifetime": {
+     "10": 9.0,
+     "50": 14.0,
+     "90": 31.80000000000001
+    },
+    "lysis_lat": {
+     "10": 8.0,
+     "50": 17.0,
+     "90": 28.200000000000003
+    },
+    "lysis_lon": {
+     "10": -53.5,
+     "50": -12.5,
+     "90": 6.0
+    }
+   },
+   "pooled_tracks": 533,
+   "sd": 6.004997918400972,
+   "years": 25
+  },
+  "band +10..+20": {
+   "counts_by_year": {
+    "1983": 23,
+    "1984": 26,
+    "1985": 27,
+    "1986": 39,
+    "1987": 29,
+    "1988": 31,
+    "1989": 39,
+    "1990": 41,
+    "1991": 33,
+    "1992": 29,
+    "1993": 36,
+    "1994": 28,
+    "1995": 42,
+    "1996": 35,
+    "1997": 40,
+    "1998": 36,
+    "1999": 26,
+    "2000": 31,
+    "2001": 38,
+    "2002": 51,
+    "2003": 40,
+    "2004": 26,
+    "2005": 25,
+    "2006": 32,
+    "2007": 38
+   },
+   "distinct_waves_mean": 27.28,
+   "distinct_waves_sd": 4.979290444765533,
+   "duplication_fraction_mean": 0.16168952736576517,
+   "duplication_fraction_sd": 0.05714095612817959,
+   "mean": 33.64,
+   "percentiles": {
+    "genesis_lat": {
+     "10": -16.0,
+     "50": 3.0,
+     "90": 24.5
+    },
+    "genesis_lon": {
+     "10": 11.0,
+     "50": 15.0,
+     "90": 18.5
+    },
+    "lifetime": {
+     "10": 9.0,
+     "50": 13.0,
+     "90": 25.0
+    },
+    "lysis_lat": {
+     "10": -15.0,
+     "50": 5.5,
+     "90": 22.0
+    },
+    "lysis_lon": {
+     "10": -20.5,
+     "50": 4.0,
+     "90": 18.5
+    }
+   },
+   "pooled_tracks": 841,
+   "sd": 6.812243878977519,
+   "years": 25
+  },
+  "band +20..+30": {
+   "counts_by_year": {
+    "1983": 33,
+    "1984": 41,
+    "1985": 32,
+    "1986": 29,
+    "1987": 37,
+    "1988": 38,
+    "1989": 30,
+    "1990": 47,
+    "1991": 33,
+    "1992": 46,
+    "1993": 50,
+    "1994": 30,
+    "1995": 37,
+    "1996": 36,
+    "1997": 43,
+    "1998": 30,
+    "1999": 46,
+    "2000": 40,
+    "2001": 40,
+    "2002": 42,
+    "2003": 34,
+    "2004": 34,
+    "2005": 32,
+    "2006": 35,
+    "2007": 46
+   },
+   "distinct_waves_mean": 29.64,
+   "distinct_waves_sd": 4.794788837894742,
+   "duplication_fraction_mean": 0.20244783809074415,
+   "duplication_fraction_sd": 0.052868949016992794,
+   "mean": 37.64,
+   "percentiles": {
+    "genesis_lat": {
+     "10": -21.5,
+     "50": 5.0,
+     "90": 24.5
+    },
+    "genesis_lon": {
+     "10": 21.0,
+     "50": 25.0,
+     "90": 29.0
+    },
+    "lifetime": {
+     "10": 9.0,
+     "50": 13.0,
+     "90": 25.0
+    },
+    "lysis_lat": {
+     "10": -19.75,
+     "50": 5.5,
+     "90": 21.5
+    },
+    "lysis_lon": {
+     "10": -2.0,
+     "50": 17.5,
+     "90": 36.0
+    }
+   },
+   "pooled_tracks": 941,
+   "sd": 6.170359254803024,
+   "years": 25
+  },
+  "band +30..+40": {
+   "counts_by_year": {
+    "1983": 44,
+    "1984": 34,
+    "1985": 49,
+    "1986": 50,
+    "1987": 49,
+    "1988": 39,
+    "1989": 55,
+    "1990": 49,
+    "1991": 41,
+    "1992": 34,
+    "1993": 52,
+    "1994": 33,
+    "1995": 36,
+    "1996": 33,
+    "1997": 40,
+    "1998": 49,
+    "1999": 45,
+    "2000": 47,
+    "2001": 55,
+    "2002": 52,
+    "2003": 54,
+    "2004": 56,
+    "2005": 58,
+    "2006": 44,
+    "2007": 63
+   },
+   "distinct_waves_mean": 33.2,
+   "distinct_waves_sd": 5.619905100029122,
+   "duplication_fraction_mean": 0.25856151585687337,
+   "duplication_fraction_sd": 0.0657426970707262,
+   "mean": 46.44,
+   "percentiles": {
+    "genesis_lat": {
+     "10": -18.0,
+     "50": 0.5,
+     "90": 17.5
+    },
+    "genesis_lon": {
+     "10": 31.0,
+     "50": 35.5,
+     "90": 39.0
+    },
+    "lifetime": {
+     "10": 9.0,
+     "50": 13.0,
+     "90": 24.0
+    },
+    "lysis_lat": {
+     "10": -19.5,
+     "50": 1.5,
+     "90": 16.5
+    },
+    "lysis_lon": {
+     "10": 10.0,
+     "50": 29.5,
+     "90": 38.5
+    }
+   },
+   "pooled_tracks": 1161,
+   "sd": 8.475848040166836,
+   "years": 25
+  },
+  "band +40..+50": {
+   "counts_by_year": {
+    "1983": 0,
+    "1984": 0,
+    "1985": 0,
+    "1986": 0,
+    "1987": 0,
+    "1988": 1,
+    "1989": 1,
+    "1990": 0,
+    "1991": 0,
+    "1992": 1,
+    "1993": 0,
+    "1994": 2,
+    "1995": 0,
+    "1996": 0,
+    "1997": 0,
+    "1998": 0,
+    "1999": 0,
+    "2000": 2,
+    "2001": 2,
+    "2002": 0,
+    "2003": 0,
+    "2004": 1,
+    "2005": 0,
+    "2006": 1,
+    "2007": 0
+   },
+   "distinct_waves_mean": 0.4,
+   "distinct_waves_sd": 0.6454972243679029,
+   "duplication_fraction_mean": 0.05078125,
+   "duplication_fraction_sd": 0.14363106492851746,
+   "mean": 0.44,
+   "percentiles": {
+    "genesis_lat": {
+     "10": -13.5,
+     "50": -2.5,
+     "90": 11.75
+    },
+    "genesis_lon": {
+     "10": 40.0,
+     "50": 40.0,
+     "90": 40.0
+    },
+    "lifetime": {
+     "10": 9.0,
+     "50": 12.0,
+     "90": 16.0
+    },
+    "lysis_lat": {
+     "10": -19.5,
+     "50": 0.5,
+     "90": 18.5
+    },
+    "lysis_lon": {
+     "10": 9.5,
+     "50": 33.0,
+     "90": 37.0
+    }
+   },
+   "pooled_tracks": 11,
+   "sd": 0.7118052168020874,
+   "years": 25
+  },
+  "band +50..+60": {
+   "counts_by_year": {
+    "1983": 0,
+    "1984": 0,
+    "1985": 0,
+    "1986": 0,
+    "1987": 0,
+    "1988": 0,
+    "1989": 0,
+    "1990": 0,
+    "1991": 0,
+    "1992": 0,
+    "1993": 0,
+    "1994": 0,
+    "1995": 0,
+    "1996": 0,
+    "1997": 0,
+    "1998": 0,
+    "1999": 0,
+    "2000": 0,
+    "2001": 0,
+    "2002": 0,
+    "2003": 0,
+    "2004": 0,
+    "2005": 0,
+    "2006": 0,
+    "2007": 0
+   },
+   "distinct_waves_mean": 0.0,
+   "distinct_waves_sd": 0.0,
+   "duplication_fraction_mean": null,
+   "duplication_fraction_sd": null,
+   "mean": 0.0,
+   "percentiles": {
+    "genesis_lat": null,
+    "genesis_lon": null,
+    "lifetime": null,
+    "lysis_lat": null,
+    "lysis_lon": null
+   },
+   "pooled_tracks": 0,
+   "sd": 0.0,
+   "years": 25
+  },
+  "band -10..+0": {
+   "counts_by_year": {
+    "1983": 25,
+    "1984": 23,
+    "1985": 19,
+    "1986": 21,
+    "1987": 19,
+    "1988": 17,
+    "1989": 19,
+    "1990": 20,
+    "1991": 20,
+    "1992": 23,
+    "1993": 20,
+    "1994": 18,
+    "1995": 21,
+    "1996": 23,
+    "1997": 32,
+    "1998": 19,
+    "1999": 24,
+    "2000": 24,
+    "2001": 27,
+    "2002": 21,
+    "2003": 28,
+    "2004": 21,
+    "2005": 18,
+    "2006": 17,
+    "2007": 18
+   },
+   "distinct_waves_mean": 17.68,
+   "distinct_waves_sd": 3.105371690045063,
+   "duplication_fraction_mean": 0.16895465527287834,
+   "duplication_fraction_sd": 0.08828924793045938,
+   "mean": 21.48,
+   "percentiles": {
+    "genesis_lat": {
+     "10": 8.3,
+     "50": 16.5,
+     "90": 28.200000000000017
+    },
+    "genesis_lon": {
+     "10": -9.5,
+     "50": -6.0,
+     "90": -1.0
+    },
+    "lifetime": {
+     "10": 9.0,
+     "50": 15.0,
+     "90": 35.400000000000034
+    },
+    "lysis_lat": {
+     "10": 7.0,
+     "50": 17.5,
+     "90": 29.0
+    },
+    "lysis_lon": {
+     "10": -65.9,
+     "50": -27.5,
+     "90": -8.5
+    }
+   },
+   "pooled_tracks": 537,
+   "sd": 3.675595189897821,
+   "years": 25
+  },
+  "band -20..-10": {
+   "counts_by_year": {
+    "1983": 6,
+    "1984": 17,
+    "1985": 12,
+    "1986": 15,
+    "1987": 7,
+    "1988": 6,
+    "1989": 14,
+    "1990": 14,
+    "1991": 7,
+    "1992": 9,
+    "1993": 10,
+    "1994": 15,
+    "1995": 10,
+    "1996": 14,
+    "1997": 11,
+    "1998": 11,
+    "1999": 17,
+    "2000": 16,
+    "2001": 15,
+    "2002": 10,
+    "2003": 10,
+    "2004": 11,
+    "2005": 20,
+    "2006": 7,
+    "2007": 11
+   },
+   "distinct_waves_mean": 10.44,
+   "distinct_waves_sd": 2.8879058156387307,
+   "duplication_fraction_mean": 0.08481835786969297,
+   "duplication_fraction_sd": 0.08674757550193492,
+   "mean": 11.8,
+   "percentiles": {
+    "genesis_lat": {
+     "10": 10.0,
+     "50": 16.5,
+     "90": 25.5
+    },
+    "genesis_lon": {
+     "10": -15.5,
+     "50": -13.0,
+     "90": -10.599999999999994
+    },
+    "lifetime": {
+     "10": 9.0,
+     "50": 16.0,
+     "90": 33.60000000000002
+    },
+    "lysis_lat": {
+     "10": 9.0,
+     "50": 18.0,
+     "90": 26.30000000000001
+    },
+    "lysis_lon": {
+     "10": -70.95,
+     "50": -36.5,
+     "90": -20.0
+    }
+   },
+   "pooled_tracks": 295,
+   "sd": 3.7859388972001824,
+   "years": 25
+  },
+  "band -30..-20": {
+   "counts_by_year": {
+    "1983": 0,
+    "1984": 0,
+    "1985": 0,
+    "1986": 0,
+    "1987": 0,
+    "1988": 0,
+    "1989": 0,
+    "1990": 0,
+    "1991": 0,
+    "1992": 0,
+    "1993": 0,
+    "1994": 0,
+    "1995": 0,
+    "1996": 0,
+    "1997": 0,
+    "1998": 0,
+    "1999": 0,
+    "2000": 0,
+    "2001": 0,
+    "2002": 0,
+    "2003": 0,
+    "2004": 0,
+    "2005": 0,
+    "2006": 0,
+    "2007": 0
+   },
+   "distinct_waves_mean": 0.0,
+   "distinct_waves_sd": 0.0,
+   "duplication_fraction_mean": null,
+   "duplication_fraction_sd": null,
+   "mean": 0.0,
+   "percentiles": {
+    "genesis_lat": null,
+    "genesis_lon": null,
+    "lifetime": null,
+    "lysis_lat": null,
+    "lysis_lon": null
+   },
+   "pooled_tracks": 0,
+   "sd": 0.0,
+   "years": 25
+  },
+  "band -40..-30": {
+   "counts_by_year": {
+    "1983": 0,
+    "1984": 0,
+    "1985": 0,
+    "1986": 0,
+    "1987": 0,
+    "1988": 0,
+    "1989": 0,
+    "1990": 0,
+    "1991": 0,
+    "1992": 0,
+    "1993": 0,
+    "1994": 0,
+    "1995": 0,
+    "1996": 0,
+    "1997": 0,
+    "1998": 0,
+    "1999": 0,
+    "2000": 0,
+    "2001": 0,
+    "2002": 0,
+    "2003": 0,
+    "2004": 0,
+    "2005": 0,
+    "2006": 0,
+    "2007": 0
+   },
+   "distinct_waves_mean": 0.0,
+   "distinct_waves_sd": 0.0,
+   "duplication_fraction_mean": null,
+   "duplication_fraction_sd": null,
+   "mean": 0.0,
+   "percentiles": {
+    "genesis_lat": null,
+    "genesis_lon": null,
+    "lifetime": null,
+    "lysis_lat": null,
+    "lysis_lon": null
+   },
+   "pooled_tracks": 0,
+   "sd": 0.0,
+   "years": 25
+  },
+  "band -50..-40": {
+   "counts_by_year": {
+    "1983": 0,
+    "1984": 0,
+    "1985": 0,
+    "1986": 0,
+    "1987": 0,
+    "1988": 0,
+    "1989": 0,
+    "1990": 0,
+    "1991": 0,
+    "1992": 0,
+    "1993": 0,
+    "1994": 0,
+    "1995": 0,
+    "1996": 0,
+    "1997": 0,
+    "1998": 0,
+    "1999": 0,
+    "2000": 0,
+    "2001": 0,
+    "2002": 0,
+    "2003": 0,
+    "2004": 0,
+    "2005": 0,
+    "2006": 0,
+    "2007": 0
+   },
+   "distinct_waves_mean": 0.0,
+   "distinct_waves_sd": 0.0,
+   "duplication_fraction_mean": null,
+   "duplication_fraction_sd": null,
+   "mean": 0.0,
+   "percentiles": {
+    "genesis_lat": null,
+    "genesis_lon": null,
+    "lifetime": null,
+    "lysis_lat": null,
+    "lysis_lon": null
+   },
+   "pooled_tracks": 0,
+   "sd": 0.0,
+   "years": 25
+  },
+  "band -60..-50": {
+   "counts_by_year": {
+    "1983": 0,
+    "1984": 0,
+    "1985": 0,
+    "1986": 0,
+    "1987": 0,
+    "1988": 0,
+    "1989": 0,
+    "1990": 0,
+    "1991": 0,
+    "1992": 0,
+    "1993": 0,
+    "1994": 0,
+    "1995": 0,
+    "1996": 0,
+    "1997": 0,
+    "1998": 0,
+    "1999": 0,
+    "2000": 0,
+    "2001": 0,
+    "2002": 0,
+    "2003": 0,
+    "2004": 0,
+    "2005": 0,
+    "2006": 0,
+    "2007": 0
+   },
+   "distinct_waves_mean": 0.0,
+   "distinct_waves_sd": 0.0,
+   "duplication_fraction_mean": null,
+   "duplication_fraction_sd": null,
+   "mean": 0.0,
+   "percentiles": {
+    "genesis_lat": null,
+    "genesis_lon": null,
+    "lifetime": null,
+    "lysis_lat": null,
+    "lysis_lon": null
+   },
+   "pooled_tracks": 0,
+   "sd": 0.0,
+   "years": 25
+  },
+  "month 6": {
+   "counts_by_year": {
+    "1983": 35,
+    "1984": 39,
+    "1985": 35,
+    "1986": 41,
+    "1987": 45,
+    "1988": 36,
+    "1989": 39,
+    "1990": 34,
+    "1991": 38,
+    "1992": 39,
+    "1993": 44,
+    "1994": 33,
+    "1995": 27,
+    "1996": 41,
+    "1997": 40,
+    "1998": 40,
+    "1999": 46,
+    "2000": 48,
+    "2001": 44,
+    "2002": 45,
+    "2003": 42,
+    "2004": 34,
+    "2005": 42,
+    "2006": 36,
+    "2007": 49
+   },
+   "distinct_waves_mean": 25.84,
+   "distinct_waves_sd": 4.487761134463375,
+   "duplication_fraction_mean": 0.32345467048996873,
+   "duplication_fraction_sd": 0.0872729329383391,
+   "mean": 39.68,
+   "percentiles": {
+    "genesis_lat": {
+     "10": -14.5,
+     "50": 11.375,
+     "90": 25.0
+    },
+    "genesis_lon": {
+     "10": -8.0,
+     "50": 19.5,
+     "90": 37.5
+    },
+    "lifetime": {
+     "10": 9.0,
+     "50": 13.0,
+     "90": 26.0
+    },
+    "lysis_lat": {
+     "10": -14.0,
+     "50": 9.375,
+     "90": 21.5
+    },
+    "lysis_lon": {
+     "10": -36.5,
+     "50": 7.75,
+     "90": 35.0
+    }
+   },
+   "pooled_tracks": 992,
+   "sd": 5.201922721455981,
+   "years": 25
+  },
+  "month 7": {
+   "counts_by_year": {
+    "1983": 50,
+    "1984": 31,
+    "1985": 38,
+    "1986": 48,
+    "1987": 54,
+    "1988": 31,
+    "1989": 44,
+    "1990": 51,
+    "1991": 42,
+    "1992": 46,
+    "1993": 51,
+    "1994": 39,
+    "1995": 50,
+    "1996": 33,
+    "1997": 54,
+    "1998": 51,
+    "1999": 48,
+    "2000": 41,
+    "2001": 58,
+    "2002": 60,
+    "2003": 48,
+    "2004": 43,
+    "2005": 58,
+    "2006": 40,
+    "2007": 36
+   },
+   "distinct_waves_mean": 28.24,
+   "distinct_waves_sd": 3.7112441759244748,
+   "duplication_fraction_mean": 0.34046603572730916,
+   "duplication_fraction_sd": 0.0747395626523709,
+   "mean": 45.8,
+   "percentiles": {
+    "genesis_lat": {
+     "10": -15.649999999999999,
+     "50": 11.5,
+     "90": 26.5
+    },
+    "genesis_lon": {
+     "10": -8.5,
+     "50": 18.0,
+     "90": 36.80000000000007
+    },
+    "lifetime": {
+     "10": 9.0,
+     "50": 13.0,
+     "90": 27.0
+    },
+    "lysis_lat": {
+     "10": -15.0,
+     "50": 11.0,
+     "90": 24.5
+    },
+    "lysis_lon": {
+     "10": -40.3,
+     "50": 9.25,
+     "90": 36.400000000000034
+    }
+   },
+   "pooled_tracks": 1145,
+   "sd": 8.296585643102429,
+   "years": 25
+  },
+  "month 8": {
+   "counts_by_year": {
+    "1983": 31,
+    "1984": 47,
+    "1985": 44,
+    "1986": 38,
+    "1987": 28,
+    "1988": 36,
+    "1989": 52,
+    "1990": 61,
+    "1991": 36,
+    "1992": 42,
+    "1993": 49,
+    "1994": 39,
+    "1995": 45,
+    "1996": 43,
+    "1997": 48,
+    "1998": 35,
+    "1999": 42,
+    "2000": 44,
+    "2001": 52,
+    "2002": 53,
+    "2003": 48,
+    "2004": 43,
+    "2005": 41,
+    "2006": 48,
+    "2007": 55
+   },
+   "distinct_waves_mean": 28.2,
+   "distinct_waves_sd": 4.272001872658765,
+   "duplication_fraction_mean": 0.3257845713749765,
+   "duplication_fraction_sd": 0.0790929731703918,
+   "mean": 44.0,
+   "percentiles": {
+    "genesis_lat": {
+     "10": -16.25,
+     "50": 10.0,
+     "90": 25.5
+    },
+    "genesis_lon": {
+     "10": -8.5,
+     "50": 19.0,
+     "90": 36.0
+    },
+    "lifetime": {
+     "10": 9.0,
+     "50": 14.0,
+     "90": 29.0
+    },
+    "lysis_lat": {
+     "10": -16.5,
+     "50": 10.5,
+     "90": 24.75
+    },
+    "lysis_lon": {
+     "10": -40.5,
+     "50": 7.75,
+     "90": 34.5
+    }
+   },
+   "pooled_tracks": 1100,
+   "sd": 7.681145747868608,
+   "years": 25
+  },
+  "month 9": {
+   "counts_by_year": {
+    "1983": 42,
+    "1984": 41,
+    "1985": 46,
+    "1986": 48,
+    "1987": 40,
+    "1988": 39,
+    "1989": 39,
+    "1990": 55,
+    "1991": 45,
+    "1992": 44,
+    "1993": 52,
+    "1994": 33,
+    "1995": 40,
+    "1996": 35,
+    "1997": 40,
+    "1998": 42,
+    "1999": 43,
+    "2000": 50,
+    "2001": 47,
+    "2002": 47,
+    "2003": 45,
+    "2004": 40,
+    "2005": 33,
+    "2006": 40,
+    "2007": 56
+   },
+   "distinct_waves_mean": 26.44,
+   "distinct_waves_sd": 3.9272551907577045,
+   "duplication_fraction_mean": 0.348637117555161,
+   "duplication_fraction_sd": 0.08686729532041786,
+   "mean": 43.28,
+   "percentiles": {
+    "genesis_lat": {
+     "10": -16.5,
+     "50": 9.5,
+     "90": 24.5
+    },
+    "genesis_lon": {
+     "10": -7.5,
+     "50": 20.0,
+     "90": 37.0
+    },
+    "lifetime": {
+     "10": 9.0,
+     "50": 14.0,
+     "90": 30.0
+    },
+    "lysis_lat": {
+     "10": -15.5,
+     "50": 10.0,
+     "90": 22.5
+    },
+    "lysis_lon": {
+     "10": -38.949999999999996,
+     "50": 6.0,
+     "90": 34.5
+    }
+   },
+   "pooled_tracks": 1082,
+   "sd": 5.99666574022598,
+   "years": 25
+  },
+  "season": {
+   "counts_by_year": {
+    "1983": 158,
+    "1984": 158,
+    "1985": 163,
+    "1986": 175,
+    "1987": 167,
+    "1988": 142,
+    "1989": 174,
+    "1990": 201,
+    "1991": 161,
+    "1992": 171,
+    "1993": 196,
+    "1994": 144,
+    "1995": 162,
+    "1996": 152,
+    "1997": 182,
+    "1998": 168,
+    "1999": 179,
+    "2000": 183,
+    "2001": 201,
+    "2002": 205,
+    "2003": 183,
+    "2004": 160,
+    "2005": 174,
+    "2006": 164,
+    "2007": 196
+   },
+   "distinct_waves_mean": 106.6,
+   "distinct_waves_sd": 9.39858145324779,
+   "duplication_fraction_mean": 0.35362093977722175,
+   "duplication_fraction_sd": 0.04990923481487744,
+   "mean": 172.76,
+   "percentiles": {
+    "genesis_lat": {
+     "10": -16.0,
+     "50": 10.5,
+     "90": 25.5
+    },
+    "genesis_lon": {
+     "10": -8.0,
+     "50": 19.0,
+     "90": 37.0
+    },
+    "lifetime": {
+     "10": 9.0,
+     "50": 13.0,
+     "90": 28.0
+    },
+    "lysis_lat": {
+     "10": -15.5,
+     "50": 10.25,
+     "90": 23.5
+    },
+    "lysis_lon": {
+     "10": -39.0,
+     "50": 7.0,
+     "90": 35.5
+    }
+   },
+   "pooled_tracks": 4319,
+   "sd": 17.49352261076463,
+   "years": 25
+  }
+ },
+ "region_polygons_sha256": {
+  "africa": "75e5cc1fe5e4cb2d9e4290c8921646113d1e8f1b3aa7ff0704c538568c80be77",
+  "central_america": "1701e8cdb19948a900224efdd2e983fa05e7b56107b1bd449c483f7dce73c82a",
+  "north_atlantic": "c9acfab316f940f16c144a4b3cc08b30f28af5f784d0b68a24dd7bf14b485b85",
+  "northeast_pacific": "0f05ac6a8c742fd75cbef5d932a574b6ac49f4ed05dc49f06f5ff39dd4db2973",
+  "south_america": "9bfa98e402b83f69c2ce67b14bac3d6fd4634006b3806619a9549b763dfd97a7",
+  "south_atlantic": "f711686a15db2dd7f8034d4e5601bac4a923ededfea4773592aee2261b047f7c",
+  "southeast_pacific": "fdf52584659abc41f144441c113ff07391da020f46ac3dbce95fe7a2ee7dd9bf"
+ },
+ "script_sha256": "dbb6248168bdb4b9ebc30e952492855df589b424dcebe9640e8bf936df764295",
+ "sides": null,
+ "tolerances_applied": null,
+ "year": 1990
+}

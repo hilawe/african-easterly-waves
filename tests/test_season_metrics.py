@@ -330,15 +330,19 @@ def test_boundary_predicates_on_the_first_and_last_observation():
     assert S.boundary_lines([ends_on_oct_1], y)["crossing_out"]["tracks"] == 1
 
 
-def _mat_with_producer(tracks, case, settings, label, dataset, stage="tracking", year=1990, sources=None, prefix=None):
+def _mat_with_producer(tracks, case, settings, label, dataset, stage="tracking", year=1990, sources=None, prefix=None,
+                       thresholds=None, sensitivity=None):
     from scipy.io import savemat
     S = _load()
     inventory = {name: "a" * 64 for name in S.expected_tracking_sources()}
-    payload = {"n": float(len(tracks)), "case_id": case,
-               "producer_json": json.dumps({"protocol_settings": settings, "stage": stage,
-                                            "dataset_specific": {"label": label, "dataset": dataset, "year": year,
-                                                                 "prefix": prefix or {"eraint": "eraint", "era5": "era5"}.get(dataset, dataset)},
-                                            "source_sha256": sources if sources is not None else inventory})}
+    ds = {"label": label, "dataset": dataset, "year": year, "prefix": prefix or {"eraint": "eraint", "era5": "era5"}.get(dataset, dataset)}
+    if thresholds:
+        ds["coarse_threshold"], ds["fine_threshold"] = thresholds
+    record = {"protocol_settings": settings, "stage": stage, "dataset_specific": ds,
+              "source_sha256": sources if sources is not None else inventory}
+    if sensitivity:
+        record["sensitivity"] = sensitivity
+    payload = {"n": float(len(tracks)), "case_id": case, "producer_json": json.dumps(record)}
     for i, tr in enumerate(tracks):
         payload[f"time{i}"], payload[f"lat{i}"], payload[f"lon{i}"] = tr["time"], tr["lat"], tr["lon"]
     buf = io.BytesIO()
@@ -393,6 +397,55 @@ def test_reanalysis_mode_keeps_both_identities_and_requires_equal_settings(tmp_p
     for name in ("d", "e", "f", "g", "h", "i", "j"):      # differing sources, inputs stage, empty settings, outside the year, incomplete inventory, wrong label, unknown dataset
         with pytest.raises(SystemExit):
             S.main(["--mode", "reanalysis", "--v1", str(tmp_path / "a.mat"), "--port", str(tmp_path / f"{name}.mat"), *common, "--out", str(tmp_path / f"o_{name}.json")])
+    # A DECLARED THRESHOLD TRANSFER: one side replayed by the sensitivity driver on the other's pair
+    pair = (4.494e-7, 2.25e-6)
+    sens = {"label": "ERA-Interim's Rule A pair on ERA5", "coarse_threshold": pair[0], "fine_threshold": pair[1],
+            "replaces_rule_a": {"coarse": 4.843e-7, "fine": 2.582e-6}, "source": "the ERA-Interim calibration artifact"}
+    with_driver = dict(full, **{S.TRANSFER_DRIVER: "d" * 64})
+    (tmp_path / "base.mat").write_bytes(_mat_with_producer(tracks, "case-base", settings, "ERA-Interim", "eraint", thresholds=pair))
+    (tmp_path / "t.mat").write_bytes(_mat_with_producer(tracks[:5], "case-t", settings, "ERA5", "era5", sources=with_driver, thresholds=pair, sensitivity=sens))
+    with pytest.raises(SystemExit):                                   # not declared: the driver in the inventory refuses as before
+        S.main(["--mode", "reanalysis", "--v1", str(tmp_path / "base.mat"), "--port", str(tmp_path / "t.mat"), *common, "--out", str(tmp_path / "o_t0.json")])
+    S.main(["--mode", "reanalysis", "--declared-threshold-transfer", "--v1", str(tmp_path / "base.mat"), "--port", str(tmp_path / "t.mat"),
+            *common, "--out", str(tmp_path / "o_t1.json")])
+    art = _json.loads((tmp_path / "o_t1.json").read_text())
+    assert art["threshold_transfer"]["side"] == "port" and art["threshold_transfer"]["coarse_threshold"] == pair[0]
+    assert art["threshold_transfer"]["driver_sha256"] == "d" * 64 and art["threshold_transfer"]["replaces_rule_a"]["coarse"] == 4.843e-7
+    assert "declared threshold transfer" in art["sides"]["tracking_sources_equal"] and art["comparison"]["season"]["port"] == 5
+    # declared but the pairs differ, or the inventory differs in anything else, or no side carries the block: refused
+    (tmp_path / "t2.mat").write_bytes(_mat_with_producer(tracks[:5], "case-t2", settings, "ERA5", "era5", sources=with_driver, thresholds=(4.843e-7, 2.582e-6), sensitivity=sens))
+    (tmp_path / "t3.mat").write_bytes(_mat_with_producer(tracks[:5], "case-t3", settings, "ERA5", "era5", sources=dict(with_driver, **{"src/aew/v1port/pipeline.py": "b" * 64}), thresholds=pair, sensitivity=sens))
+    (tmp_path / "t4.mat").write_bytes(_mat_with_producer(tracks[:5], "case-t4", settings, "ERA5", "era5", sources=with_driver, thresholds=pair))
+    # a block whose own thresholds differ from the sides', null thresholds, two replayed sides, and a replayed side with a
+    # matching inventory (no driver entry) offered without the flag: every one refused
+    (tmp_path / "t5.mat").write_bytes(_mat_with_producer(tracks[:5], "case-t5", settings, "ERA5", "era5", sources=with_driver, thresholds=pair,
+                                                         sensitivity=dict(sens, coarse_threshold=1e-7)))
+    (tmp_path / "t6.mat").write_bytes(_mat_with_producer(tracks[:5], "case-t6", settings, "ERA5", "era5", sources=with_driver, thresholds=(None, None),
+                                                         sensitivity=dict(sens, coarse_threshold=None, fine_threshold=None)))
+    (tmp_path / "base_t.mat").write_bytes(_mat_with_producer(tracks, "case-bt", settings, "ERA-Interim", "eraint", sources=with_driver, thresholds=pair, sensitivity=sens))
+    (tmp_path / "t7.mat").write_bytes(_mat_with_producer(tracks[:5], "case-t7", settings, "ERA5", "era5", thresholds=pair, sensitivity=sens))
+    (tmp_path / "base_n.mat").write_bytes(_mat_with_producer(tracks, "case-bn", settings, "ERA-Interim", "eraint", thresholds=(None, None)))
+    for name in ("t2", "t3", "t4", "t5"):
+        with pytest.raises(SystemExit):
+            S.main(["--mode", "reanalysis", "--declared-threshold-transfer", "--v1", str(tmp_path / "base.mat"), "--port", str(tmp_path / f"{name}.mat"),
+                    *common, "--out", str(tmp_path / f"o_{name}.json")])
+    with pytest.raises(SystemExit):                                   # null thresholds on both sides are not a numerical pair
+        S.main(["--mode", "reanalysis", "--declared-threshold-transfer", "--v1", str(tmp_path / "base_n.mat"), "--port", str(tmp_path / "t6.mat"),
+                *common, "--out", str(tmp_path / "o_t6.json")])
+    with pytest.raises(SystemExit):                                   # two replayed sides
+        S.main(["--mode", "reanalysis", "--declared-threshold-transfer", "--v1", str(tmp_path / "base_t.mat"), "--port", str(tmp_path / "t.mat"),
+                *common, "--out", str(tmp_path / "o_bt.json")])
+    for v1, port in (("base", "t7"), ("base_t", "t")):                # a replayed side, equal inventories, no flag: never a protocol comparison
+        with pytest.raises(SystemExit):
+            S.main(["--mode", "reanalysis", "--v1", str(tmp_path / f"{v1}.mat"), "--port", str(tmp_path / f"{port}.mat"),
+                    *common, "--out", str(tmp_path / f"o_{v1}_{port}.json")])
+    # and the protocol comparison itself records no transfer
+    assert _json.loads(out.read_text())["threshold_transfer"] is None
+    # the producer gate on its own: the driver is an allowed extra source only for a record that declares a sensitivity
+    undeclared = {"protocol_settings": settings, "stage": "tracking", "source_sha256": with_driver,
+                  "dataset_specific": {"label": "ERA5", "dataset": "era5", "year": 1990, "prefix": "era5"}}
+    assert any("inventory" in p for p in S.producer_problems(undeclared, manifest, settings["manifest_sha256"], 1990, "x"))
+    assert S.producer_problems(dict(undeclared, sensitivity=sens), manifest, settings["manifest_sha256"], 1990, "x") == []
     # THE PRODUCER GATE ON ITS OWN, since a later gate would mask these in the command path
     prod = {"protocol_settings": settings, "stage": "tracking",
               "dataset_specific": {"label": "ERA5", "dataset": "era5", "year": 1990, "prefix": "era5"},

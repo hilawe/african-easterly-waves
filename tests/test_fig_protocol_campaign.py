@@ -80,6 +80,57 @@ def test_the_panel_label_and_the_legend_do_not_overlap_in_panel_a(tmp_path, monk
     assert not label.overlaps(legend)
 
 
+def test_at_most_ten_years_are_annotated_and_the_spread_caption_avoids_the_bars(tmp_path, monkeypatch):
+    F = _load()
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    captured = {}
+    original = plt.subplots
+
+    def keep(*a, **k):
+        fig, axes = original(*a, **k)
+        captured["axes"] = axes
+        return fig, axes
+    monkeypatch.setattr(plt, "subplots", keep)
+    monkeypatch.setattr(plt, "close", lambda fig: None)
+    s = _summary()
+    for i, y in enumerate(range(1990, 2010)):                                     # twenty years, every one far above the spread
+        s["years"][str(y)] = {"africa_origin": {"v1": 100 + i, "port": 180 + i, "port_minus_v1": 80}, "published_context_tracks": None}
+    F.render(s, str(tmp_path / "f.png"), dpi=60)
+    (a, b), (c, d) = captured["axes"]
+    assert len([t for t in c.texts if t.get_text().isdigit()]) == 10
+    caption = [t for t in b.texts if "spread" in t.get_text()][0]
+    assert caption.get_position()[1] < 0                                           # all bars positive, so the caption sits on the lower line
+    F.render(_summary(), str(tmp_path / "g.png"), dpi=60)
+    (a, b), (c, d) = captured["axes"]
+    assert [t for t in b.texts if "spread" in t.get_text()][0].get_position()[1] > 0   # mixed signs, the upper line as before
+
+
+def test_side_labels_name_the_axes_and_default_to_the_reanalyses(tmp_path, monkeypatch):
+    F = _load()
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    captured = {}
+    original = plt.subplots
+
+    def keep(*a, **k):
+        fig, axes = original(*a, **k)
+        captured["axes"] = axes
+        return fig, axes
+    monkeypatch.setattr(plt, "subplots", keep)
+    monkeypatch.setattr(plt, "close", lambda fig: None)
+    F.render(_summary(), str(tmp_path / "a.png"), dpi=60)
+    (a, b), (c, d) = captured["axes"]
+    assert b.get_ylabel() == "ERA5 minus ERA-Interim, tracks" and c.get_xlabel().startswith("ERA-Interim")
+    F.render(_summary(), str(tmp_path / "b.png"), dpi=60, labels={"v1": "Rule A", "port": "archived constants"}, title="t")
+    (a, b), (c, d) = captured["axes"]
+    assert b.get_ylabel() == "archived constants minus Rule A, tracks"
+    assert c.get_xlabel() == "Rule A, tracks in season" and c.get_ylabel() == "archived constants, tracks in season"
+    assert [t.get_text() for t in a.get_legend().get_texts()][:2] == ["Rule A", "archived constants"]
+
+
 def test_the_annotated_correlation_is_the_summary_value(tmp_path, monkeypatch):
     F = _load()
     seen = []

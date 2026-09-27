@@ -128,6 +128,13 @@ def test_aggregates_over_several_years_are_the_plain_statistics(tmp_path):
     assert ag["season_whole_domain"]["mean"] == {"v1": 40.0, "port": 40.0}
 
 
+def test_the_row_builder_reads_an_implementation_mode_artifact_with_one_case_id_for_both_sides():
+    C = _load()
+    row = C.row_from_artifact(os.path.join(HERE, "fixtures", "implementation_mode_artifact_1990.json"))
+    assert row["sides"] == {"v1": "4faed0de236ce7f134bdeb2998fd1e77", "port": "4faed0de236ce7f134bdeb2998fd1e77"}
+    assert row["africa_origin"]["v1"] == 135 and row["africa_origin"]["port"] == 206 and row["tracks_in_year"] == {"v1": 1628, "port": 2344}
+
+
 def test_aggregates_with_a_constant_series_and_no_archive_report_no_correlation(tmp_path):
     C = _load()
     paths = {}
