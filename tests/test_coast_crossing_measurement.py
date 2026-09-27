@@ -71,13 +71,27 @@ def _world(tmp_path):
         14: (JUNE1 + 24.0, [9.0] * 3, [3.0, 1.0, -7.4]),
         # 15: reaches the Atlantic side exactly AT the endpoint, October 31 18Z: the observation at the endpoint counts
         15: (M._day(1990, 9, 29), None, None),
-        # 16 and 17: duplicates, 16 Gulf-only and complete, 17 none and alive at the endpoint: the group is GULF-ONLY, not incomplete
+        # 16 and 17: duplicates, 16 Gulf-only and complete, 17 none and alive at the endpoint: the group's sector is Gulf-only
+        #            and its follow-up is INCOMPLETE (section 0a)
         16: (JUNE1 + 26.0, [7.0] * 6, [5.0, 4.0, 3.0, 2.0, 1.0, -2.0]),
         17: (JUNE1 + 26.0, None, None),
         # 18 and 19: duplicates, both none, 19 alive at the endpoint: the group is INCOMPLETE
         18: (JUNE1 + 28.0, [21.0] * 3, [25.0, 24.0, 23.0]),
         19: (JUNE1 + 28.0, None, None),
+        # 20: a duplicate of 3 that starts in May (excluded): the group {3, 20} has ONE cohort member and must keep
+        #     3's status exactly, none and incomplete
+        20: (M._day(1990, 5, 25), None, None),
+        # 21 and 22: duplicates, 21 Atlantic side (two qualifying observations), 22 none and alive at the endpoint: the group is
+        #            Atlantic side and its follow-up COMPLETE, because a member has the event
+        21: (JUNE1 + 30.0, None, None),
+        22: (JUNE1 + 30.0, None, None),
     }
+    shared = [round(5.0 - 0.2 * k, 1) for k in range(24)]                                    # twenty-four close African steps, so the mean separation stays under one degree
+    tracks[21] = (JUNE1 + 30.0, [13.0] * 26, shared + [-9.0, -9.5])
+    n22 = int(round((endpoint + 0.5 - (JUNE1 + 30.0)) / 0.25)) + 1
+    tracks[22] = (JUNE1 + 30.0, [13.2] * n22, shared + [shared[-1]] * (n22 - 24))          # holds its last African position past the endpoint
+    n20 = int(round((M._day(1990, 10, 5) - tracks[20][0]) / 0.25)) + 1
+    tracks[20] = (tracks[20][0], [10.2] * n20, [15.0] * n20)                              # beside track 3 through its September steps
     n15 = int(round((endpoint - tracks[15][0]) / 0.25)) + 1
     tracks[15] = (tracks[15][0], [11.0] * n15, [20.0] * (n15 - 1) + [-9.0])            # ends exactly at the endpoint, on the Atlantic side
     for i, lat, lons3 in ((17, 7.2, [5.0, 4.0, 3.0, 2.0, 1.0]), (19, 21.2, [25.0, 24.0, 23.0])):
@@ -127,8 +141,9 @@ def test_events_endpoint_censoring_bands_and_denominators(tmp_path):
     art = json.load(open(out))
     ours = art["sides"]["this_record"]
     r = {t["id"]: t for t in ours["tracks"]}
-    assert sorted(r) == [0, 1, 2, 3, 7, 8, 10, 11, 14, 15, 16, 17, 18, 19] and ours["outside_cohort_latitude_ids"] == [5] and ours["left_censored_excluded_ids"] == []
-    assert ours["archive_rule_n"] == 15
+    assert sorted(r) == [0, 1, 2, 3, 7, 8, 10, 11, 14, 15, 16, 17, 18, 19, 21, 22] and ours["outside_cohort_latitude_ids"] == [5] and ours["left_censored_excluded_ids"] == []
+    assert ours["archive_rule_n"] == 17                                                       # 20 starts in May, so it is not counted
+    assert r[21]["outcome"] == "atlantic_side" and not r[21]["single_observation_entrant"] and r[22]["outcome"] == "none" and r[22]["follow_up_incomplete"]
     assert r[14]["outcome"] == "gulf_only" and r[14]["first_gulf"]["lon"] == -7.4               # raw longitude, not the rounded one
     assert r[15]["outcome"] == "atlantic_side" and r[15]["first_atlantic_side"]["time"].startswith("1990-10-31 18")
     assert r[16]["outcome"] == "gulf_only" and not r[16]["follow_up_incomplete"] and r[17]["outcome"] == "none" and r[17]["follow_up_incomplete"]
@@ -141,11 +156,11 @@ def test_events_endpoint_censoring_bands_and_denominators(tmp_path):
     assert r[10]["band"] == "20 to 25" and r[11]["band"] == "5 to 10"
     assert all(t["first"]["lon"] is not None and t["first"]["lat"] is not None for t in ours["tracks"])
     tot = ours["by_band"]["total"]
-    assert tot["cohort"] == 14 and tot["atlantic_side"] == 4 and tot["gulf_only"] == 3 and tot["none"] == 4 and tot["follow_up_incomplete"] == 3
+    assert tot["cohort"] == 16 and tot["atlantic_side"] == 5 and tot["gulf_only"] == 3 and tot["none"] == 4 and tot["follow_up_incomplete"] == 4
     assert tot["atlantic_side"] + tot["gulf_only"] + tot["none"] + tot["follow_up_incomplete"] == tot["cohort"]
-    assert tot["denominators"] == {"cohort": 14, "complete_follow_up": 11} and abs(tot["fraction_atlantic_side_over_complete_follow_up"] - 4 / 11) < 1e-12
+    assert tot["denominators"] == {"cohort": 16, "complete_follow_up": 12} and abs(tot["fraction_atlantic_side_over_complete_follow_up"] - 5 / 12) < 1e-12
     assert tot["single_observation_entrants"] == 2                                             # 7 and 15
-    assert sum(row["cohort"] for lab, row in ours["by_band"].items() if lab != "total") == 14
+    assert sum(row["cohort"] for lab, row in ours["by_band"].items() if lab != "total") == 16
     q = art["sides"]["qtrack"]
     qr = {t["id"]: t for t in q["tracks"]}
     assert sorted(qr) == [1, 3, 4] and q["left_censored_excluded_ids"] == [2] and q["outside_cohort_latitude_ids"] == [5]
@@ -168,16 +183,21 @@ def test_grouping_sensitivity_uses_cohort_members_only(tmp_path):
     by_members = {tuple(sorted(v["members_in_cohort"] + v["members_outside_cohort"])): v for v in groups.values()}
     assert (0, 8) in by_members and by_members[(0, 8)]["members_outside_cohort"] == []
     assert (1, 9) in by_members and by_members[(1, 9)]["members_in_cohort"] == [1] and by_members[(1, 9)]["members_outside_cohort"] == [9]
-    assert g["units"] == 11 and g["grouped_units"] == 4                         # 14 cohort tracks: seven singletons and four group units
-    assert len(groups) == 4 and all(v["members_in_cohort"] for v in groups.values())   # only groups with a cohort member are listed
+    assert g["units"] == 12 and g["grouped_units"] == 6                         # 16 cohort tracks: six singletons and six group units
+    assert len(groups) == 6 and all(v["members_in_cohort"] for v in groups.values())   # only groups with a cohort member are listed
+    unit_21 = [u for u in g["group_units"] if sorted(u["members"]) == [21, 22]][0]
+    assert unit_21["outcome"] == "atlantic_side" and not unit_21["follow_up_incomplete"]     # an Atlantic-side member keeps the group complete
+    unit_3 = [u for u in g["group_units"] if u["members"] == [3]][0]
+    assert unit_3["outcome"] == "none" and unit_3["follow_up_incomplete"]                    # one cohort member: its status, exactly
+    assert by_members[(3, 20)]["members_outside_cohort"] == [20]
     unit_1 = [u for u in g["group_units"] if u["members"] == [1]][0]
     assert unit_1["first"]["time"].startswith("1990-06-13") and unit_1["outcome"] == "none"   # first position and outcome from the cohort member, not the excluded May starter
     unit_16 = [u for u in g["group_units"] if sorted(u["members"]) == [16, 17]][0]
-    assert unit_16["outcome"] == "gulf_only" and not unit_16["follow_up_incomplete"]          # Gulf-only takes precedence over incomplete
+    assert unit_16["outcome"] == "gulf_only" and unit_16["follow_up_incomplete"]              # sector Gulf-only, follow-up incomplete (section 0a)
     unit_18 = [u for u in g["group_units"] if sorted(u["members"]) == [18, 19]][0]
     assert unit_18["outcome"] == "none" and unit_18["follow_up_incomplete"]                    # none with an alive member is incomplete
     tot = g["by_band"]["total"]
-    assert tot["cohort"] == 11 and tot["atlantic_side"] == 3 and tot["none"] == 3 and tot["gulf_only"] == 3 and tot["follow_up_incomplete"] == 2
+    assert tot["cohort"] == 12 and tot["atlantic_side"] == 4 and tot["none"] == 3 and tot["gulf_only"] == 2 and tot["follow_up_incomplete"] == 3
     assert tot["atlantic_side"] + tot["gulf_only"] + tot["none"] + tot["follow_up_incomplete"] == tot["cohort"]
     q = art["sides"]["qtrack"]["grouping_sensitivity"]
     qg = list(q["groups_with_cohort_members"].values())

@@ -24,7 +24,12 @@ qualifying Atlantic-side observation) are counted separately.
 THE GROUPING SENSITIVITY: group membership from the full records (this record's duplicate
 groups under the instrument's whole-record rule, QTrack's shared-tail pairs), retained
 with the members outside the cohort listed, but a group's outcome, band and first
-position come only from its cohort members. It is a sensitivity to the grouping rule.
+position come only from its cohort members. Follow-up completeness is kept separate
+from the observed sector: the group's sector is Atlantic-side if any cohort member's
+is, else Gulf-only if any is, else none, and its follow-up is incomplete when no cohort
+member has an Atlantic-side event and any cohort member's follow-up is incomplete,
+including a Gulf-only group. A group with one cohort member keeps that member's status.
+It is a sensitivity to the grouping rule.
 
     .venv/bin/python3 scripts/coast_crossing_measurement.py --year 1990 --campaign-evidence <dir> \\
         --qtrack-dir <dir> --regions-dir <dir> --out <json>
@@ -178,11 +183,13 @@ def group_units(track_records, membership):
             by_group.setdefault(g, []).append(r)
     for g, members in sorted(by_group.items()):
         members = sorted(members, key=lambda r: r["first"]["time"])
-        # the amended brief's precedence, exactly: Atlantic-side if any member's is, else Gulf-only if any
-        # is, else incomplete if any is, else none
+        # the brief's section 0a: sector and follow-up kept separate. The sector is Atlantic-side if any
+        # cohort member's is, else Gulf-only if any is, else none; follow-up is incomplete when no cohort
+        # member has an Atlantic-side event and any cohort member's follow-up is incomplete, including a
+        # Gulf-only group. A group with one cohort member keeps that member's status exactly.
         outcomes = [m["outcome"] for m in members]
         outcome = "atlantic_side" if "atlantic_side" in outcomes else ("gulf_only" if "gulf_only" in outcomes else "none")
-        incomplete = bool(outcome == "none" and any(m["follow_up_incomplete"] for m in members))
+        incomplete = bool(outcome != "atlantic_side" and any(m["follow_up_incomplete"] for m in members))
         units.append({"band": members[0]["band"], "outcome": outcome, "follow_up_incomplete": incomplete,
                       "single_observation_entrant": bool(outcome == "atlantic_side" and all(m["single_observation_entrant"] for m in members if m["outcome"] == "atlantic_side")),
                       "first": members[0]["first"], "members": [m["id"] for m in members], "grouped": True, "group": g})
@@ -243,7 +250,9 @@ def run(year, campaign_evidence, qtrack_dir, regions_dir, out):
                   "follow_up_incomplete": "no Atlantic-side event and the last observation at or after the endpoint",
                   "bands": [list(b) for b in BANDS], "bands_status": "exploratory, first latitude",
                   "grouping": "this record's duplicate groups (instrument's whole-record rule) and QTrack's shared-tail pairs, outcomes and bands "
-                              "from cohort members only; a sensitivity to the grouping rule"},
+                              "from cohort members only, the sector (Atlantic-side, else Gulf-only, else none) kept separate from follow-up, "
+                              "which is incomplete when no cohort member has an Atlantic-side event and any cohort member is incomplete; "
+                              "a sensitivity to the grouping rule"},
         "inputs": {"this_record": {"path": ours_path, "sha256": _sha256(ours_path), "case_id": case, "first_day": str(S.date_of(M._day(year, 1, 1)))},
                    "qtrack": {"path": q_path, "sha256": _sha256(q_path), **q_meta},
                    "campaign_record": {"path": record_path, "sha256": _sha256(record_path)},

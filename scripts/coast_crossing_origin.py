@@ -9,6 +9,10 @@ re-classified: every outcome, band and first position is read from the season ar
 whose digests the output records.
 
     .venv/bin/python3 scripts/coast_crossing_origin.py --artifacts <dir> --years 1990 2002 2007 --out <json>
+
+With --pilot-years, the pooled tables are also given for those years alone and for the
+remaining years alone, so an extension can show its pilot seasons apart from the rest.
+--pattern names the season artifact files (a {year} placeholder).
 """
 
 import argparse
@@ -97,11 +101,13 @@ def bind(side, tracks_rows, units_rows):
         raise SystemExit("REFUSED: the unit count does not equal the season artifact's")
 
 
-def run(artifacts_dir, years, out):
+def run(artifacts_dir, years, out, pattern=ARTIFACT, pilot_years=()):
     seasons, pooled = {}, {"this_record": {"tracks": [], "units": []}, "qtrack": {"tracks": [], "units": []}}
     inputs = {}
+    subsets = {"pilot_years": [y for y in years if y in pilot_years], "remaining_years": [y for y in years if y not in pilot_years]}
+    sub_pool = {k: {"this_record": {"tracks": [], "units": []}, "qtrack": {"tracks": [], "units": []}} for k in subsets}
     for y in years:
-        path = os.path.join(artifacts_dir, ARTIFACT.format(year=y))
+        path = os.path.join(artifacts_dir, pattern.format(year=y))
         art = json.load(open(path))
         if art.get("year") != y:
             raise SystemExit(f"REFUSED: {path} is not the artifact for {y}")
@@ -115,14 +121,21 @@ def run(artifacts_dir, years, out):
                                      "first_positions": [{"id": t["id"], "lon": t["first"]["lon"], "lat": t["first"]["lat"], "status": status(t)} for t in side["tracks"]]}
             pooled[name]["tracks"].extend(side["tracks"])
             pooled[name]["units"].extend(units)
-    pooled_rows = {name: {"by_longitude_band": tabulate(v["tracks"]), "grouping_sensitivity_by_longitude_band": tabulate(v["units"])} for name, v in pooled.items()}
+            for k, ys in subsets.items():
+                if y in ys:
+                    sub_pool[k][name]["tracks"].extend(side["tracks"])
+                    sub_pool[k][name]["units"].extend(units)
+    pool_rows = lambda pool: {name: {"by_longitude_band": tabulate(v["tracks"]), "grouping_sensitivity_by_longitude_band": tabulate(v["units"])} for name, v in pool.items()}
+    pooled_rows = pool_rows(pooled)
+    subset_rows = {k: {"years": ys, **pool_rows(sub_pool[k])} for k, ys in subsets.items()} if pilot_years else {}
     payload = {
         "generated_by": "scripts/coast_crossing_origin.py", "script_sha256": X.digest(__file__),
         "what_this_is": "the three-season coast-crossing measurement re-tabulated by predeclared bands of first recorded longitude, with "
                         "latitude composition and season visible; a descriptive comparison of stored tracks, not a separation of causes",
         "longitude_bands": {"edges": list(LON_EDGES), "labels": list(LON_BANDS), "convention": "[lower, upper), a start on an edge belongs to the band east of it",
                             "status": "predeclared from geography before any outcome fraction by longitude was inspected"},
-        "years": list(years), "inputs": inputs, "seasons": seasons, "pooled_three_seasons": pooled_rows}
+        "years": list(years), "season_artifact_pattern": pattern, "inputs": inputs, "seasons": seasons, "pooled_three_seasons": pooled_rows,
+        "pooled_all_years": pooled_rows, "pooled_subsets": subset_rows}
     try:
         X.publish_json(out, payload, exclusive=True)
     except FileExistsError:
@@ -137,8 +150,10 @@ def main(argv=None):
     ap.add_argument("--artifacts", required=True)
     ap.add_argument("--years", nargs="+", type=int, required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--pattern", default=ARTIFACT, help="season artifact file name with a {year} placeholder")
+    ap.add_argument("--pilot-years", nargs="*", type=int, default=[])
     a = ap.parse_args(argv)
-    return run(a.artifacts, a.years, a.out)
+    return run(a.artifacts, a.years, a.out, a.pattern, tuple(a.pilot_years))
 
 
 if __name__ == "__main__":

@@ -65,6 +65,30 @@ def test_bands_reproduce_totals_keep_empty_cells_and_place_edges_east(tmp_path):
         O.main(["--artifacts", str(art_dir), "--years", "1990", "--out", str(out)])
 
 
+def test_pilot_and_remaining_subsets_pool_separately_and_add_up(tmp_path):
+    O = _load("coast_crossing_origin")
+    art_dir, season_path = _season_artifact(tmp_path)
+    other = art_dir / "coast_crossing_2002_v3_2026-09-27.json"                   # a second season, the same tracks under another year label
+    season = json.load(open(season_path))
+    season["year"] = 2002
+    other.write_text(json.dumps(season))
+    out = tmp_path / "origin.json"
+    assert O.main(["--artifacts", str(art_dir), "--years", "1990", "2002", "--out", str(out), "--pilot-years", "1990"]) == 0
+    origin = json.load(open(out))
+    assert origin["pooled_subsets"]["pilot_years"]["years"] == [1990] and origin["pooled_subsets"]["remaining_years"]["years"] == [2002]
+    for name in ("this_record", "qtrack"):
+        for lab in list(O.LON_BANDS) + ["total"]:
+            a = origin["pooled_subsets"]["pilot_years"][name]["by_longitude_band"][lab]
+            b = origin["pooled_subsets"]["remaining_years"][name]["by_longitude_band"][lab]
+            c = origin["pooled_all_years"][name]["by_longitude_band"][lab]
+            assert a["cohort"] + b["cohort"] == c["cohort"] and a["atlantic_side"] + b["atlantic_side"] == c["atlantic_side"]
+            assert a["follow_up_incomplete"] + b["follow_up_incomplete"] == c["follow_up_incomplete"]
+    custom = art_dir / "cc_1990.json"
+    custom.write_text(season_path.read_text())
+    assert O.main(["--artifacts", str(art_dir), "--years", "1990", "--out", str(tmp_path / "custom.json"), "--pattern", "cc_{year}.json"]) == 0
+    assert json.load(open(tmp_path / "custom.json"))["season_artifact_pattern"] == "cc_{year}.json"
+
+
 def test_a_season_artifact_that_disagrees_with_its_own_totals_is_refused(tmp_path):
     O = _load("coast_crossing_origin")
     art_dir, season_path = _season_artifact(tmp_path)
