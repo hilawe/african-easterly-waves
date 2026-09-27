@@ -42,7 +42,8 @@ def _campaign(tmp_path, fail="", silent="", late="", years="2001-2001"):
     fake = tmp_path / "fake_entry.py"
     fake.write_text(FAKE)
     out = tmp_path / "campaign"
-    env = dict(os.environ, OUT=str(out), YEARS=years, ENTRY=f"{sys.executable} {fake}", FAIL_RUNS=fail, SILENT_RUNS=silent, LATE_RUNS=late,
+    env = dict(os.environ, OUT=str(out), YEARS=years, ENTRY=f"{sys.executable} {fake}", PYTHON=sys.executable,
+               FAIL_RUNS=fail, SILENT_RUNS=silent, LATE_RUNS=late,
                MANIFEST="m.json", CAL_eraint="c", CAL_era5="c", CACHE_eraint="k", CACHE_era5="k")
     r = subprocess.run(["bash", SCRIPT], env=env, cwd=ROOT, capture_output=True, text=True)
     return r, out
@@ -95,8 +96,8 @@ def test_two_campaign_commands_on_one_root_cannot_both_promote_the_same_run(tmp_
     fake = tmp_path / "fake_entry.py"
     fake.write_text(FAKE)
     out = tmp_path / "campaign"
-    env = dict(os.environ, OUT=str(out), YEARS="2001-2001", ENTRY=f"{sys.executable} {fake}", FAIL_RUNS="", SILENT_RUNS="", LATE_RUNS="",
-               ENTRY_SLEEP="1.0",
+    env = dict(os.environ, OUT=str(out), YEARS="2001-2001", ENTRY=f"{sys.executable} {fake}", PYTHON=sys.executable,
+               FAIL_RUNS="", SILENT_RUNS="", LATE_RUNS="", ENTRY_SLEEP="1.0",
                MANIFEST="m.json", CAL_eraint="c", CAL_era5="c", CACHE_eraint="k", CACHE_era5="k")
     procs = [subprocess.Popen(["bash", SCRIPT], env=env, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) for _ in range(2)]
     outs = [p.communicate()[0] for p in procs]
@@ -111,12 +112,13 @@ def test_two_campaign_commands_on_one_root_cannot_both_promote_the_same_run(tmp_
         assert not (out / f"{ds}_2001.promoting").exists()                           # the lock is released
 
 
+PROMOTE = os.path.join(ROOT, "scripts", "campaign_promote.sh")
+
+
 def _promote(src, dst):
-    """The driver's promote function alone, extracted from the script text, so the lock's
+    """The driver's promote function alone, sourced from its own file, so the lock's
     semantics are tested without timing: a held lock refuses, a free one promotes."""
-    text = open(SCRIPT).read()
-    body = text[text.index("promote() {"):text.index("export -f promote")]
-    return subprocess.run(["bash", "-c", body + '\npromote "$1" "$2"', "_", str(src), str(dst)], capture_output=True, text=True)
+    return subprocess.run(["bash", "-c", f'. "{PROMOTE}"; promote "$1" "$2"', "_", str(src), str(dst)], capture_output=True, text=True)
 
 
 def test_promotion_refuses_while_the_lock_is_held_and_leaves_everything_in_place(tmp_path):
@@ -135,6 +137,26 @@ def test_promotion_refuses_while_the_lock_is_held_and_leaves_everything_in_place
     (tmp_path / "attempt2" / "era5_2001").mkdir(parents=True)
     r = _promote(tmp_path / "attempt2" / "era5_2001", dst)               # the destination now exists
     assert r.returncode == 1 and "it exists" in r.stdout and not lock.exists() and (tmp_path / "attempt2" / "era5_2001").exists()
+
+
+def test_a_file_at_the_record_path_that_is_not_this_runs_record_is_neither_skipped_nor_counted(tmp_path):
+    import json
+    out = tmp_path / "campaign"
+    (out / "era5_2001").mkdir(parents=True)
+    (out / "era5_2001" / "tracking_era5_2001.json").write_bytes(b"")                     # an empty file
+    r, _ = _campaign(tmp_path)
+    assert r.returncode == 1 and "is not a record of this run" in r.stdout and "missing records for: era5/2001" in r.stdout
+    assert (out / "era5_2001" / "tracking_era5_2001.json").read_bytes() == b""             # untouched
+    (out / "era5_2001" / "tracking_era5_2001.json").write_text(json.dumps({"dataset_specific": {"dataset": "era5", "year": 1990}}))
+    r, _ = _campaign(tmp_path)
+    assert r.returncode == 1 and "record names era5 1990, the path says era5 2001" in r.stdout
+    (out / "era5_2001" / "tracking_era5_2001.json").write_text(json.dumps({"dataset_specific": {"dataset": "era5", "year": "2001"}}))
+    r, _ = _campaign(tmp_path)
+    assert r.returncode == 1 and "is not a record of this run" in r.stdout          # a string year is not the path's integer year
+    (out / "era5_2001" / "tracking_era5_2001.json").write_text(json.dumps({"dataset_specific": {"dataset": "era5", "year": 2001}}))
+    (out / "era5_2001" / "tracker_port.mat").write_bytes(b"tracks the record does not name")
+    r, _ = _campaign(tmp_path)
+    assert r.returncode == 1 and "does not have the digest the record names" in r.stdout
 
 
 def test_a_canonical_directory_without_a_record_is_never_reused(tmp_path):

@@ -27,11 +27,12 @@
 # can never land a record in a promoted run, which a review reproduced under the earlier
 # scheme of setting a partial directory aside and recreating the same pathname. The
 # first campaign's runs sit at the canonical paths already and are skipped by record.
-# PROMOTION IS EXCLUSIVE: the promoting worker first creates `<dataset>_<year>.promoting`
-# with mkdir, which is atomic and fails when it exists, so two campaign commands started
-# against one root cannot both pass the destination check and nest one run inside the
-# other (a review's scenario). A worker that cannot take the lock fails its run and says
-# so; a lock left by a crash is reported by name and removed by hand.
+# PROMOTION IS EXCLUSIVE, see scripts/campaign_promote.sh. A RECORD IS A RECORD OF ITS
+# RUN, NOT A PATHNAME: a run is skipped, and counted present at the end, only when
+# scripts/campaign_record_ok.py accepts the file at the canonical path (it parses, names
+# the path's dataset and year, and names the digest of the tracks file beside it). A
+# review built the pair a pathname test cannot tell apart, an empty file or another
+# run's record at the expected path, which a restart would otherwise never rerun.
 #
 # OVERRIDES, for the test and for a scratch campaign: OUT (the campaign root), YEARS
 # (first-last), ENTRY (the command that runs one year, given the entry point's
@@ -42,6 +43,8 @@ OUT="${OUT:-data/protocol_runs/campaign}"
 MANIFEST="${MANIFEST:-docs/aewc_v2/protocol/manifest_2026-09-25.json}"
 YEARS="${YEARS:-1979-2010}"
 ENTRY="${ENTRY:-.venv/bin/python3 scripts/export_protocol_case.py}"
+PYTHON="${PYTHON:-.venv/bin/python3}"
+. scripts/campaign_promote.sh
 CAL_eraint="${CAL_eraint:-docs/aewc_v2/artifacts/thresholds_protocol_eraint_1979_2010.json}"
 CAL_era5="${CAL_era5:-docs/aewc_v2/artifacts/thresholds_protocol_era5_1979_2010.json}"
 CACHE_eraint="${CACHE_eraint:-data/climo/climo_eraint_1979_2010.npz}"
@@ -66,7 +69,11 @@ run_one() {
   esac
   final="$OUT/${dataset}_${year}"
   record="$final/tracking_${dataset}_${year}.json"
-  if [ -f "$record" ]; then echo "skip $dataset $year, record exists"; return 0; fi
+  if [ -f "$record" ]; then
+    if why=$($PYTHON scripts/campaign_record_ok.py "$record"); then echo "skip $dataset $year, record exists"; return 0; fi
+    echo "FAILED $dataset $year: the file at $record is not a record of this run ($why), and it is never reused or removed, move it aside by hand"
+    echo "$dataset $year" >> "$FAILURES"; return 1
+  fi
   if [ -e "$final" ]; then
     echo "FAILED $dataset $year: $final exists without a completion record and is never reused or removed, move it aside by hand"
     echo "$dataset $year" >> "$FAILURES"; return 1
@@ -87,24 +94,9 @@ run_one() {
     echo "$dataset $year" >> "$FAILURES"
   fi
 }
-
-promote() {
-  src="$1"; dst="$2"; lock="$dst.promoting"
-  if ! mkdir "$lock" 2>/dev/null; then
-    echo "promotion of $dst refused: $lock is held, by another campaign command or left by a crash"
-    return 1
-  fi
-  if [ -e "$dst" ]; then
-    echo "promotion of $dst refused: it exists"
-    rmdir "$lock"; return 1
-  fi
-  mv "$src" "$dst"; status=$?
-  rmdir "$lock"
-  return $status
-}
 export -f promote
 export -f run_one
-export OUT MANIFEST ENTRY FAILURES CAL_eraint CAL_era5 CACHE_eraint CACHE_era5
+export OUT MANIFEST ENTRY PYTHON FAILURES CAL_eraint CAL_era5 CACHE_eraint CACHE_era5
 
 for year in $(seq "$Y0" "$Y1"); do for dataset in eraint era5; do echo "$dataset $year"; done; done \
   | xargs -P 4 -L 1 bash -c 'run_one "$0" "$1"'
@@ -116,7 +108,8 @@ expected=$(( 2 * (Y1 - Y0 + 1) ))
 present=0
 missing=""
 for year in $(seq "$Y0" "$Y1"); do for dataset in eraint era5; do
-  if [ -f "$OUT/${dataset}_${year}/tracking_${dataset}_${year}.json" ]; then present=$((present + 1)); else missing="$missing $dataset/$year"; fi
+  rec="$OUT/${dataset}_${year}/tracking_${dataset}_${year}.json"
+  if [ -f "$rec" ] && $PYTHON scripts/campaign_record_ok.py "$rec" > /dev/null; then present=$((present + 1)); else missing="$missing $dataset/$year"; fi
 done; done
 echo "campaign ended $(date -u +%FT%TZ): $present of $expected records, $failed failed, scheduler status $scheduler_status"
 if [ "$failed" -gt 0 ] || [ "$present" -ne "$expected" ] || [ "$scheduler_status" -ne 0 ]; then

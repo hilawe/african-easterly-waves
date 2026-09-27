@@ -67,7 +67,7 @@ def _link(links, name, ok, detail=""):
     return bool(ok)
 
 
-def check_run(evidence, dataset, year, manifest, manifest_sha256, raw_validator, calibration_path):
+def check_run(evidence, dataset, year, manifest, manifest_sha256, raw_validator, calibration_path, campaign=None):
     """Links 1 to 5 for one run. `raw_validator(path, year, var)` returns None when the
     raw file passes the retrieval validator, else a reason; it is injected so the check
     can be tested without a retrieved year on disk, and a run whose raw inputs were not
@@ -80,10 +80,13 @@ def check_run(evidence, dataset, year, manifest, manifest_sha256, raw_validator,
     if not os.path.exists(record_path):
         _link(links, "record present", False, record_path)
         return links
+    import campaign_record_ok as R
+    identity = R.problems(record_path)               # the driver's own predicate, so the two cannot disagree
+    _link(links, "record filed under its dataset and year (the driver's own predicate)", not identity, "; ".join(identity))
+    if identity and any("unreadable" in p for p in identity):
+        return links
     record = json.load(open(record_path))
-    d = record["dataset_specific"]
-    _link(links, "record filed under its dataset and year", d.get("dataset") == dataset and d.get("year") == year,
-          f"record says {d.get('dataset')} {d.get('year')}")
+    d = record.get("dataset_specific") or {}
     problems = S.producer_problems(record, manifest, manifest_sha256, year, SIDES[dataset])
     _link(links, "record passes the comparison gate's producer check", not problems, "; ".join(problems))
     tracks_path = os.path.join(run, "tracker_port.mat")
@@ -109,11 +112,16 @@ def check_run(evidence, dataset, year, manifest, manifest_sha256, raw_validator,
     n = int(np.asarray(raw["n"]).ravel()[0])
     indices = sorted(int(k[4:]) for k in raw if k.startswith("time") and k[4:].isdigit())
     contiguous = indices == list(range(n))
-    _link(links, "tracks file holds the number of tracks it declares, contiguously indexed", contiguous,
-          f"declares {n}, holds indices {indices[:5]}{'...' if len(indices) > 5 else ''} ({len(indices)})")
+    complete = contiguous and all(f"lat{i}" in raw and f"lon{i}" in raw
+                                  and np.asarray(raw[f"lat{i}"]).size == np.asarray(raw[f"lon{i}"]).size == np.asarray(raw[f"time{i}"]).size
+                                  for i in indices)
+    _link(links, "tracks file holds the number of tracks it declares, contiguously indexed, each with time, lat and lon of one length",
+          complete, f"declares {n}, holds time indices {indices[:5]}{'...' if len(indices) > 5 else ''} ({len(indices)})"
+          + ("" if contiguous else ", not 0..n-1") + ("" if complete or not contiguous else ", a lat or lon array is missing or of another length"))
+    _link(links, "tracks file holds at least one track", n >= 1 and bool(indices), f"declares {n}")
     lo, hi = _day(year, 1, 1), _day(year + 1, 1, 1)
     times = np.concatenate([np.asarray(raw[f"time{i}"], float).ravel() for i in indices]) if indices else np.array([])
-    inside = bool(times.size) and bool(np.all((times >= lo) & (times < hi)))
+    inside = bool(np.all((times >= lo) & (times < hi))) if times.size else True     # vacuous for no tracks, refused by the link above
     _link(links, "every observation falls inside the calendar year", inside,
           f"{times.size} observations, first {times.min() if times.size else None}, last {times.max() if times.size else None}, year spans [{lo}, {hi})")
     import export_protocol_case as E
@@ -122,15 +130,18 @@ def check_run(evidence, dataset, year, manifest, manifest_sha256, raw_validator,
     _link(links, "record names exactly the year's two canonical input files",
           sorted(inputs) == sorted(os.path.basename(p) for p in expected.values()),
           f"record names {sorted(inputs)}, the entry point expects {sorted(os.path.basename(p) for p in expected.values())}")
+    _link(links, "the expected input paths are distinct", len(set(expected.values())) == len(expected), str(sorted(expected.values())))
     for var, path in sorted(expected.items()):
         name = os.path.basename(path)
         if not os.path.exists(path):
             _link(links, f"raw input {name} present", False, path)
+            links[-1]["raw_validation_expected"] = {"path": path, "year": year, "var": var}
             continue
         _link(links, f"raw input {name} digest equals the record's", _sha256(path) == inputs.get(name))
         reason = raw_validator(path, year, var)
         _link(links, f"raw input {name} passes the retrieval validator for {year} as {var}", reason is None, reason or "")
-        links[-1]["raw_validator_called"] = True
+        links[-1]["raw_validation_expected"] = {"path": path, "year": year, "var": var}
+        links[-1]["raw_validator_called"] = {"path": path, "year": year, "var": var}
     cal = calibration_path(dataset)
     if cal is None or not os.path.exists(cal):
         _link(links, "calibration artifact present", False, str(cal))
@@ -141,61 +152,106 @@ def check_run(evidence, dataset, year, manifest, manifest_sha256, raw_validator,
         _link(links, "record thresholds equal the calibration artifact's",
               coarse == d.get("coarse_threshold") and fine == d.get("fine_threshold"),
               f"artifact {coarse}, {fine}, record {d.get('coarse_threshold')}, {d.get('fine_threshold')}")
+    if campaign is not None:
+        case = os.path.join(campaign, f"{dataset}_{year}", "tracker_case.mat")
+        if not os.path.exists(case):
+            _link(links, "retained case present with the record's digest", False, f"{case} is absent")
+        else:
+            _link(links, "retained case present with the record's digest", _sha256(case) == d.get("case_sha256"), case)
+    else:
+        _link(links, "retained case present with the record's digest", False, "no campaign root was given, so the case was not read")
     return links
 
 
-def check_year(evidence, artifacts, summary_rows, year, manifest_sha256):
+def check_year(evidence, artifacts, summary_rows, year, manifest_path, regions_dir, record_dir, published_dir):
+    """The per-year links. The binding of the artifact to the collected runs, the manifest,
+    the tracks, the auxiliary inputs and the instrument is THE COLLECTOR'S OWN CHECK,
+    called here as one link so the two cannot drift; the row link rebuilds the row from
+    the artifact with the collector's own row builder and requires equality field by
+    field, so every copied value is bound and not only two counts."""
+    import collect_protocol_campaign as C
     links = []
     path = os.path.join(artifacts, f"paired_{year}_eraint_era5.json")
     if not os.path.exists(path):
         _link(links, "paired artifact present", False, path)
         return links
-    blob = open(path, "rb").read()
-    art = json.loads(blob.decode())
-    _link(links, "artifact names the year", art.get("year") == year, f"artifact says {art.get('year')}")
-    for dataset, side in SIDES.items():
-        rec_path = os.path.join(evidence, f"{dataset}_{year}", f"tracking_{dataset}_{year}.json")
-        case = json.load(open(rec_path))["dataset_specific"]["case_id"] if os.path.exists(rec_path) else None
-        s = art.get("sides", {}).get(side, {})
-        _link(links, f"side {side} carries the {dataset} record's case id", case is not None and s.get("case_id") == case,
-              f"artifact {s.get('case_id')}, record {case}")
-        _link(links, f"side {side} names the dataset and the manifest digest",
-              s.get("dataset") == dataset and s.get("manifest_sha256") == manifest_sha256)
-        tracks = os.path.join(evidence, f"{dataset}_{year}", "tracker_port.mat")
-        named = (art.get("inputs_sha256") or {}).get(side, {})
-        _link(links, f"side {side} input digest is the collected tracks file's",
-              os.path.exists(tracks) and named.get("sha256") == _sha256(tracks))
-    row = summary_rows.get(str(year))
-    if row is None:
-        _link(links, "summary row present", False)
+    try:
+        art = json.load(open(path))
+    except (OSError, ValueError) as exc:
+        _link(links, "paired artifact readable", False, str(exc))
         return links
-    _link(links, "summary row names the artifact's digest", row.get("artifact_sha256") == hashlib.sha256(blob).hexdigest())
-    season = art["comparison"]["season"]
-    _link(links, "summary row copies the artifact's season counts",
-          row.get("africa_origin", {}).get("v1") == season.get("v1") and row.get("africa_origin", {}).get("port") == season.get("port"))
+    if not isinstance(art, dict) or not isinstance(art.get("comparison"), dict) or not isinstance(art.get("sides"), dict):
+        _link(links, "paired artifact is an artifact object with comparison and sides", False, f"top level is {type(art).__name__}")
+        return links
+    _link(links, "artifact names the year", art.get("year") == year, f"artifact says {art.get('year')}")
+    try:
+        problems = C.existing_artifact_problems(path, evidence, manifest_path, year, regions_dir, record_dir, published_dir)
+    except Exception as exc:                          # a reporting boundary: a failed link, never a lost report
+        problems = [f"the artifact's structure defeated the check: {type(exc).__name__}: {exc}"]
+    _link(links, "artifact is bound to the collected runs, the manifest, the tracks, the auxiliary inputs and the instrument (the collector's check)",
+          not problems, "; ".join(problems))
+    row = summary_rows.get(str(year)) if isinstance(summary_rows, dict) else None
+    if not isinstance(row, dict):
+        _link(links, "summary row present and an object", False,
+              f"rows are {type(summary_rows).__name__}, row is {type(row).__name__}")
+        return links
+    try:
+        rebuilt = C.row_from_artifact(path)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        _link(links, "summary row equals the row rebuilt from the artifact, every copied field", False, f"the row could not be rebuilt: {exc}")
+        return links
+    row, rebuilt = json.loads(json.dumps(row)), json.loads(json.dumps(rebuilt))       # as the summary stores them
+    differing = sorted(k for k in set(row) | set(rebuilt) if (k in row) != (k in rebuilt) or row.get(k) != rebuilt.get(k))
+    _link(links, "summary row equals the row rebuilt from the artifact, every copied field", not differing,
+          "differing fields: " + ", ".join(differing) if differing else "")
     return links
 
 
-def run_check(years, manifest, manifest_sha256, evidence, artifacts, summary_rows, raw_validator, calibration_path):
-    """Every run and year of `years`, with the accounting a verdict rests on: the number
-    of raw-validator calls performed against the number a bound campaign needs (two per
-    run), so an unperformed validation can never read as passed, and a refusal of an
-    empty range, since a check over nothing is not a check. Returns the artifact body."""
+def run_check(years, manifest, manifest_sha256, evidence, artifacts, summary_rows, raw_validator, calibration_path,
+              manifest_path=None, regions_dir=None, record_dir=None, published_dir=None, campaign=None,
+              summary_aggregates=None, bind_aggregates=False):
+    """Every run and year of `years`, with the accounting a verdict rests on: the set of
+    (path, year, variable) validations performed must equal the set the entry point's own
+    input rule expects for every run, so an unperformed validation can never read as
+    passed and a count cannot stand in for the inventory, and a refusal of an empty
+    range, since a check over nothing is not a check. Returns the artifact body."""
     years = list(years)
     if not years:
         raise SystemExit("REFUSED: an empty year range checks nothing and cannot bind anything")
     runs, checks = {}, {}
     for year in years:
         for dataset in DATASETS:
-            runs[f"{dataset}_{year}"] = check_run(evidence, dataset, year, manifest, manifest_sha256, raw_validator, calibration_path)
-        checks[str(year)] = check_year(evidence, artifacts, summary_rows, year, manifest_sha256)
+            runs[f"{dataset}_{year}"] = check_run(evidence, dataset, year, manifest, manifest_sha256, raw_validator, calibration_path, campaign)
+        checks[str(year)] = check_year(evidence, artifacts, summary_rows, year, manifest_path, regions_dir, record_dir, published_dir)
+    import export_protocol_case as E
+    if bind_aggregates or summary_aggregates is not None:
+        # the command always binds the summary's aggregates; a summary without an aggregates
+        # object is a failed link, never a skipped one, and a row the aggregation cannot read
+        # is a failed link rather than an exception that loses the whole report
+        import collect_protocol_campaign as C
+        checks["summary"] = []
+        if not isinstance(summary_aggregates, dict):
+            _link(checks["summary"], "summary carries an aggregates object", False, f"aggregates is {type(summary_aggregates).__name__}")
+        else:
+            try:
+                recomputed = json.loads(json.dumps(C.aggregates(summary_rows)))
+            except Exception as exc:                 # a reporting boundary: any failure here is a failed link, never a lost report
+                recomputed = None
+                _link(checks["summary"], "summary aggregates equal those recomputed from its rows", False,
+                      f"the rows could not be aggregated: {type(exc).__name__}: {exc}")
+            if recomputed is not None:
+                _link(checks["summary"], "summary aggregates equal those recomputed from its rows", recomputed == json.loads(json.dumps(summary_aggregates)))
     all_links = [l for ls in list(runs.values()) + list(checks.values()) for l in ls]
     failed = [(k, l) for k, ls in list(runs.items()) + list(checks.items()) for l in ls if not l["passed"]]
-    validator_calls = sum(1 for l in all_links if l.get("raw_validator_called"))
-    validations_needed = 2 * len(runs)
-    raw_validated = validator_calls == validations_needed
+    performed = sorted(json.dumps(l["raw_validator_called"], sort_keys=True) for l in all_links if l.get("raw_validator_called"))
+    # what a bound campaign needs is derived from every requested run through the entry point's own rule,
+    # never from the links that happened to be emitted, so a run that was never reached still counts as owed
+    expected = sorted(json.dumps({"path": p, "year": y, "var": v}, sort_keys=True)
+                      for y in years for ds in DATASETS for v, p in E.input_paths(manifest["datasets"][ds], y).items())
+    validator_calls, validations_needed = len(performed), len(expected)
+    raw_validated = bool(expected) and performed == expected
     bound = not failed and raw_validated and bool(all_links)
-    return {"years": [int(y) for y in years], "runs_checked": len(runs), "years_checked": len(checks),
+    return {"years": [int(y) for y in years], "runs_checked": len(runs), "years_checked": len(years),
             "links_checked": len(all_links), "links_failed": len(failed),
             "raw_validator_calls": validator_calls, "raw_validations_needed": validations_needed,
             "raw_inputs_validated": raw_validated, "verdict": "bound" if bound else "NOT BOUND",
@@ -223,6 +279,10 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     ap.add_argument("--years", default="1979-2010")
     ap.add_argument("--calibration-dir", default="docs/aewc_v2/artifacts")
+    ap.add_argument("--campaign", default="data/protocol_runs/campaign", help="the campaign root holding the retained cases")
+    ap.add_argument("--regions-dir", default="data/aewc_v2_pilot/v1_src")
+    ap.add_argument("--record-dir", default="data/aewc")
+    ap.add_argument("--published-dir", default="data/aewc")
     args = ap.parse_args(argv)
     import export_protocol_case as E
     manifest, manifest_sha256 = E.load_manifest(args.manifest)
@@ -234,10 +294,24 @@ def main(argv=None):
     y0, y1 = (int(x) for x in args.years.split("-"))
     if y1 < y0:
         raise SystemExit(f"REFUSED: the year range {args.years} is reversed")
-    rows = json.load(open(args.summary))["years"]
-    body = run_check(range(y0, y1 + 1), manifest, manifest_sha256, args.evidence, args.artifacts, rows, raw_validator, calibration_path)
+    # the summary is read once, guarded: a file that is not a summary object yields rows and
+    # aggregates the check names as failed links, and a report is still published
+    summary_blob = None
+    try:
+        with open(args.summary, "rb") as fh:
+            summary_blob = fh.read()
+        summary = json.loads(summary_blob.decode())
+    except (OSError, ValueError) as exc:
+        summary = {"unreadable": str(exc)}
+    if not isinstance(summary, dict):
+        summary = {"not_an_object": type(summary).__name__}
+    rows, aggregates = summary.get("years"), summary.get("aggregates")
+    body = run_check(range(y0, y1 + 1), manifest, manifest_sha256, args.evidence, args.artifacts, rows, raw_validator, calibration_path,
+                     args.manifest, args.regions_dir, args.record_dir, args.published_dir, args.campaign,
+                     aggregates, bind_aggregates=True)
     out = {"generated_by": "scripts/check_campaign_bindings.py", "script_sha256": X.digest(__file__),
-           "manifest_sha256": manifest_sha256, "summary_sha256": _sha256(args.summary), **body}
+           "manifest_sha256": manifest_sha256,
+           "summary_sha256": hashlib.sha256(summary_blob).hexdigest() if summary_blob is not None else None, **body}
     try:
         X.publish_json(args.out, out, exclusive=True)
     except FileExistsError:

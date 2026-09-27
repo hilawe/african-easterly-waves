@@ -60,10 +60,18 @@ def collect_run(campaign, evidence, dataset, year):
         shutil.copyfile(os.path.join(src, name), target)
     pointer = os.path.join(dst, "CASE_LOCATION.txt")
     if not os.path.exists(pointer):
+        case = os.path.abspath(os.path.join(src, "tracker_case.mat"))
+        expected = json.load(open(record))["dataset_specific"].get("case_sha256")
+        if not os.path.exists(case):
+            state = "was NOT FOUND at collection"
+        elif _sha256(case) != expected:
+            raise SystemExit(f"REFUSED: {case} exists but its digest is not the record's case_sha256")
+        else:
+            state = "was present at collection with the record's digest"
         with open(pointer, "w") as fh:
-            fh.write(f"The retained case for this run, about 387 MB, lives outside git at "
-                     f"{os.path.abspath(os.path.join(src, 'tracker_case.mat'))}. Its digest is "
-                     f"case_sha256 in tracking_{dataset}_{year}.json.\n")
+            fh.write(f"The retained case for this run, about 387 MB, lives outside git at {case}. Its digest is "
+                     f"case_sha256 in tracking_{dataset}_{year}.json. The case {state}. This pointer is a "
+                     f"location, not evidence: the binding check reads the case itself.\n")
     return dst
 
 
@@ -96,6 +104,7 @@ def existing_artifact_problems(path, evidence, manifest, year, regions_dir, reco
     and digests, so a changed polygon or archive file would also leave an obsolete
     comparison reusable. Every digest the artifact records is compared with the
     corresponding current input."""
+    import season_metrics as S
     problems = []
     try:
         art = json.load(open(path))
@@ -103,6 +112,9 @@ def existing_artifact_problems(path, evidence, manifest, year, regions_dir, reco
         return [f"unreadable: {exc}"]
     if art.get("year") != year:
         problems.append(f"artifact year {art.get('year')} is not {year}")
+    if art.get("generated_by") != "scripts/season_metrics.py" or art.get("script_sha256") != X.digest(S.__file__):
+        problems.append("the artifact was produced by another revision of the instrument, so it is not this instrument's comparison "
+                        f"(artifact {str(art.get('script_sha256'))[:12]}, current {X.digest(S.__file__)[:12]})")
     regions, record, published = auxiliary_digests(regions_dir, record_dir, published_dir, year)
     if art.get("region_polygons_sha256") != regions:
         problems.append("region polygon digests are not the current regions directory's")
@@ -151,19 +163,17 @@ def compare_year(evidence, artifacts, manifest, year, regions_dir, record_dir, p
     return out, "published"
 
 
-def summarize(per_year):
-    """The season-level and monthly lines of every per-year artifact, copied, keyed by year,
-    with the artifact digest, plus the years that have no artifact and why."""
-    rows, missing = {}, {}
-    for year, (path, status) in sorted(per_year.items()):
-        if path is None:
-            missing[str(year)] = status
-            continue
-        with open(path, "rb") as fh:
-            blob = fh.read()
-        art = json.loads(blob.decode())
-        s = art["comparison"]["season"]
-        rows[str(year)] = {
+def row_from_artifact(path):
+    """The summary row of one per-year artifact, copied field by field. THIS IS THE ONE
+    DEFINITION of a row: the summary is built from it and the binding check rebuilds the
+    row from the artifact with the same function and requires equality, so a row that
+    differs from its artifact in any copied field, not only the two season counts, is
+    named. Raises on an unreadable artifact; callers decide what that means."""
+    with open(path, "rb") as fh:
+        blob = fh.read()
+    art = json.loads(blob.decode())
+    s = art["comparison"]["season"]
+    return {
             "artifact": os.path.basename(path), "artifact_sha256": hashlib.sha256(blob).hexdigest(),
             "sides": {k: art["sides"][k].get("case_id") for k in ("v1", "port")},
             "tracks_in_year": {k: art["columns"][k]["tracks_all"] for k in ("v1", "port")},
@@ -172,11 +182,22 @@ def summarize(per_year):
                               "over_published_sd": s.get("difference_over_published_sd")},
             "distinct_waves": {k: s["distinct_waves"][k] for k in ("v1", "port", "port_minus_v1")},
             "duplication_fraction": {"v1": s["duplication"]["v1_fraction"], "port": s["duplication"]["port_fraction"]},
-            "lifetime_percentiles": {p: (v["v1"], v["port"]) for p, v in s["distributions"]["lifetime"]["percentiles"].items()} if "distributions" in s else None,
+            "lifetime_percentiles": {p: [v["v1"], v["port"]] for p, v in s["distributions"]["lifetime"]["percentiles"].items()} if "distributions" in s else None,
             "months": {str(m): {"v1": art["comparison"][f"month {m}"]["v1"], "port": art["comparison"][f"month {m}"]["port"]} for m in (6, 7, 8, 9)},
             "bands": {k[len("band "):]: {"v1": v["v1"], "port": v["port"]} for k, v in art["comparison"].items() if k.startswith("band ")},
             "boundaries": {k: {b: art["columns"][k]["boundaries"][b]["tracks"] for b in art["columns"][k]["boundaries"]} for k in ("v1", "port")},
             "published_context_tracks": (art.get("published_context_column") or {}).get("tracks_in_season")}
+
+
+def summarize(per_year):
+    """The season-level and monthly lines of every per-year artifact, copied, keyed by year,
+    with the artifact digest, plus the years that have no artifact and why."""
+    rows, missing = {}, {}
+    for year, (path, status) in sorted(per_year.items()):
+        if path is None:
+            missing[str(year)] = status
+            continue
+        rows[str(year)] = row_from_artifact(path)
     return {"years": rows, "years_without_a_comparison": missing, "aggregates": aggregates(rows)}
 
 

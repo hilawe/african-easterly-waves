@@ -28,8 +28,11 @@ def _run_dir(campaign, dataset, year, with_record=True):
     (d / "tracker_port.mat").write_bytes(b"tracks-" + dataset.encode())
     (d / "run.log").write_text("log\n")
     (d / "tracker_case.mat").write_bytes(b"big")
+    import hashlib
     if with_record:
-        (d / f"tracking_{dataset}_{year}.json").write_text(json.dumps({"dataset_specific": {"case_sha256": "x", "case_id": f"case-{dataset}-{year}"}}))
+        (d / f"tracking_{dataset}_{year}.json").write_text(json.dumps({"dataset_specific": {
+            "dataset": dataset, "year": year, "case_sha256": hashlib.sha256(b"big").hexdigest(), "case_id": f"case-{dataset}-{year}",
+            "tracks_sha256": hashlib.sha256(b"tracks-" + dataset.encode()).hexdigest()}}))
     return d
 
 
@@ -60,6 +63,20 @@ def test_collect_run_copies_small_files_with_a_pointer_and_never_overwrites_diff
         C.collect_run(str(campaign), str(evidence), "era5", 1990)
     _run_dir(campaign, "eraint", 1990, with_record=False)
     assert C.collect_run(str(campaign), str(evidence), "eraint", 1990) is None
+    assert "was present at collection with the record's digest" in open(os.path.join(dst, "CASE_LOCATION.txt")).read()
+
+
+def test_the_case_pointer_is_honest_and_a_wrong_case_refuses_collection(tmp_path):
+    C = _load()
+    campaign, evidence = tmp_path / "campaign", tmp_path / "evidence"
+    d = _run_dir(campaign, "era5", 1991)
+    (d / "tracker_case.mat").unlink()
+    dst = C.collect_run(str(campaign), str(evidence), "era5", 1991)
+    assert "was NOT FOUND at collection" in open(os.path.join(dst, "CASE_LOCATION.txt")).read()
+    d = _run_dir(campaign, "era5", 1992)
+    (d / "tracker_case.mat").write_bytes(b"another case")
+    with pytest.raises(SystemExit):
+        C.collect_run(str(campaign), str(evidence), "era5", 1992)
 
 
 def test_summary_copies_values_records_digests_and_lists_years_without_a_comparison(tmp_path):
@@ -152,8 +169,11 @@ def _aux_dirs(tmp_path):
 
 def _bound_artifact(evidence, manifest, year, rdig=None, pdig=None, published=None):
     import hashlib
+    import season_metrics
+    import exact_tracks
     art = _artifact(10, 9, {6: (1, 1), 7: (2, 2), 8: (3, 3), 9: (4, 3)})
     art["year"] = year
+    art["generated_by"], art["script_sha256"] = "scripts/season_metrics.py", exact_tracks.digest(season_metrics.__file__)
     art["region_polygons_sha256"] = rdig or {}
     art["published_record_sha256"] = pdig or {}
     msha = hashlib.sha256(open(manifest, "rb").read()).hexdigest()
@@ -198,6 +218,12 @@ def test_an_existing_artifact_is_reused_only_when_bound_to_the_collected_runs(tm
     assert "published year file" in C.compare_year(*args)[1]
     os.rename(published + ".away", published)
     assert C.compare_year(*args)[1] == "exists" and calls == []
+    # an artifact from another revision of the instrument is not this instrument's comparison
+    other = bound()
+    other["script_sha256"] = "0" * 64
+    out.write_text(json.dumps(other))
+    assert "another revision of the instrument" in C.compare_year(*args)[1]
+    out.write_text(json.dumps(bound()))
     # the same artifact with one side's case id from another run is refused, not reused, not overwritten
     stale = bound()
     stale["sides"]["port"]["case_id"] = "case-era5-1990"
