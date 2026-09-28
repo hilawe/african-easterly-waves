@@ -11,7 +11,7 @@ themselves.
 
 ### Reproducing a published analysis
 
-The starting point was Semunegus et al. (2017, International Journal of Climatology), whose
+The starting point was Semunegus et al. (2017), whose
 composites of convective systems around African easterly waves were built with scripts in
 the NCAR (National Center for Atmospheric Research) Command Language from a curated set of
 inputs. The first task was to rebuild that analysis in Python from
@@ -39,7 +39,7 @@ Administration (NOAA).
 MCS counts peak in and just west of the moving trough, a maximum that survives a permutation
 test in which whole waves keep their track shapes while their anchor longitudes are shuffled
 within year and month, and stronger troughs organize convection more sharply. A paper on
-the thermodynamic contrasts between convectively active and quiet waves (Semunegus, in review)
+the thermodynamic contrasts between convectively active and quiet waves (Semunegus, 2026b)
 is under consideration at the Journal of the Atmospheric Sciences.
 
 ![Two-layer thermodynamic signatures of convective development in African easterly waves](docs/schematic.png)
@@ -167,13 +167,18 @@ docs/             methods, plain-language summary, and the version 2 reanalysis 
 
 ## Citation
 
-If this code supports your work, please cite the relevant paper and this repository:
+If this code supports your work, please cite the relevant paper and this repository.
 
-Semunegus, H., et al. (2017), Characterization of convective systems and their association
-with African easterly waves, International Journal of Climatology.
+Semunegus, H. (2026a). *African easterly waves and mesoscale convective systems* [Computer
+software]. GitHub. https://github.com/hilawe/african-easterly-waves
 
-Semunegus, H. (in review), Between-wave thermodynamic contrasts ahead of convectively active
-African easterly waves, submitted to the Journal of the Atmospheric Sciences.
+Semunegus, H. (2026b). *Between-wave thermodynamic contrasts ahead of convectively active
+African easterly waves* [Manuscript submitted for publication]. NOAA's National Centers for
+Environmental Information.
+
+Semunegus, H., Mekonnen, A., & Schreck, C. J., III. (2017). Characterization of convective
+systems and their association with African easterly waves. *International Journal of
+Climatology*, *37*(12), 4486-4492. https://doi.org/10.1002/joc.5085
 
 ## License
 
