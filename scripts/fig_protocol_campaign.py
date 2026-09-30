@@ -35,7 +35,7 @@ def _band_label(key):
     return f"{side(a)} to {side(b)}"
 
 
-def render(summary, out, dpi=150, labels=None, title=None):
+def render(summary, out, dpi=150, labels=None, title=None, size=(11, 7.5)):
     """`labels` names side A ("v1") and side B ("port"); the campaign's defaults are the
     two reanalyses, the sensitivity passes the two threshold pairs. Every axis label and
     the difference's sense (B minus A) follow from them."""
@@ -51,7 +51,11 @@ def render(summary, out, dpi=150, labels=None, title=None):
                      for y in years], float)
     spread = summary.get("published_spread") or ag["archive"].get("interannual_sd")
 
-    fig, axes = plt.subplots(2, 2, figsize=(11, 7.5))
+    plt.rcParams.update({"axes.unicode_minus": False})
+    compact = size[0] <= 7.0                          # at the printed width, labels shorten and corners stay clear
+    if compact:
+        plt.rcParams.update({"axes.labelsize": 8.5})
+    fig, axes = plt.subplots(2, 2, figsize=size)
     (a, b), (c, d) = axes
 
     a.plot(years, v1, "o-", color=COLOR["v1"], ms=3.5, lw=1.2, label=LABEL["v1"])
@@ -61,7 +65,11 @@ def render(summary, out, dpi=150, labels=None, title=None):
         a.plot(years[have], arch[have], "^--", color=COLOR["archive"], ms=3.5, lw=1.0, label="archived record, its own rules")
     a.set_ylabel("Africa-origin tracks in season")
     a.set_xlabel("Year")
-    a.legend(fontsize=8, frameon=False, loc="upper left", bbox_to_anchor=(0.0, 0.88))
+    if compact:
+        a.set_ylim(top=max(np.nanmax(arch) if have.any() else 0, v1.max(), port.max()) * 1.25)
+        a.legend(fontsize=7, frameon=False, loc="upper right", ncol=1, handlelength=1.8, borderaxespad=0.3)
+    else:
+        a.legend(fontsize=8, frameon=False, loc="upper left", bbox_to_anchor=(0.0, 0.88))
 
     diff = np.array([rows[str(y)]["africa_origin"]["port_minus_v1"] for y in years], float)
     if not np.array_equal(diff, port - v1):
@@ -73,12 +81,19 @@ def render(summary, out, dpi=150, labels=None, title=None):
             b.axhline(s, color=COLOR["archive"], lw=0.8, ls=":")
         # the caption sits on whichever spread line the bars leave clear
         clear = -spread if diff.min() > -spread and diff.max() > spread else spread
-        b.text(years[-1] + 0.6, clear, "published record interannual spread", fontsize=7,
-               va="bottom" if clear > 0 else "top", ha="right", color=COLOR["archive"])
-    b.set_ylabel(f"{LABEL['port']} minus {LABEL['v1']}, tracks")
+        if compact:                                   # a key in the clear lower-left corner, not a label on a line
+            b.set_ylim(bottom=min(diff.min(), -spread) * 1.3)
+            b.text(0.02, 0.03, "dotted, archived record's spread", transform=b.transAxes, fontsize=6.5,
+                   va="bottom", ha="left", color=COLOR["archive"])
+        else:
+            b.text(years[-1] + 0.6, clear, "published record interannual spread", fontsize=7,
+                   va="bottom" if clear > 0 else "top", ha="right", color=COLOR["archive"])
+    b.set_ylabel(f"{LABEL['port']} minus {LABEL['v1']}" + ("" if compact else ", tracks"))
     b.set_xlabel("Year")
 
     lo, hi = min(v1.min(), port.min()) - 5, max(v1.max(), port.max()) + 5
+    if compact:
+        lo, hi = lo - 12, hi + 12                     # room for the corner label and the annotation
     c.plot([lo, hi], [lo, hi], color="k", lw=0.8, ls="--")
     c.scatter(v1, port, s=18, color=COLOR["port"], edgecolor="k", linewidth=0.4)
     beyond = [(abs(x2 - x1), y, x1, x2) for y, x1, x2 in zip(years, v1, port) if abs(x2 - x1) > (spread or 0)]
@@ -86,7 +101,7 @@ def render(summary, out, dpi=150, labels=None, title=None):
         c.annotate(str(y), (x1, x2), fontsize=6.5, xytext=(3, 2), textcoords="offset points")
     r = ag["africa_origin"]["pearson_correlation_v1_port"]
     c.text(0.96, 0.05, f"Pearson correlation {r:.3f}\n{len(years)} years, means {ag['africa_origin']['mean']['v1']:.1f} and {ag['africa_origin']['mean']['port']:.1f}",
-           transform=c.transAxes, fontsize=8, va="bottom", ha="right")
+           transform=c.transAxes, fontsize=7 if compact else 8, va="bottom", ha="right")
     c.set_xlim(lo, hi)
     c.set_ylim(lo, hi)
     c.set_xlabel(f"{LABEL['v1']}, tracks in season")
@@ -106,19 +121,28 @@ def render(summary, out, dpi=150, labels=None, title=None):
     d.set_xticks(x)
     d.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
     d.set_ylabel("Mean starts per year")
-    top = max(mv1 + mport) * 1.35
+    top = max(mv1 + mport) * (1.75 if compact else 1.35)
     d.set_ylim(0, top)
-    d.text(1.5, top * 0.96, "by month", ha="center", va="top", fontsize=8)
-    d.text(3.5 + (len(labels) - 4) / 2, top * 0.96, "by band of genesis longitude", ha="center", va="top", fontsize=8)
-    d.legend(fontsize=8, frameon=False, loc="upper left", bbox_to_anchor=(0.0, 0.9))
+    ty = top * (0.80 if compact else 0.96)
+    d.text(1.5, ty, "by month", ha="center", va="top", fontsize=7 if compact else 8)
+    d.text(3.5 + (len(labels) - 4) / 2, ty, "by band of genesis longitude", ha="center", va="top", fontsize=7 if compact else 8)
+    if compact:
+        d.legend(fontsize=7, frameon=False, loc="upper right", ncol=2, columnspacing=1.0, handlelength=1.5)
+    else:
+        d.legend(fontsize=8, frameon=False, loc="upper left", bbox_to_anchor=(0.0, 0.9))
 
     from aew.plotting import panel_label
     for ax, tag in zip((a, b, c, d), "abcd"):
         panel_label(ax, tag, size=11)
-        ax.tick_params(labelsize=8)
-    fig.suptitle(title or "Protocol campaign, 1979 to 2010, one implementation and one set of rules on both reanalyses", fontsize=10)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
-    fig.savefig(out, dpi=dpi)
+        ax.tick_params(labelsize=7.5 if compact else 8)
+    if title != "":                                   # an empty title leaves the caption to carry it
+        fig.suptitle(title or "Protocol campaign, 1979 to 2010, one implementation and one set of rules on both reanalyses", fontsize=10)
+        fig.tight_layout(rect=(0, 0, 1, 0.97))
+    else:
+        fig.tight_layout()
+    fmt = os.path.splitext(out)[1].lstrip(".") or "png"
+    with open(out, "xb") as fh:                       # exclusive creation, never overwritten
+        fig.savefig(fh, format=fmt, dpi=dpi)
     plt.close(fig)
     return {"years": years.tolist(), "v1": v1.tolist(), "port": port.tolist(), "difference": diff.tolist(),
             "archive": arch.tolist(), "group_labels": labels, "group_v1": mv1, "group_port": mport}
@@ -131,13 +155,15 @@ def main(argv=None):
     ap.add_argument("--dpi", type=int, default=150)
     ap.add_argument("--side-a", default=None, help="the label of side A (v1), the campaign's default is ERA-Interim")
     ap.add_argument("--side-b", default=None, help="the label of side B (port), the campaign's default is ERA5")
-    ap.add_argument("--title", default=None)
+    ap.add_argument("--title", default=None, help='the in-figure title, where "" draws none')
+    ap.add_argument("--width", type=float, default=11.0, help="figure width in inches, where 6.5 prints at full text width unscaled")
+    ap.add_argument("--height", type=float, default=7.5)
     args = ap.parse_args(argv)
     if os.path.exists(args.out):
         raise SystemExit(f"REFUSED: {args.out} exists and figures beside artifacts are never overwritten")
     summary = json.load(open(args.summary))
     labels = {k: v for k, v in (("v1", args.side_a), ("port", args.side_b)) if v}
-    render(summary, args.out, args.dpi, labels=labels, title=args.title)
+    render(summary, args.out, args.dpi, labels=labels, title=args.title, size=(args.width, args.height))
     print(f"wrote {args.out} from {args.summary}")
     return 0
 

@@ -51,21 +51,27 @@ def annual(origin):
     return years, out
 
 
-def render(origin, by_month, out, dpi=160):
+def render(origin, by_month, out, dpi=160, size=(9.5, 11.5), suptitle=True):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
     from aew.plotting import panel_label
     years, ann = annual(origin)
-    fig, axes = plt.subplots(3, 1, figsize=(9.5, 11.5))
+    plt.rcParams.update({"axes.unicode_minus": False})
+    compact = size[0] <= 7.0                          # drawn at the printed width
+    labels = dict(LABELS, this_record="version 2") if compact else LABELS
+    ylab = "percent on the Atlantic side" if compact else "recorded on the Atlantic side, percent of cohort"
+    if compact:
+        plt.rcParams.update({"axes.labelsize": 8.5, "xtick.labelsize": 7.5, "ytick.labelsize": 7.5})
+    fig, axes = plt.subplots(3, 1, figsize=size)
     # (a) annual counts with denominators
     ax = axes[0]
     x = np.arange(len(years))
     for i, n in enumerate(COLORS):
         off = -0.2 if i == 0 else 0.2
-        ax.bar(x + off, ann[n]["cohort"], width=0.4, color=COLORS[n], alpha=0.3, label=f"{LABELS[n]}, cohort")
-        ax.bar(x + off, ann[n]["atlantic_side"], width=0.4, color=COLORS[n], label=f"{LABELS[n]}, recorded on the Atlantic side")
+        ax.bar(x + off, ann[n]["cohort"], width=0.4, color=COLORS[n], alpha=0.3, label=f"{labels[n]}, cohort")
+        ax.bar(x + off, ann[n]["atlantic_side"], width=0.4, color=COLORS[n], label=f"{labels[n]}, recorded on the Atlantic side")
     ax.set_xticks(x[::3])
     ax.set_xticklabels(years[::3], fontsize=8)
     ax.set_ylabel("stored tracks per season")
@@ -79,13 +85,13 @@ def render(origin, by_month, out, dpi=160):
         off = -0.2 if i == 0 else 0.2
         rows = origin["pooled_all_years"][n]["by_longitude_band"]
         fr = [100.0 * rows[b]["atlantic_side"] / rows[b]["cohort"] if rows[b]["cohort"] else 0.0 for b in BANDS]
-        ax.bar(xb + off, fr, width=0.4, color=COLORS[n], label=LABELS[n])
+        ax.bar(xb + off, fr, width=0.4, color=COLORS[n], label=labels[n])
         for k, b in enumerate(BANDS):
             ax.text(xb[k] + off, fr[k] + 1.5, f"{rows[b]['atlantic_side']} of {rows[b]['cohort']}", ha="center", fontsize=7)
     ax.set_xticks(xb)
     ax.set_xticklabels([b.replace(" W", " W").replace(" E", " E") for b in BANDS], fontsize=8.5)
-    ax.set_ylabel("recorded on the Atlantic side, percent of cohort")
-    ax.set_ylim(0, 110)
+    ax.set_ylabel(ylab)
+    ax.set_ylim(0, 125 if compact else 110)
     ax.set_xlabel("band of first recorded longitude, thirty seasons pooled")
     ax.legend(fontsize=8, frameon=False)
     panel_label(ax, "b", size=11)
@@ -96,20 +102,24 @@ def render(origin, by_month, out, dpi=160):
         off = -0.2 if i == 0 else 0.2
         rows = by_month["by_month"][n]
         fr = [100.0 * rows[m]["atlantic_side"] / rows[m]["cohort"] if rows[m]["cohort"] else 0.0 for m, _ in MONTHS]
-        ax.bar(xm + off, fr, width=0.4, color=COLORS[n], label=LABELS[n])
+        ax.bar(xm + off, fr, width=0.4, color=COLORS[n], label=labels[n])
         for k, (m, _) in enumerate(MONTHS):
             ax.text(xm[k] + off, fr[k] + 1.5, f"{rows[m]['atlantic_side']} of {rows[m]['cohort']}", ha="center", fontsize=7)
     ax.set_xticks(xm)
     ax.set_xticklabels([lab for _, lab in MONTHS], fontsize=8.5)
-    ax.set_ylabel("recorded on the Atlantic side, percent of cohort")
+    ax.set_ylabel(ylab)
     ax.set_ylim(0, 80)
     ax.set_xlabel("month of first observation, starts in 10 E to 30 E and 5 to 15 N, thirty seasons pooled")
     ax.legend(fontsize=8, frameon=False)
     panel_label(ax, "c", size=11)
-    fig.suptitle("A descriptive intercomparison of stored tracks, 1981 to 2010: counts, denominators and the origin-dependent contrast", fontsize=9.5)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    if suptitle:
+        fig.suptitle("A descriptive intercomparison of stored tracks, 1981 to 2010: counts, denominators and the origin-dependent contrast", fontsize=9.5)
+        fig.tight_layout(rect=(0, 0, 1, 0.97))
+    else:
+        fig.tight_layout()
+    fmt = os.path.splitext(out)[1].lstrip(".") or "png"
     with open(out, "xb") as fh:                                                 # exclusive creation: never overwritten, even by a concurrent run
-        fig.savefig(fh, format="png", dpi=dpi)
+        fig.savefig(fh, format=fmt, dpi=dpi)
     plt.close(fig)
     return {"years": len(years), "bands": len(BANDS), "months": len(MONTHS)}
 
@@ -119,10 +129,13 @@ def main(argv=None):
     ap.add_argument("--origin", required=True)
     ap.add_argument("--by-month", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--width", type=float, default=9.5, help="figure width in inches, where 6.5 prints at full text width unscaled")
+    ap.add_argument("--height", type=float, default=11.5)
+    ap.add_argument("--no-suptitle", action="store_true", help="leave the title to the caption")
     args = ap.parse_args(argv)
     origin, by_month = verified(args.origin, args.by_month)
     try:
-        drawn = render(origin, by_month, args.out)
+        drawn = render(origin, by_month, args.out, size=(args.width, args.height), suptitle=not args.no_suptitle)
     except FileExistsError:
         raise SystemExit(f"REFUSED: {args.out} exists and figures beside artifacts are never overwritten")
     print(f"wrote {args.out}: {drawn}")
