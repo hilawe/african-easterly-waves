@@ -22,12 +22,13 @@ composite now reproduces with the same 272 composite dates at the same filtered-
 ### Replacing the inputs with open data
 
 Each input was then replaced by an openly available one, so that the analysis no longer
-depends on data that is hard to obtain. The space-time filter run on ERA5 winds reproduces the
-original ERA-Interim wave series at a correlation of 0.92 over 2000 to 2004. An in-house
-convective-system tracker built on GridSat-B1 brightness temperature reproduces the pattern of
-the original International Satellite Cloud Climatology Project (ISCCP) convective systems at a correlation of 0.90 over the full grid (0.84 over occupied
-cells) for twelve July to September months, which matches the ISCCP baseline at least as well
-as an existing published product.
+depends on data that is hard to obtain. The space-time filter run on ERA5 winds reproduces
+the original ERA-Interim wave series at a correlation of 0.92 over 2000 to 2004. An in-house
+convective-system tracker built on GridSat-B1 brightness temperature reproduces the pattern
+of the original International Satellite Cloud Climatology Project (ISCCP) convective systems
+at a correlation of 0.90 over the full grid (0.84 over occupied cells) for twelve July to
+September months, which matches the ISCCP baseline at least as well as an existing published
+product.
 
 ### Following the waves
 
@@ -80,17 +81,31 @@ fixed in advance, measure whether each record's tracks that start over Africa ar
 the Atlantic side of the West African coast by the end of October, break that measurement
 down by where and when tracks start, and read individual cases against the tracker's own
 input fields. Every measurement counts stored tracks, reports its denominators, and records
-the digests of its inputs. The results will be reported with the version 2 record.
+the digests of its inputs. These comparisons are the subject of a paper in preparation
+(Semunegus & Núñez Ocasio, 2026), which describes version 2 of the AEWC on ERA5 and how it
+differs from the ERA-Interim record and from QTrack.
+
+![Share of tracks recorded on the Atlantic side by where they start over Africa, for version 2 (top) and QTrack (bottom)](docs/atlantic_side_by_start_position.png)
+
+Where tracks start, and how often each record carries them to the Atlantic, 1981 to 2010.
+Each 5-degree box holds one record's tracks that start there between June and September,
+among tracks starting over Africa between the equator and 25 N. Its color and its label give
+how many of them are recorded on the Atlantic side of the West African coast, over the ocean
+west of the dashed line at 7.5 W, by 31 October. The top panel is version 2 and the bottom
+is QTrack. West of 10 W, 198 of 205 version 2 tracks and all 82 QTrack tracks reach the
+Atlantic side. Between 10 and 30 E, version 2 records 12.5 percent of its starts on the
+Atlantic side and QTrack 52.1 percent. Hatched boxes hold fewer than 10 starts. The figure
+describes what two stored records hold, and neither is tested here against observed waves.
 
 ## Where it is going
 
 The aim is a documented, reproducible version 2 of the African Easterly Wave Climatology on
 ERA5, produced under the declared protocol, with its differences from the ERA-Interim record
 and from QTrack characterized and published alongside it. Two questions remain open. The
-first is how the two records compare for waves that start over eastern Africa, which bears
-directly on studies of where the waves originate. The second is what criterion should decide
-whether a change to the tracker is an improvement, since reproducing version 1 does not
-answer that. The repository will record how each is settled.
+first is why the two records differ most for tracks that start over eastern Africa, which
+bears directly on studies of where the waves originate. The second is what criterion should
+decide whether a change to the tracker is an improvement, since reproducing version 1 does
+not answer that. The repository will record how each is settled.
 
 ## What it does
 
@@ -179,6 +194,10 @@ Environmental Information.
 Semunegus, H., Mekonnen, A., & Schreck, C. J., III. (2017). Characterization of convective
 systems and their association with African easterly waves. *International Journal of
 Climatology*, *37*(12), 4486-4492. https://doi.org/10.1002/joc.5085
+
+Semunegus, H., & Núñez Ocasio, K. M. (2026). *The African Easterly Wave Climatology using
+ERA5 and its differences from ERA-Interim and QTrack* [Manuscript in preparation]. NOAA's
+National Centers for Environmental Information.
 
 ## License
 

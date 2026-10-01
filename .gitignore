@@ -9,3 +9,5 @@ logs/
 *.eps
 # the summary schematic is a tracked repo asset, not a generated figure
 !docs/schematic.png
+# the version 2 paper's start-position map, embedded in the README
+!docs/atlantic_side_by_start_position.png
