@@ -284,3 +284,20 @@ def test_main_runs_the_comparison_per_complete_year_through_the_runner(tmp_path,
         C.main(["--campaign", str(campaign), "--evidence", str(evidence), "--manifest", str(manifest),
                 "--artifacts", str(artifacts), "--summary", str(summary_path), "--years", "2001-2002",
                 "--regions-dir", str(tmp_path), "--record-dir", str(tmp_path), "--published-dir", str(tmp_path)])
+
+
+def test_main_reports_failure_when_no_year_is_compared(tmp_path, monkeypatch):
+    C = _load()
+    campaign, evidence, artifacts = tmp_path / "campaign", tmp_path / "evidence", tmp_path / "artifacts"
+    artifacts.mkdir()
+    _run_dir(campaign, "eraint", 2002)                       # no year has both runs
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text("{}")
+    import season_metrics
+    monkeypatch.setattr(season_metrics, "main", lambda argv: pytest.fail("nothing is comparable"))
+    summary_path = tmp_path / "summary.json"
+    code = C.main(["--campaign", str(campaign), "--evidence", str(evidence), "--manifest", str(manifest),
+                   "--artifacts", str(artifacts), "--summary", str(summary_path), "--years", "2002-2002",
+                   "--regions-dir", str(tmp_path), "--record-dir", str(tmp_path), "--published-dir", str(tmp_path)])
+    assert code == 1                                         # nothing compared is a failure
+    assert json.loads(summary_path.read_text())["years_without_a_comparison"] == {"2002": "a run is missing: era5"}

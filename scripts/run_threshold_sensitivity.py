@@ -207,13 +207,15 @@ def replay_year(campaign, evidence, manifest_path, out_dir, year, coarse, fine, 
     return record, len(tracks)
 
 
-def sensitivity_record_problems(record_path, evidence, year, coarse, fine, manifest_sha256, dataset=DATASET, pair_name=None, commit=None):
+def sensitivity_record_problems(record_path, evidence, year, coarse, fine, manifest_sha256, dataset=DATASET, pair_name=None, commit=None,
+                                manifest=None):
     """Why a record at a sensitivity path is NOT this experiment's record of that year: a
     review copied a genuine Rule A campaign record and its tracks to the path and the
     driver skipped the year as done. Beyond the driver's own identity predicate, the
     record must carry the sensitivity block with these thresholds, the manifest's digest,
     the collected record's case id, and a tracks file beside it."""
     import campaign_record_ok as R
+    import season_metrics as S
     problems = list(R.problems(record_path))
     try:
         record = json.load(open(record_path))
@@ -225,7 +227,12 @@ def sensitivity_record_problems(record_path, evidence, year, coarse, fine, manif
             or ds.get("coarse_threshold") != coarse or ds.get("fine_threshold") != fine:
         problems.append("the record is not a run under the archived constants" if pair_name in (None, "archived")
                         else f"the record is not a run under the pair {pair_name}")
-    if pair_name is not None and sens.get("pair") != pair_name:
+    # Records made before the pair field existed (the ERA-Interim archived-constant runs of
+    # 2026-09-27) name no pair. Such a record is accepted only for the archived pair, and
+    # only because the threshold check above has already required the archived constants
+    # exactly. A record that names any pair must name the requested one.
+    legacy_archived = "pair" not in sens and pair_name == "archived"     # inside the tracks is checked below
+    if pair_name is not None and sens.get("pair") != pair_name and not legacy_archived:
         problems.append(f"the record names the pair {sens.get('pair')!r}, not {pair_name!r}")
     if commit is not None and (sens.get("code_snapshot") or {}).get("commit") != commit:
         problems.append("the record was not made from this code snapshot")
@@ -233,6 +240,11 @@ def sensitivity_record_problems(record_path, evidence, year, coarse, fine, manif
         problems.append("the record is a control, not an experiment run")
     if (record.get("protocol_settings") or {}).get("manifest_sha256") != manifest_sha256:
         problems.append("the record's manifest digest is not this manifest's")
+    # The digest names the manifest, it does not show the run used it. Every protocol
+    # setting the instrument compares, and the record's own tracker flags, must equal the
+    # manifest's, so a record declaring other settings (a review planted exclusive=True)
+    # cannot pass as a threshold-only change. No manifest to check against is a problem.
+    problems += settings_problems(record, manifest, "the record", S.PROTOCOL_KEYS)
     try:
         collected = _record_of(evidence, year, dataset)["dataset_specific"]
     except (OSError, ValueError, KeyError):
@@ -252,6 +264,9 @@ def sensitivity_record_problems(record_path, evidence, year, coarse, fine, manif
         return problems + [f"the tracks file carries no readable producer record: {type(exc).__name__}: {exc}"]
     ids = inside.get("dataset_specific") or {}
     isens = inside.get("sensitivity") or {}
+    if legacy_archived and "pair" in isens:
+        problems.append("the record beside the tracks has no pair field, but the record inside them has one")
+    problems += settings_problems(inside, manifest, "the producer record inside the tracks file", S.PROTOCOL_KEYS)
     if (ids.get("coarse_threshold"), ids.get("fine_threshold"), isens.get("coarse_threshold"), isens.get("fine_threshold")) != (coarse, fine, coarse, fine):
         problems.append("the producer record inside the tracks file was not written under the archived constants" if pair_name in (None, "archived")
                         else f"the producer record inside the tracks file was not written under the pair {pair_name}")
@@ -266,6 +281,25 @@ def sensitivity_record_problems(record_path, evidence, year, coarse, fine, manif
         if inside_value != beside_value:
             problems.append(f"the producer record inside the tracks file does not agree with the record beside it on the {key} ({inside_value!r} against {beside_value!r})")
     return problems
+
+
+def settings_problems(record, manifest, who, keys):
+    """Why `record`'s protocol settings and tracker flags are not `manifest`'s, key by key
+    over the instrument's protocol keys. Without a manifest nothing was checked, which is a
+    problem and never a pass."""
+    if manifest is None:
+        return [f"{who}: no manifest was given, so its protocol settings were not checked"]
+    out = []
+    ps = record.get("protocol_settings") or {}
+    for k in keys:
+        if ps.get(k) != manifest.get(k):
+            out.append(f"{who}: protocol setting {k} is not the manifest's")
+    ds = record.get("dataset_specific") or {}
+    # a present field must equal the manifest's, so an explicit null is a mismatch and never
+    # read as absent (a confirmation review planted "tracker_flags": null and it passed)
+    if "tracker_flags" in ds and ds["tracker_flags"] != manifest.get("tracker_flags"):
+        out.append(f"{who}: its own tracker flags are not the manifest's")
+    return out
 
 
 _LAUNCH = {"dir": None}
@@ -449,7 +483,7 @@ def replay(args, context="spawn"):
     coarse, fine, label, source = threshold_pair(pair_name, dataset, getattr(args, "pair_source", None))
     pair = {"name": pair_name, "label": label, "source": source}
     snapshot, commit = getattr(args, "code_snapshot", None), getattr(args, "snapshot_commit", None)
-    _, manifest_sha256 = E.load_manifest(args.manifest)
+    manifest_obj, manifest_sha256 = E.load_manifest(args.manifest)
     y0, y1 = (int(x) for x in args.years.split("-"))
     if y1 < y0:
         raise SystemExit(f"REFUSED: the year range {args.years} is reversed")
@@ -459,7 +493,8 @@ def replay(args, context="spawn"):
         return os.path.join(args.out_dir, f"{dataset}_{year}", f"tracking_{dataset}_{year}.json")
 
     def problems_of(year):
-        return sensitivity_record_problems(record_path(year), args.evidence, year, coarse, fine, manifest_sha256, dataset, pair_name, commit)
+        return sensitivity_record_problems(record_path(year), args.evidence, year, coarse, fine, manifest_sha256, dataset, pair_name, commit,
+                                           manifest=manifest_obj)
     lock = LaunchLock(args.out_dir)
     lock.acquire()
     stopped = {"by": None}
@@ -534,7 +569,8 @@ def control(args):
     return 0
 
 
-def existing_comparison_problems(path, year, rule_a_tracks, sensitivity_tracks, collected_case_id, mode="implementation"):
+def existing_comparison_problems(path, year, rule_a_tracks, sensitivity_tracks, collected_case_id, mode="implementation",
+                                 regions_dir=None, record_dir=None, published_dir=None):
     """Why an artifact already at the comparison path is NOT this year's comparison of
     these two track files: a review planted the retained ERA-Interim against ERA5
     artifact at the path and the driver summarized it under this experiment's label."""
@@ -557,6 +593,20 @@ def existing_comparison_problems(path, year, rule_a_tracks, sensitivity_tracks, 
     for side, tracks in (("v1", rule_a_tracks), ("port", sensitivity_tracks)):
         if not os.path.exists(tracks) or (digests.get(side) or {}).get("sha256") != _sha256(tracks):
             problems.append(f"side {side} input digest is not the {side} tracks file's")
+    # the instrument's other inputs, as the campaign collector binds them: an artifact made
+    # under another revision, other region polygons or another archive directory is not
+    # this comparison. A review reused a 25-year artifact against the 32-year archive here.
+    import collect_protocol_campaign as C
+    import season_metrics as S
+    if art.get("generated_by") != "scripts/season_metrics.py" or art.get("script_sha256") != X.digest(S.__file__):
+        problems.append("the artifact was produced by another revision of the instrument")
+    regions, record, published = C.auxiliary_digests(regions_dir, record_dir, published_dir, year)
+    if art.get("region_polygons_sha256") != regions:
+        problems.append("region polygon digests are not the current regions directory's")
+    if art.get("published_record_sha256") != record:
+        problems.append("published record digests are not the current record directory's")
+    if (digests.get("published_year_file") or {}).get("sha256") != published:
+        problems.append("the published year file's presence or digest differs from the current published directory's")
     return problems
 
 
@@ -577,7 +627,7 @@ def collect_and_compare(args):
     if against == "eraint-baseline" and dataset == "eraint":
         raise SystemExit("REFUSED: the ERA-Interim baseline comparison is for a replay of another dataset")
     coarse, fine, _, _ = threshold_pair(pair_name, dataset, getattr(args, "pair_source", None))
-    _, manifest_sha256 = E.load_manifest(args.manifest)
+    manifest_obj, manifest_sha256 = E.load_manifest(args.manifest)
     commit = getattr(args, "snapshot_commit", None)
     y0, y1 = (int(x) for x in args.years.split("-"))
     per_year, statuses = {}, {}
@@ -591,7 +641,7 @@ def collect_and_compare(args):
         # a run is compared only as THIS experiment's run: the same validation the replay
         # applies, so a baseline or another experiment's record can never be summarized here
         problems = sensitivity_record_problems(os.path.join(src, record_name), args.campaign_evidence, year, coarse, fine,
-                                               manifest_sha256, dataset, pair_name, commit)
+                                               manifest_sha256, dataset, pair_name, commit, manifest=manifest_obj)
         if problems:
             per_year[year] = (None, "refused: the run is not this experiment's (" + "; ".join(problems) + ")")
             continue
@@ -615,7 +665,9 @@ def collect_and_compare(args):
             mode_argv = ["--mode", "reanalysis", "--manifest", args.manifest, "--declared-threshold-transfer"]
         if os.path.exists(out):
             problems = existing_comparison_problems(out, year, side_a, os.path.join(dst, "tracker_port.mat"), expect_case,
-                                                    mode="implementation" if against == "own" else "reanalysis")
+                                                    mode="implementation" if against == "own" else "reanalysis",
+                                                    regions_dir=args.regions_dir, record_dir=args.record_dir,
+                                                    published_dir=args.published_dir)
             per_year[year] = (out, "exists") if not problems else \
                 (None, "refused: an artifact exists at the path and is not this comparison (" + "; ".join(problems) + "), never overwritten")
             continue
@@ -644,6 +696,12 @@ def collect_and_compare(args):
     except FileExistsError:
         raise SystemExit(f"REFUSED: {args.summary} exists and artifacts are never overwritten")
     print(f"compared {len(summary['years'])} years, {len(summary['years_without_a_comparison'])} without; wrote {args.summary}")
+    # A run that compared no year has recorded why, and must still report failure, so a
+    # chained command stops instead of building on an empty summary (2026-10-02, when an
+    # all-refused collection exited 0 and the next step of a chain ran on).
+    if not summary["years"]:
+        print("REFUSED: no year was compared. The summary records each year's reason.")
+        return 1
     return 0
 
 

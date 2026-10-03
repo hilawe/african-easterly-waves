@@ -291,6 +291,9 @@ def main(argv=None):
         raise SystemExit(f"REFUSED: {args.summary} exists and artifacts are never overwritten")
     print(f"collected {sum(1 for v in collected.values() if all(v.values()))} complete years, "
           f"{len(summary['years'])} compared, {len(summary['years_without_a_comparison'])} without; wrote {args.summary}")
+    if not summary["years"]:                          # recorded why, and still a failure
+        print("REFUSED: no year was compared. The summary records each year's reason.")
+        return 1
     return 0
 
 

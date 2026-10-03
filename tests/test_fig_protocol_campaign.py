@@ -145,3 +145,174 @@ def test_the_annotated_correlation_is_the_summary_value(tmp_path, monkeypatch):
     monkeypatch.setattr(Axes, "text", spy)
     F.render(_summary(), str(tmp_path / "f.png"), dpi=60)
     assert any(isinstance(t, str) and "Pearson correlation 0.123" in t for t in seen)
+
+
+def _axes_with(points):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+    fig, ax = plt.subplots(figsize=(3, 3))
+    pts = np.array(points, float)
+    ax.scatter(pts[:, 0], pts[:, 1], s=18)
+    ax.set_xlim(0, 20)
+    ax.set_ylim(0, 20)
+    fig.canvas.draw()
+    return fig, ax, pts
+
+
+def test_a_year_label_moves_off_a_neighbor_it_would_cover():
+    """The specimen is 1986 beside 1987 under the 32-year archive spread: the first corner
+    put the label across the neighbor, and another corner is clear."""
+    M = _load()
+    fig, ax, pts = _axes_with([[10, 10], [11.0, 10.5]])          # the neighbor sits up and right
+    (t,) = M.label_years(fig, ax, pts, [(1986, 10, 10)])
+    bb = t.get_window_extent(fig.canvas.get_renderer())
+    nx, ny = ax.transData.transform(pts[1])
+    assert not (bb.x0 <= nx <= bb.x1 and bb.y0 <= ny <= bb.y1)
+    assert tuple(t.xyann) != (3, 2)
+
+
+def test_an_unobstructed_label_keeps_the_original_corner():
+    M = _load()
+    fig, ax, pts = _axes_with([[10, 10], [2, 18]])
+    (t,) = M.label_years(fig, ax, pts, [(1990, 10, 10)])
+    assert tuple(t.xyann) == (3, 2) and t.get_ha() == "left"
+
+
+def test_two_labels_never_overlap_when_a_corner_is_free():
+    M = _load()
+    # two points stacked half a unit apart: neither label covers the other point, but at the
+    # first corner the two labels overlap each other, as 1989 and 2007 did in the v3 figure
+    fig, ax, pts = _axes_with([[10, 10], [10, 10.5]])
+    a, b = M.label_years(fig, ax, pts, [(1989, 10, 10), (2007, 10, 10.5)])
+    r = fig.canvas.get_renderer()
+    assert not a.get_window_extent(r).overlaps(b.get_window_extent(r))
+
+
+def test_a_label_with_no_clear_corner_is_reported_not_called_clear():
+    """Four corners cannot clear a crowd: the label takes the least covered corner and
+    carries how much it covers, so the figure can say so."""
+    M = _load()
+    crowd = [[10, 10]] + [[10 + dx, 10 + dy] for dx in (-0.9, -0.5, 0.5, 0.9) for dy in (-0.4, 0.4)]
+    fig, ax, pts = _axes_with(crowd)
+    (t,) = M.label_years(fig, ax, pts, [(1994, 10, 10)])
+    assert t.obstructed_by > 0
+
+
+def test_a_clear_label_reports_nothing():
+    M = _load()
+    fig, ax, pts = _axes_with([[10, 10], [2, 18]])
+    (t,) = M.label_years(fig, ax, pts, [(1990, 10, 10)])
+    assert t.obstructed_by == 0
+
+
+def test_every_label_that_covers_a_point_or_label_reports_it():
+    """The invariant over many crowded layouts: a final label whose box overlaps another
+    final label, or covers a point other than its own, has a positive obstruction count.
+    Counting at placement time missed an earlier label covered by a later one."""
+    import numpy as np
+    M = _load()
+    rng = np.random.default_rng(20261002)
+    for _ in range(40):
+        pts_list = (10 + rng.normal(0, 0.6, size=(10, 2))).tolist()
+        fig, ax, pts = _axes_with(pts_list)
+        texts = M.label_years(fig, ax, pts, [(1980 + i, x, y) for i, (x, y) in enumerate(pts_list[:6])])
+        r = fig.canvas.get_renderer()
+        boxes = [t.get_window_extent(r) for t in texts]
+        for i, (t, bb) in enumerate(zip(texts, boxes)):
+            if any(j != i and bb.overlaps(o) for j, o in enumerate(boxes)):
+                assert t.obstructed_by > 0, t.get_text()
+        import matplotlib.pyplot as plt
+        plt.close(fig)
+
+
+CROWD = {1980: (98, 127), 1981: (105, 117), 1982: (92, 126), 1983: (93, 113), 1984: (78, 121), 1985: (93, 115),
+         1986: (100, 128), 1987: (96, 125), 1988: (98, 140), 1989: (98, 128), 1990: (91, 104), 1991: (101, 126)}
+
+
+def test_labels_are_counted_against_the_geometry_the_figure_is_saved_with(tmp_path, monkeypatch):
+    """A confirmation review's specimen: the scatter panel's equal aspect is applied only at
+    draw time, so labels placed and counted before drawing could cover a point in the saved
+    figure while reporting nothing. Every label covering a point in the SAVED geometry must
+    be among those the render reports."""
+    import numpy as np
+    from matplotlib.figure import Figure
+    M = _load()
+    summary = _summary()
+    summary["years"] = {str(y): {"africa_origin": {"v1": a, "port": b, "port_minus_v1": b - a}, "published_context_tracks": None}
+                        for y, (a, b) in CROWD.items()}
+    summary["published_spread"] = 1
+    unreported, original = [], Figure.savefig
+
+    def save_then_audit(fig, *args, **kwargs):
+        original(fig, *args, **kwargs)
+        fig.canvas.draw()
+        ax = fig.axes[2]
+        r = fig.canvas.get_renderer()
+        labels = [t for t in ax.texts if t.get_text().isdigit()]
+        pts = ax.transData.transform(ax.collections[0].get_offsets())
+        radius = (18 ** 0.5) / 2 * fig.dpi / 72
+        for t in labels:
+            bb, own = t.get_window_extent(r), ax.transData.transform(t.xy)
+            covers = any(not np.allclose(p, own, atol=1e-6) and bb.x0 - radius <= p[0] <= bb.x1 + radius
+                         and bb.y0 - radius <= p[1] <= bb.y1 + radius for p in pts)
+            if covers and not t.obstructed_by:
+                unreported.append(t.get_text())
+    monkeypatch.setattr(Figure, "savefig", save_then_audit)
+    drawn = M.render(summary, str(tmp_path / "crowd.png"), dpi=100, size=(6.5, 4.4), title="")
+    assert unreported == [], f"labels covering a point in the saved figure but not reported: {unreported}"
+    assert set(drawn["labels_obstructed"]) <= {str(y) for y in CROWD}
+
+
+def _audit_saved_labels(M, summary, path, dpi, size, monkeypatch):
+    """Render, and during the actual save draw list every year label that covers a point,
+    another label or other panel text without being reported (a review's instrument)."""
+    import numpy as np
+    from matplotlib.figure import Figure
+    original, false_clear = Figure.savefig, []
+
+    def save_audit(fig, *a, **k):
+        def audit(event):
+            ax, r = fig.axes[2], event.renderer
+            labels = [t for t in ax.texts if t.get_text().isdigit()]
+            other = [t for t in ax.texts if not t.get_text().isdigit()]
+            pts = ax.transData.transform(ax.collections[0].get_offsets())
+            radius = 18 ** .5 / 2 * fig.dpi / 72
+            boxes = [t.get_window_extent(r) for t in labels]
+            for i, (t, bb) in enumerate(zip(labels, boxes)):
+                own = ax.transData.transform(t.xy)
+                covers = any(not np.allclose(p, own, atol=1e-6, rtol=0) and bb.x0 - radius <= p[0] <= bb.x1 + radius
+                             and bb.y0 - radius <= p[1] <= bb.y1 + radius for p in pts)
+                overlaps = any(j != i and bb.overlaps(boxes[j]) for j in range(len(boxes))) \
+                    or any(bb.overlaps(o.get_window_extent(r)) for o in other)
+                if (covers or overlaps) and not t.obstructed_by:
+                    false_clear.append(t.get_text())
+        cid = fig.canvas.mpl_connect("draw_event", audit)
+        try:
+            return original(fig, *a, **k)
+        finally:
+            fig.canvas.mpl_disconnect(cid)
+    monkeypatch.setattr(Figure, "savefig", save_audit)
+    M.render(summary, path, dpi=dpi, size=size, title="")
+    monkeypatch.setattr(Figure, "savefig", original)
+    return false_clear
+
+
+@pytest.mark.parametrize("dpi", [40, 100])
+def test_no_saved_label_overlap_goes_unreported_at_the_saved_resolution(tmp_path, monkeypatch, dpi):
+    """Labels were measured at the default 100 dpi and saved at another, and the panel's
+    other text was not an obstacle (a review found 1981 over 1989 at 40 dpi, and 2007 over
+    the correlation note). Seeded 32-year summaries, two sizes, audited at save time."""
+    import numpy as np
+    M = _load()
+    for seed in range(4):
+        rng = np.random.default_rng(seed)
+        v1 = np.round(rng.normal(125, 14, 32))
+        port = np.round(v1 + rng.normal(0, 20, 32))
+        summary = _summary()
+        summary["years"] = {str(1979 + i): {"africa_origin": {"v1": float(a), "port": float(b), "port_minus_v1": float(b - a)},
+                                            "published_context_tracks": None} for i, (a, b) in enumerate(zip(v1, port))}
+        for size in ((6.5, 4.4), (6.5, 5.4)):
+            unreported = _audit_saved_labels(M, summary, str(tmp_path / f"s{seed}_{size[1]}_{dpi}.png"), dpi, size, monkeypatch)
+            assert unreported == [], f"seed {seed}, size {size}, {dpi} dpi: {unreported}"

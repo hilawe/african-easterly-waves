@@ -35,6 +35,70 @@ def _band_label(key):
     return f"{side(a)} to {side(b)}"
 
 
+# the positions a year label may take around its point, tried in order; the first is where
+# every label went before 2026-10-02, kept identical so a figure without a collision does
+# not change
+LABEL_CORNERS = (dict(xytext=(3, 2)),
+                 dict(xytext=(-3, 2), ha="right"),
+                 dict(xytext=(3, -2), va="top"),
+                 dict(xytext=(-3, -2), ha="right", va="top"),
+                 # four more, beside and above or below, for a crowd the corners cannot clear
+                 # (the settled 32-year figure left 1981 and 2005 with no clear corner)
+                 dict(xytext=(5, 0), va="center"),
+                 dict(xytext=(-5, 0), ha="right", va="center"),
+                 dict(xytext=(0, 5), ha="center"),
+                 dict(xytext=(0, -5), ha="center", va="top"))
+
+
+def label_years(fig, ax, points, labeled, marker_size=18, fontsize=6.5, obstacles=()):
+    """Annotate each (year, x, y) in `labeled` at the first corner of LABEL_CORNERS whose
+    text box covers no other plotted point and no label already placed, so a label never
+    sits on data. When every corner is blocked, the corner covering the fewest is used.
+    The 32-year archive spread first labeled 1986, beside 1987, and the fixed corner put the
+    label across both points. THE REQUIREMENT, after three repairs: in the SAVED figure no
+    year label covers a point (within one marker radius) or another label, and when that is
+    impossible the render names every label that does. Eight positions cannot clear every crowd, so each placed label
+    carries `obstructed_by`, the count of points and labels it covers, and the caller
+    reports any label above zero rather than calling the figure clear. Returns the text
+    artists placed, so a caller can place them again once the layout is final."""
+    renderer = fig.canvas.get_renderer()
+    pts = ax.transData.transform(points)
+    # other text already in the panel (the correlation note, the panel letter) is in the way
+    # too: a review found 2007 over the correlation note with nothing reported
+    fixed = [o.get_window_extent(renderer) for o in obstacles]
+    radius = (marker_size ** 0.5) / 2 * fig.dpi / 72.0                       # marker radius in pixels
+    placed, texts = [], []
+    for y, x1, x2 in labeled:
+        own = ax.transData.transform((x1, x2))
+        best = None
+        for corner in LABEL_CORNERS:
+            t = ax.annotate(str(y), (x1, x2), fontsize=fontsize, textcoords="offset points", **corner)
+            bb = t.get_window_extent(renderer)
+            hits = sum(1 for p in pts if not (abs(p[0] - own[0]) < 1e-6 and abs(p[1] - own[1]) < 1e-6)
+                       and bb.x0 - radius <= p[0] <= bb.x1 + radius and bb.y0 - radius <= p[1] <= bb.y1 + radius)
+            hits += sum(1 for other in placed if bb.overlaps(other)) + sum(1 for o in fixed if bb.overlaps(o))
+            if best is None or hits < best[0]:
+                if best is not None:
+                    best[1].remove()
+                best = (hits, t, bb)
+            else:
+                t.remove()
+            if hits == 0:
+                break
+        placed.append(best[2])
+        texts.append(best[1])
+    # a later label can land on an earlier one that was clear when placed, so what each
+    # label covers is counted once more against every point and every other final label
+    boxes = [t.get_window_extent(renderer) for t in texts]
+    for i, (t, bb) in enumerate(zip(texts, boxes)):
+        own = ax.transData.transform(t.xy)
+        t.obstructed_by = sum(1 for p in pts if not (abs(p[0] - own[0]) < 1e-6 and abs(p[1] - own[1]) < 1e-6)
+                              and bb.x0 - radius <= p[0] <= bb.x1 + radius and bb.y0 - radius <= p[1] <= bb.y1 + radius) \
+            + sum(1 for j, other in enumerate(boxes) if j != i and bb.overlaps(other)) \
+            + sum(1 for o in fixed if bb.overlaps(o))
+    return texts
+
+
 def render(summary, out, dpi=150, labels=None, title=None, size=(11, 7.5)):
     """`labels` names side A ("v1") and side B ("port"); the campaign's defaults are the
     two reanalyses, the sensitivity passes the two threshold pairs. Every axis label and
@@ -97,8 +161,8 @@ def render(summary, out, dpi=150, labels=None, title=None, size=(11, 7.5)):
     c.plot([lo, hi], [lo, hi], color="k", lw=0.8, ls="--")
     c.scatter(v1, port, s=18, color=COLOR["port"], edgecolor="k", linewidth=0.4)
     beyond = [(abs(x2 - x1), y, x1, x2) for y, x1, x2 in zip(years, v1, port) if abs(x2 - x1) > (spread or 0)]
-    for _, y, x1, x2 in sorted(beyond, reverse=True)[:10]:            # the ten largest, so a wholesale shift stays legible
-        c.annotate(str(y), (x1, x2), fontsize=6.5, xytext=(3, 2), textcoords="offset points")
+    to_label = [(y, x1, x2) for _, y, x1, x2 in sorted(beyond, reverse=True)[:10]]   # the ten largest, so a wholesale shift stays legible
+    year_texts = label_years(fig, c, np.column_stack([v1, port]), to_label)
     r = ag["africa_origin"]["pearson_correlation_v1_port"]
     c.text(0.96, 0.05, f"Pearson correlation {r:.3f}\n{len(years)} years, means {ag['africa_origin']['mean']['v1']:.1f} and {ag['africa_origin']['mean']['port']:.1f}",
            transform=c.transAxes, fontsize=7 if compact else 8, va="bottom", ha="right")
@@ -140,12 +204,25 @@ def render(summary, out, dpi=150, labels=None, title=None, size=(11, 7.5)):
         fig.tight_layout(rect=(0, 0, 1, 0.97))
     else:
         fig.tight_layout()
+    # the layout moved the axes, so the year labels are placed again against the final
+    # geometry. Drawing first settles it, because the scatter panel's equal aspect is only
+    # applied at draw time, and a confirmation review found a label counted clear before
+    # that covering a point after it.
+    # and at the resolution it is saved at, since text extents do not scale exactly with dpi
+    # (a review found 1981 over 1989 at 40 dpi with both counted clear at the default 100)
+    fig.set_dpi(dpi)
+    fig.canvas.draw()
+    for t in year_texts:
+        t.remove()
+    final_labels = label_years(fig, c, np.column_stack([v1, port]), to_label, obstacles=list(c.texts))
+    obstructed = [t.get_text() for t in final_labels if t.obstructed_by]
     fmt = os.path.splitext(out)[1].lstrip(".") or "png"
     with open(out, "xb") as fh:                       # exclusive creation, never overwritten
         fig.savefig(fh, format=fmt, dpi=dpi)
     plt.close(fig)
     return {"years": years.tolist(), "v1": v1.tolist(), "port": port.tolist(), "difference": diff.tolist(),
-            "archive": arch.tolist(), "group_labels": labels, "group_v1": mv1, "group_port": mport}
+            "archive": arch.tolist(), "group_labels": labels, "group_v1": mv1, "group_port": mport,
+            "labels_obstructed": obstructed}
 
 
 def main(argv=None):
@@ -163,8 +240,11 @@ def main(argv=None):
         raise SystemExit(f"REFUSED: {args.out} exists and figures beside artifacts are never overwritten")
     summary = json.load(open(args.summary))
     labels = {k: v for k, v in (("v1", args.side_a), ("port", args.side_b)) if v}
-    render(summary, args.out, args.dpi, labels=labels, title=args.title, size=(args.width, args.height))
+    drawn = render(summary, args.out, args.dpi, labels=labels, title=args.title, size=(args.width, args.height))
     print(f"wrote {args.out} from {args.summary}")
+    if drawn["labels_obstructed"]:
+        print("NOTE: no clear corner was found for the year labels " + ", ".join(drawn["labels_obstructed"])
+              + ", which each cover a point or another label. Check panel (c) before using the figure.")
     return 0
 
 

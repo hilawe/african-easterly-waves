@@ -73,7 +73,12 @@ WAVE_SHARED_STEPS = 3
 WAVE_SEPARATION_DEG = 1.0
 BAND_EDGES = list(range(-60, 61, 10))      # ten-degree bands of genesis longitude, [lo, hi)
 PERCENTILES = (10, 50, 90)
-RECORD_YEARS = "1983-2007"                 # the published record's years, the scale's default
+# The published record's ERA-Interim years at NCEI, the scale's default. It read 1983-2007
+# until 2026-10-02, which was the span this project had downloaded and not the archive's,
+# which holds ERA-Interim 700 hPa Africa files for every year 1979 to 2010. A year whose
+# file is absent from the record directory is skipped, so against a directory holding only
+# 1983 to 2007 this default gives the same scale as before.
+RECORD_YEARS = "1979-2010"
 TRANSFER_DRIVER = "scripts/run_threshold_sensitivity.py"   # the one source a declared threshold transfer may add
 DISTRIBUTIONS = ("lifetime", "genesis_lon", "genesis_lat", "lysis_lon", "lysis_lat")
 

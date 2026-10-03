@@ -63,7 +63,7 @@ def _world(tmp_path, year=1990, *, case_digest_ok=True, case_id_ok=True, dataset
     campaign, evidence = tmp_path / "campaign", tmp_path / "evidence"
     run = campaign / f"{dataset}_{year}"
     run.mkdir(parents=True)
-    embedded = {"stage": "tracking", "protocol_settings": {"x": 1, "manifest_sha256": "m" * 64},
+    embedded = {"stage": "tracking", "protocol_settings": {"x": 1, "tracker_flags": MANIFEST["tracker_flags"], "manifest_sha256": "m" * 64},
                 "source_sha256": {"a": "0" * 64, "scripts/export_protocol_case.py": _sha(os.path.join(ROOT, "scripts", "export_protocol_case.py"))},
                 "dataset_specific": {"dataset": dataset, "year": year, "prefix": dataset}}
     steps = 3
@@ -118,7 +118,7 @@ def test_replay_year_substitutes_only_the_thresholds_records_what_it_replaced_an
     assert d["coarse_threshold"] == 7.16e-7 and d["fine_threshold"] == 2.80e-6 and d["calibration_sha256"] is None
     assert record["sensitivity"]["replaces_rule_a"] == {"coarse": 4.494e-7, "fine": 2.25e-6, "calibration_sha256": "cal" * 21 + "c"}
     assert record["sensitivity"]["what_changed"] == "the two detection thresholds only"
-    assert record["stage"] == "tracking" and record["protocol_settings"] == {"x": 1, "manifest_sha256": "m" * 64}   # the case's settings, untouched
+    assert record["stage"] == "tracking" and record["protocol_settings"] == {"x": 1, "tracker_flags": MANIFEST["tracker_flags"], "manifest_sha256": "m" * 64}   # the case's settings, untouched
     assert record["sensitivity"]["case_sha256"] == _sha(os.path.join(campaign, "eraint_1990", "tracker_case.mat"))
     port = os.path.join(out, "eraint_1990", "tracker_port.mat")
     assert d["tracks_sha256"] == _sha(port)
@@ -277,6 +277,22 @@ def test_a_worker_that_dies_without_reporting_fails_the_command_instead_of_hangi
 FIXTURE = os.path.join(HERE, "fixtures", "implementation_mode_artifact_1990.json")
 
 
+def _bind_like_the_instrument(art, argv):
+    """Stamp a fake artifact with the bindings the real instrument records, from the same
+    argv it was given: its own revision, the region polygons, the archive files over its
+    record years and the archive year file. Reuse is checked against exactly these."""
+    import collect_protocol_campaign as C
+    import exact_tracks as X
+    import season_metrics as S
+    year = int(argv[argv.index("--year") + 1])
+    published_file = argv[argv.index("--published-year-file") + 1] if "--published-year-file" in argv else None
+    regions, record, _ = C.auxiliary_digests(argv[argv.index("--regions-dir") + 1], argv[argv.index("--record-dir") + 1],
+                                             os.path.dirname(published_file) if published_file else "", year)
+    art.update({"generated_by": "scripts/season_metrics.py", "script_sha256": X.digest(S.__file__),
+                "region_polygons_sha256": regions, "published_record_sha256": record})
+    art["inputs_sha256"]["published_year_file"] = {"sha256": _sha(published_file)} if published_file else None
+
+
 def _artifact(v1, port):
     return {"comparison": {"season": {"v1": v1, "port": port, "port_minus_v1": port - v1, "difference_over_published_sd": -0.5,
                                       "distinct_waves": {"v1": 9, "port": 8, "port_minus_v1": -1},
@@ -310,6 +326,7 @@ def test_compare_runs_the_instrument_in_implementation_mode_and_summarizes_with_
         art["case_id"] = "c" * 32
         art["inputs_sha256"]["v1"]["sha256"] = _sha(argv[argv.index("--v1") + 1])
         art["inputs_sha256"]["port"]["sha256"] = _sha(argv[argv.index("--port") + 1])
+        _bind_like_the_instrument(art, argv)
         json.dump(art, open(argv[argv.index("--out") + 1], "w"))
     monkeypatch.setattr(S, "main", fake_runner)
     import types
@@ -341,7 +358,7 @@ def test_compare_runs_the_instrument_in_implementation_mode_and_summarizes_with_
     foreign["mode"] = "reanalysis"
     json.dump(foreign, open(os.path.join(str(artifacts), "sensitivity_1990_eraint_archived_vs_rule_a.json"), "w"))
     os.unlink(summary)
-    assert M.collect_and_compare(args) == 0 and len(seen) == 1
+    assert M.collect_and_compare(args) == 1 and len(seen) == 1                            # nothing compared is a failure
     s = json.load(open(summary))
     assert "1990" not in s["years"] and s["years_without_a_comparison"]["1990"].startswith("refused:")
     assert "mode 'reanalysis'" in s["years_without_a_comparison"]["1990"]
@@ -376,12 +393,12 @@ def test_the_record_is_bound_to_the_snapshot_commit_and_names_its_pair(tmp_path,
     assert record["sensitivity"]["pair"] == "archived" and record["sensitivity"]["control"] is False
     # a record from another commit, another pair, or a control is never this experiment's completed year
     import export_protocol_case as E
-    good = M.sensitivity_record_problems(os.path.join(out, "eraint_1990", "tracking_eraint_1990.json"), evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "archived", COMMIT)
+    good = M.sensitivity_record_problems(os.path.join(out, "eraint_1990", "tracking_eraint_1990.json"), evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "archived", COMMIT, manifest=MANIFEST)
     assert good == []
     assert any("not made from this code snapshot" in p for p in
-               M.sensitivity_record_problems(os.path.join(out, "eraint_1990", "tracking_eraint_1990.json"), evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "archived", "0000000"))
+               M.sensitivity_record_problems(os.path.join(out, "eraint_1990", "tracking_eraint_1990.json"), evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "archived", "0000000", manifest=MANIFEST))
     assert any("names the pair" in p for p in
-               M.sensitivity_record_problems(os.path.join(out, "eraint_1990", "tracking_eraint_1990.json"), evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "eraint-rule-a", COMMIT))
+               M.sensitivity_record_problems(os.path.join(out, "eraint_1990", "tracking_eraint_1990.json"), evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "eraint-rule-a", COMMIT, manifest=MANIFEST))
 
 
 def test_the_pairs_are_defined_per_dataset_and_the_transferred_pair_is_read_from_the_calibration_artifact(tmp_path):
@@ -415,7 +432,7 @@ def test_a_control_reproduces_the_campaign_tracks_or_fails_by_name(tmp_path, mon
     rec = json.load(open(os.path.join(out, "control", "era5_1990", "tracking_era5_1990.json")))
     assert rec["sensitivity"]["control"] is True and rec["sensitivity"]["pair"] == "control"
     assert any("is a control" in p for p in
-               M.sensitivity_record_problems(os.path.join(out, "control", "era5_1990", "tracking_era5_1990.json"), evidence, 1990, 4.494e-7, 2.25e-6, "m" * 64, "era5", "eraint-rule-a", COMMIT))
+               M.sensitivity_record_problems(os.path.join(out, "control", "era5_1990", "tracking_era5_1990.json"), evidence, 1990, 4.494e-7, 2.25e-6, "m" * 64, "era5", "eraint-rule-a", COMMIT, manifest=MANIFEST))
     import export_protocol_case as E
     monkeypatch.setattr(E, "track_case", lambda *a, **k: [dict(FAKE_TRACK, meanlat=np.array([10.0, 11.0]))])
     campaign2, evidence2, manifest2, out2 = _world(tmp_path / "second", dataset="era5", real_tracks=True)
@@ -573,12 +590,12 @@ def test_a_sidecar_relabeled_to_another_commit_or_pair_disagrees_with_the_record
     r = json.load(open(rec))
     r["sensitivity"]["code_snapshot"]["commit"] = "deadbee"
     open(rec, "w").write(json.dumps(r))
-    problems = M.sensitivity_record_problems(rec, evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "archived", "deadbee")
+    problems = M.sensitivity_record_problems(rec, evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "archived", "deadbee", manifest=MANIFEST)
     assert any("does not agree" in p and "commit" in p for p in problems)
     r["sensitivity"]["code_snapshot"]["commit"] = COMMIT
     r["sensitivity"]["pair"] = "eraint-rule-a"
     open(rec, "w").write(json.dumps(r))
-    problems = M.sensitivity_record_problems(rec, evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "eraint-rule-a", COMMIT)
+    problems = M.sensitivity_record_problems(rec, evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "eraint-rule-a", COMMIT, manifest=MANIFEST)
     assert any("does not agree" in p and "pair" in p for p in problems)
 
 
@@ -598,7 +615,7 @@ def test_compare_refuses_runs_that_are_not_this_experiments(tmp_path, monkeypatc
     args = types.SimpleNamespace(campaign_evidence=evidence, runs=evidence, evidence=str(sens_evidence), artifacts=str(artifacts),
                                  summary=str(summary), years="1990-1990", regions_dir="r", record_dir="d", published_dir="d",
                                  dataset="era5", pair="eraint-rule-a", against="own", manifest=manifest, pair_source=str(art), snapshot_commit=COMMIT)
-    assert M.collect_and_compare(args) == 0
+    assert M.collect_and_compare(args) == 1                    # nothing compared is a failure, recorded
     s = json.load(open(summary))
     assert s["years"] == {} and s["years_without_a_comparison"]["1990"].startswith("refused: the run is not this experiment's")
     assert not os.path.exists(os.path.join(str(sens_evidence), "era5_1990"))
@@ -625,6 +642,7 @@ def test_compare_against_the_eraint_baseline_declares_the_transfer_in_reanalysis
         a["threshold_transfer"] = {"side": "port"}
         a["inputs_sha256"]["v1"]["sha256"] = _sha(argv[argv.index("--v1") + 1])
         a["inputs_sha256"]["port"]["sha256"] = _sha(argv[argv.index("--port") + 1])
+        _bind_like_the_instrument(a, argv)
         json.dump(a, open(argv[argv.index("--out") + 1], "w"))
     monkeypatch.setattr(S, "main", fake_runner)
     import types
@@ -648,7 +666,7 @@ def test_compare_against_the_eraint_baseline_declares_the_transfer_in_reanalysis
     a["threshold_transfer"] = None
     json.dump(a, open(os.path.join(str(artifacts), "sensitivity_1990_era5_transferred_vs_eraint_baseline.json"), "w"))
     os.unlink(summary)
-    assert M.collect_and_compare(args) == 0
+    assert M.collect_and_compare(args) == 1                                               # nothing compared is a failure
     assert "no declared threshold transfer" in json.load(open(summary))["years_without_a_comparison"]["1990"]
 
 
@@ -735,3 +753,159 @@ def test_stop_with_no_survivor_releases_the_state(tmp_path, monkeypatch):
     lock.acquire()
     assert M.stop_launch(lock, [], bound=1.0) == []
     assert not os.path.exists(lock.launch_dir)
+
+
+def _as_record_made_before_the_pair_field(record_path):
+    """Strip the pair and the code snapshot from a replayed record, beside the tracks and
+    inside them, as the ERA-Interim archived-constant runs of 2026-09-27 were written."""
+    from scipy.io import loadmat, savemat
+    r = json.load(open(record_path))
+    r["sensitivity"].pop("pair")
+    r["sensitivity"].pop("code_snapshot", None)
+    open(record_path, "w").write(json.dumps(r))
+    tracks = os.path.join(os.path.dirname(record_path), "tracker_port.mat")
+    m = {k: v for k, v in loadmat(tracks).items() if not k.startswith("__")}
+    inside = json.loads(str(m["producer_json"][0]))
+    inside["sensitivity"].pop("pair")
+    inside["sensitivity"].pop("code_snapshot", None)
+    m["producer_json"] = json.dumps(inside)
+    savemat(tracks, m)
+    import hashlib
+    r["dataset_specific"]["tracks_sha256"] = hashlib.sha256(open(tracks, "rb").read()).hexdigest()
+    open(record_path, "w").write(json.dumps(r))
+
+
+def test_a_record_made_before_the_pair_field_is_accepted_only_as_the_archived_experiment(tmp_path, monkeypatch):
+    M = _load(tmp_path)
+    calls = []
+    _stub(monkeypatch, calls)
+    campaign, evidence, manifest, out = _world(tmp_path)
+    _replay_year(M, tmp_path, campaign, evidence, manifest, out, 1990, 7.16e-7, 2.80e-6)
+    rec = os.path.join(out, "eraint_1990", "tracking_eraint_1990.json")
+    _as_record_made_before_the_pair_field(rec)
+    assert M.sensitivity_record_problems(rec, evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "archived", None, manifest=MANIFEST) == []
+    # the unlabeled record is not another pair's, and not the archived run under other thresholds
+    assert any("names the pair" in p for p in
+               M.sensitivity_record_problems(rec, evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "eraint-rule-a", None, manifest=MANIFEST))
+    assert any("archived constants" in p for p in
+               M.sensitivity_record_problems(rec, evidence, 1990, 4.494e-7, 2.25e-6, "m" * 64, "eraint", "archived", None, manifest=MANIFEST))
+
+
+def test_a_sidecar_stripped_of_its_pair_still_disagrees_with_the_record_inside_the_tracks(tmp_path, monkeypatch):
+    M = _load(tmp_path)
+    calls = []
+    _stub(monkeypatch, calls)
+    campaign, evidence, manifest, out = _world(tmp_path)
+    _replay_year(M, tmp_path, campaign, evidence, manifest, out, 1990, 7.16e-7, 2.80e-6)
+    rec = os.path.join(out, "eraint_1990", "tracking_eraint_1990.json")
+    r = json.load(open(rec))
+    r["sensitivity"].pop("pair")                         # beside the tracks only
+    open(rec, "w").write(json.dumps(r))
+    problems = M.sensitivity_record_problems(rec, evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "archived", COMMIT, manifest=MANIFEST)
+    assert any("does not agree" in p and "pair" in p for p in problems)
+
+
+def test_a_comparison_made_against_another_archive_directory_is_not_reused(tmp_path, monkeypatch):
+    """The review's specimen: a 25-year artifact reused against the 32-year archive kept the
+    old scale. An artifact is reused only when bound to the current archive directory."""
+    M = _load(tmp_path)
+    calls = []
+    _stub(monkeypatch, calls)
+    campaign, evidence, manifest, out = _world(tmp_path)
+    assert M.replay(_args(campaign, evidence, manifest, out)) == 0
+    import season_metrics as S
+    seen = []
+
+    def fake_runner(argv):
+        seen.append(argv)
+        art = json.load(open(FIXTURE))
+        art["case_id"] = "c" * 32
+        art["inputs_sha256"]["v1"]["sha256"] = _sha(argv[argv.index("--v1") + 1])
+        art["inputs_sha256"]["port"]["sha256"] = _sha(argv[argv.index("--port") + 1])
+        _bind_like_the_instrument(art, argv)
+        json.dump(art, open(argv[argv.index("--out") + 1], "w"))
+    monkeypatch.setattr(S, "main", fake_runner)
+    import types
+    sens_evidence, artifacts, summary = tmp_path / "sens_evidence", tmp_path / "artifacts", tmp_path / "summary.json"
+    artifacts.mkdir()
+    old_archive = tmp_path / "archive_25"
+    old_archive.mkdir()
+    (old_archive / "ERA-Int_ew_700hPa_1990_AFR.nc").write_bytes(b"1990")
+    args = types.SimpleNamespace(campaign_evidence=evidence, runs=out, evidence=str(sens_evidence), artifacts=str(artifacts),
+                                 summary=str(summary), years="1990-1990", regions_dir="r", record_dir=str(old_archive),
+                                 published_dir=str(old_archive), dataset="eraint", pair="archived", against="own", manifest=manifest)
+    assert M.collect_and_compare(args) == 0 and len(seen) == 1
+    os.unlink(summary)
+    assert M.collect_and_compare(args) == 0 and len(seen) == 1            # same archive, reused
+    new_archive = tmp_path / "archive_32"
+    new_archive.mkdir()
+    (new_archive / "ERA-Int_ew_700hPa_1990_AFR.nc").write_bytes(b"1990")
+    (new_archive / "ERA-Int_ew_700hPa_1979_AFR.nc").write_bytes(b"1979")   # a year the old directory lacked
+    args.record_dir = args.published_dir = str(new_archive)
+    os.unlink(summary)
+    assert M.collect_and_compare(args) == 1 and len(seen) == 1             # refused, never reused or overwritten
+    reason = json.load(open(summary))["years_without_a_comparison"]["1990"]
+    assert "published record digests" in reason
+
+
+def test_a_record_declaring_other_tracker_flags_is_refused_beside_and_inside_the_tracks(tmp_path, monkeypatch):
+    M = _load(tmp_path)
+    calls = []
+    _stub(monkeypatch, calls)
+    campaign, evidence, manifest, out = _world(tmp_path)
+    _replay_year(M, tmp_path, campaign, evidence, manifest, out, 1990, 7.16e-7, 2.80e-6)
+    rec = os.path.join(out, "eraint_1990", "tracking_eraint_1990.json")
+    args = (rec, evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "archived", COMMIT)
+    assert M.sensitivity_record_problems(*args, manifest=MANIFEST) == []
+    flagged = {**MANIFEST, "tracker_flags": {"exclusive": True, "absorb": False}}
+    # the same record checked against a manifest with other flags is not that manifest's run
+    assert any("tracker_flags" in p for p in M.sensitivity_record_problems(*args, manifest=flagged))
+    r = json.load(open(rec))
+    r["protocol_settings"]["tracker_flags"] = {"exclusive": True, "absorb": False}
+    open(rec, "w").write(json.dumps(r))
+    assert any("the record: protocol setting tracker_flags" in p for p in M.sensitivity_record_problems(*args, manifest=MANIFEST))
+
+
+def test_no_manifest_means_the_settings_were_not_checked(tmp_path, monkeypatch):
+    M = _load(tmp_path)
+    calls = []
+    _stub(monkeypatch, calls)
+    campaign, evidence, manifest, out = _world(tmp_path)
+    _replay_year(M, tmp_path, campaign, evidence, manifest, out, 1990, 7.16e-7, 2.80e-6)
+    rec = os.path.join(out, "eraint_1990", "tracking_eraint_1990.json")
+    problems = M.sensitivity_record_problems(rec, evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "archived", COMMIT)
+    assert any("not checked" in p for p in problems)
+
+
+def test_an_explicitly_empty_pair_inside_the_tracks_is_not_a_legacy_record(tmp_path, monkeypatch):
+    from scipy.io import loadmat, savemat
+    M = _load(tmp_path)
+    calls = []
+    _stub(monkeypatch, calls)
+    campaign, evidence, manifest, out = _world(tmp_path)
+    _replay_year(M, tmp_path, campaign, evidence, manifest, out, 1990, 7.16e-7, 2.80e-6)
+    rec = os.path.join(out, "eraint_1990", "tracking_eraint_1990.json")
+    _as_record_made_before_the_pair_field(rec)
+    tracks = os.path.join(os.path.dirname(rec), "tracker_port.mat")
+    m = {k: v for k, v in loadmat(tracks).items() if not k.startswith("__")}
+    inside = json.loads(str(m["producer_json"][0]))
+    inside["sensitivity"]["pair"] = None                      # present but empty, inside only
+    m["producer_json"] = json.dumps(inside)
+    savemat(tracks, m)
+    r = json.load(open(rec))
+    r["dataset_specific"]["tracks_sha256"] = _sha(tracks)
+    open(rec, "w").write(json.dumps(r))
+    problems = M.sensitivity_record_problems(rec, evidence, 1990, 7.16e-7, 2.80e-6, "m" * 64, "eraint", "archived", None, manifest=MANIFEST)
+    assert any("record inside them has one" in p for p in problems)
+
+
+def test_an_explicitly_null_tracker_flags_field_is_a_mismatch_beside_and_inside_the_tracks(tmp_path, monkeypatch):
+    M = _load(tmp_path)
+    flags = MANIFEST["tracker_flags"]
+    assert M.settings_problems({"protocol_settings": {"tracker_flags": flags}, "dataset_specific": {"tracker_flags": flags}},
+                               MANIFEST, "r", ("tracker_flags",)) == []
+    assert any("own tracker flags" in p for p in
+               M.settings_problems({"protocol_settings": {"tracker_flags": flags}, "dataset_specific": {"tracker_flags": None}},
+                                   MANIFEST, "r", ("tracker_flags",)))
+    assert M.settings_problems({"protocol_settings": {"tracker_flags": flags}, "dataset_specific": {}},
+                               MANIFEST, "r", ("tracker_flags",)) == []          # absent is bound by the protocol settings
