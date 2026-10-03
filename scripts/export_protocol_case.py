@@ -54,7 +54,8 @@ import time
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(ROOT, "src"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from aew.v1port import climatology as clim  # noqa: E402
@@ -108,7 +109,53 @@ def load_manifest(path):
     problems = validate_manifest(manifest)
     if problems:
         raise SystemExit("REFUSED: the manifest asks for what this protocol does not support: " + "; ".join(problems))
+    if "extends" in manifest:
+        problems = extension_problems(manifest)
+        if problems:
+            raise SystemExit("REFUSED: the extension does not match the manifest it extends: " + "; ".join(problems))
     return manifest, hashlib.sha256(blob).hexdigest()
+
+
+# AN EXTENSION MANIFEST tracks years after the protocol years under the protocol's own
+# climatology and thresholds, held fixed for ERA5 past 2010 (decided 2026-10-02) so that
+# appending a year never changes an earlier one. It names the manifest it extends by path
+# and digest, every one of its tracking years comes after the protocol years, and every other
+# key must be present in both with the same canonical JSON, so 1979.0 is not 1979, 0 is not
+# false, and an added null is an added key. Only these keys may be added.
+EXTENSION_KEYS = ("tracking_years", "extends", "extension_note")
+
+
+def tracking_years(m):
+    """The years a manifest may track: its own tracking_years when it is an extension, else
+    the protocol years. The climatology and calibration always use the protocol years."""
+    return [int(x) for x in m.get("tracking_years", m["years"])]
+
+
+def extension_problems(m):
+    """Why an extension manifest is not the manifest it names plus tracking years only."""
+    ext = m["extends"]
+    path = ext["manifest"] if os.path.isabs(ext["manifest"]) else os.path.join(ROOT, ext["manifest"])
+    try:
+        with open(path, "rb") as fh:
+            blob = fh.read()
+    except OSError as exc:
+        return [f"the extended manifest cannot be read: {exc}"]
+    if hashlib.sha256(blob).hexdigest() != ext["sha256"]:
+        return ["the extended manifest's digest is not the one the extension names"]
+    base = json.loads(blob.decode())
+    out = []
+    if any(k in base for k in EXTENSION_KEYS):
+        out.append("the extended manifest is itself an extension")
+    for k in sorted(set(base) | set(m)):
+        if k in EXTENSION_KEYS:
+            continue
+        if k not in base:
+            out.append(f"{k} is not in the extended manifest")
+        elif k not in m:
+            out.append(f"{k} is missing from the extension")
+        elif json.dumps(m[k], sort_keys=True) != json.dumps(base[k], sort_keys=True):
+            out.append(f"{k} is not the extended manifest's")
+    return out
 
 
 def validate_manifest(m):
@@ -161,6 +208,20 @@ def validate_manifest(m):
         p.append("the calibration years are not the protocol years")
     if y1 < y0:
         p.append("the protocol years are reversed")
+    if "tracking_years" in m:
+        t0, t1 = (int(x) for x in m["tracking_years"])
+        if t1 < t0:
+            p.append("the tracking years are reversed")
+        if "extends" in m or [t0, t1] != [y0, y1]:
+            # an extension never re-tracks a protocol year under its own identity, even when its
+            # tracking years equal the protocol years
+            if t0 <= y1:
+                p.append("an extension's tracking years must all come after the protocol years")
+            ext = m.get("extends")
+            if not isinstance(ext, dict) or not ext.get("manifest") or not ext.get("sha256"):
+                p.append("an extension must name the manifest it extends, by path and digest")
+    elif "extends" in m:
+        p.append("a manifest that extends another must declare its tracking years")
     return p
 
 
@@ -283,12 +344,16 @@ def producer_record(manifest, manifest_sha256, dataset_name, dataset, year, stag
             return subprocess.run(["git", "-C", repo, *argv], capture_output=True, text=True, check=True).stdout.strip()
         except (OSError, subprocess.CalledProcessError):
             return None
+    # A FAILED STATUS CALL LEAVES THE TREE STATE UNKNOWN, never clean. Git 1.8.3 on the
+    # compute server has no -C, and `bool(None or "")` recorded such a tree as clean
+    # (2026-10-03). export_tracker_case.py already records None in this case.
+    status = git("status", "--porcelain", "--", "src", "scripts")
     return {"producer": "scripts/export_protocol_case.py",
             "protocol_settings": {**{k: manifest[k] for k in PROTOCOL_KEYS}, "manifest_sha256": manifest_sha256},
             "dataset_specific": {"dataset": dataset_name, "label": dataset["label"], "prefix": dataset["prefix"],
                                  "year": year, "inputs_sha256": inputs_sha256, **extra},
             "stage": stage, "git_head": git("rev-parse", "HEAD"),
-            "git_dirty": bool(git("status", "--porcelain", "--", "src", "scripts") or ""),
+            "git_dirty": None if status is None else bool(status),
             "source_sha256": source_digests(),
             "produced_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
@@ -350,10 +415,11 @@ def track_case(payload, coarse_threshold, fine_threshold, exclusive, absorb):
 def tracking_stage(manifest, manifest_sha256, dataset_name, dataset, year, arrays, climo_cache,
                    calibration, run_dir, inputs_sha256, readiness):
     from scipy.io import savemat
-    y0, y1 = (int(x) for x in manifest["years"])
+    y0, y1 = (int(x) for x in manifest["years"])            # the climatology and calibration years
     years = list(range(y0, y1 + 1))
-    if not y0 <= year <= y1:
-        raise SystemExit(f"REFUSED: the year {year} is outside the protocol years {y0} to {y1}")
+    first_tracked, last_tracked = tracking_years(manifest)
+    if not first_tracked <= year <= last_tracked:
+        raise SystemExit(f"REFUSED: the year {year} is outside the tracking years {first_tracked} to {last_tracked}")
     # EVERY CLIMATOLOGY YEAR IS VALIDATED AND DIGESTED, not only the target year, and each
     # phase is timed so the record says where a tracked year's time goes
     phases, t0 = {}, time.perf_counter()
@@ -398,6 +464,9 @@ def tracking_stage(manifest, manifest_sha256, dataset_name, dataset, year, array
              "calibration_path": os.path.abspath(calibration), "calibration_sha256": calibration_sha256,
              "coarse_threshold": ct, "fine_threshold": ft, "tracker_flags": flags,
              "case_id": payload["case_id"], "readiness": readiness, "preflight_all_years": preflight_all}
+    if "extends" in manifest:                                 # the year is tracked under a fixed calibration
+        extra["manifest_extension"] = {"tracking_years": tracking_years(manifest), "extends": manifest["extends"],
+                                       "climatology_and_calibration_years": [y0, y1]}
     phases["anomaly_advection_and_case_seconds"] = round(time.perf_counter() - t0, 1)
     extra["phase_seconds"] = phases
     record = producer_record(manifest, manifest_sha256, dataset_name, dataset, year, "tracking", inputs_sha256, extra)

@@ -310,3 +310,119 @@ def test_the_same_winds_under_two_dataset_entries_give_the_same_arrays(tmp_path)
     assert outs["tiny"][0] == outs["tiny2"][0]
     for name in ("u", "v", "curvature"):
         assert np.array_equal(outs["tiny"][1]["coarse"][name], outs["tiny2"][1]["coarse"][name], equal_nan=True)
+
+
+def _extension(tmp_path, base_path, base_manifest, tracking=(2003, 2004), **overrides):
+    """An extension of the base manifest file: tracking years after the protocol years,
+    named by path and digest, everything else the base's unless overridden."""
+    import hashlib
+    ext = json.loads(json.dumps(base_manifest))
+    ext["tracking_years"] = list(tracking)
+    ext["extends"] = {"manifest": str(base_path), "sha256": hashlib.sha256(open(base_path, "rb").read()).hexdigest()}
+    ext.update(overrides)
+    path = tmp_path / "extension.json"
+    path.write_text(json.dumps(ext, indent=1))
+    return ext, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_an_extension_tracks_later_years_under_the_protocol_years_climatology_and_calibration(tmp_path, monkeypatch):
+    E = _load()
+    base, _, data = _accepted(tmp_path, E)                          # protocol years 2001 to 2002
+    ext, ext_digest = _extension(tmp_path, tmp_path / "manifest.json", base)
+    assert [p for p in E.validate_manifest(ext) if "domain" not in p] == [] and E.extension_problems(ext) == []
+    _fixture_years(data, years=(2001, 2002, 2003))
+    dataset = ext["datasets"]["tiny"]
+    preflight, digests = E.validate_inputs(ext, dataset, [2003])
+    readiness, arrays = E.inputs_stage(ext, dataset, 2003, preflight)
+    cal = _calibration(tmp_path, ext, data)                         # computed over 2001 to 2002
+    monkeypatch.setattr(E, "track_case", lambda payload, ct, ft, exclusive, absorb: [])
+    run = tmp_path / "run2003"
+    run.mkdir()
+    record, n = E.tracking_stage(ext, ext_digest, "tiny", dataset, 2003, arrays, str(tmp_path / "climo"), str(cal),
+                                 str(run), digests, readiness)
+    ds = record["dataset_specific"]
+    assert ds["manifest_extension"]["tracking_years"] == [2003, 2004]
+    assert ds["manifest_extension"]["climatology_and_calibration_years"] == [2001, 2002]
+    # the climatology is the protocol years', fixed: no extension year is among its inputs
+    assert set(ds["climatology_inputs_sha256"]) == {f"tiny_{v}_{y}_6h_region.nc" for y in (2001, 2002) for v in ("u700", "v700")}
+    assert record["protocol_settings"]["manifest_sha256"] == ext_digest
+    # a calibration year, or a year past the extension, is not tracked under the extension
+    for year in (2001, 2005):
+        other = tmp_path / f"run{year}"
+        other.mkdir()
+        with pytest.raises(SystemExit, match="outside the tracking years"):
+            E.tracking_stage(ext, ext_digest, "tiny", dataset, year, arrays, str(tmp_path / "climo"), str(cal),
+                             str(other), digests, readiness)
+
+
+def test_an_extension_must_be_its_base_manifest_plus_later_tracking_years_only(tmp_path):
+    E = _load()
+    base, _, _ = _accepted(tmp_path, E)
+    base_path = tmp_path / "manifest.json"
+    ext, _ = _extension(tmp_path, base_path, base)
+    assert E.extension_problems(ext) == []
+    changed = dict(ext, tracker_flags={"exclusive": True, "absorb": False})
+    assert any("tracker_flags" in p for p in E.extension_problems(changed))
+    added = dict(ext, smoothing_note="extra")
+    assert any("smoothing_note" in p for p in E.extension_problems(added))
+    # compared as canonical JSON: an added null is an added key, and Python's 1979 == 1979.0 and
+    # 0 == False do not make a changed setting the base's
+    assert any("smoothing_note is not in the extended manifest" in p for p in E.extension_problems(dict(ext, smoothing_note=None)))
+    assert any("years" in p for p in E.extension_problems(dict(ext, years=[float(y) for y in base["years"]])))
+    flags = {k: int(v) for k, v in base["tracker_flags"].items()}
+    assert flags == base["tracker_flags"] and any("tracker_flags" in p for p in E.extension_problems(dict(ext, tracker_flags=flags)))
+    dropped = {k: v for k, v in ext.items() if k != "tracker_flags"}
+    assert any("tracker_flags is missing" in p for p in E.extension_problems(dropped))
+    wrong_digest = dict(ext, extends={"manifest": str(base_path), "sha256": "0" * 64})
+    assert any("digest" in p for p in E.extension_problems(wrong_digest))
+    missing = dict(ext, extends={"manifest": str(tmp_path / "absent.json"), "sha256": "0" * 64})
+    assert any("cannot be read" in p for p in E.extension_problems(missing))
+    # an extension of an extension is refused
+    chain_base = tmp_path / "chain"
+    chain_base.mkdir()
+    (chain_base / "base.json").write_text(json.dumps(ext))
+    chained, _ = _extension(chain_base, chain_base / "base.json", base)
+    assert any("itself an extension" in p for p in E.extension_problems(chained))
+
+
+def test_tracking_years_are_validated_and_an_extension_must_name_its_base(tmp_path):
+    E = _load()
+    base, _, _ = _accepted(tmp_path, E)
+    def problems(**kw):
+        return [p for p in E.validate_manifest(dict(base, **kw)) if "domain" not in p]
+    assert problems(tracking_years=[2001, 2002]) == []                       # the protocol years themselves
+    # but not under an extension's identity, even when its tracking years equal the protocol years
+    assert any("come after" in p for p in problems(tracking_years=[2001, 2002], extends={"manifest": "m", "sha256": "s"}))
+    assert any("come after" in p for p in problems(tracking_years=[2002, 2004], extends={"manifest": "m", "sha256": "s"}))
+    assert any("name the manifest" in p for p in problems(tracking_years=[2003, 2004]))
+    assert any("reversed" in p for p in problems(tracking_years=[2004, 2003], extends={"manifest": "m", "sha256": "s"}))
+    assert any("declare its tracking years" in p for p in problems(extends={"manifest": "m", "sha256": "s"}))
+    assert E.tracking_years(base) == [2001, 2002]
+
+
+def test_the_committed_era5_extension_manifest_extends_the_agreed_manifest():
+    E = _load()
+    m, _ = E.load_manifest(os.path.join(ROOT, "docs", "aewc_v2", "protocol", "manifest_extension_era5_2011_2025_2026-10-03.json"))
+    assert E.tracking_years(m) == [2011, 2025]
+    assert m["calibration"]["climatology_years"] == [1979, 2010] and m["calibration"]["population_years"] == [1979, 2010]
+    assert m["extends"]["manifest"] == "docs/aewc_v2/protocol/manifest_2026-09-25.json"
+
+
+def test_a_failed_git_call_leaves_the_tree_state_unknown_never_clean(monkeypatch):
+    """Git 1.8.3 has no -C, and the record called such a tree clean. Git is stood in for,
+    so the test does not depend on running inside a repository (the commit gate and the
+    public export both run the suite in a tree without one)."""
+    import subprocess
+    E = _load()
+    m, digest = E.load_manifest(os.path.join(ROOT, "docs", "aewc_v2", "protocol", "manifest_2026-09-25.json"))
+    def git_answering(status):
+        def run(argv, **kwargs):
+            if status is None:
+                raise OSError("git is not usable here")
+            out = "a" * 40 if "rev-parse" in argv else status
+            return subprocess.CompletedProcess(argv, 0, stdout=out, stderr="")
+        return run
+    for status, head, dirty in (("", "a" * 40, False), (" M scripts/x.py", "a" * 40, True), (None, None, None)):
+        monkeypatch.setattr(E.subprocess, "run", git_answering(status))
+        record = E.producer_record(m, digest, "era5", m["datasets"]["era5"], 2010, "tracking", {}, {})
+        assert record["git_head"] == head and record["git_dirty"] is dirty, (status, record["git_head"], record["git_dirty"])

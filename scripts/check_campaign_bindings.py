@@ -81,7 +81,9 @@ def check_run(evidence, dataset, year, manifest, manifest_sha256, raw_validator,
         _link(links, "record present", False, record_path)
         return links
     import campaign_record_ok as R
-    identity = R.problems(record_path)               # the driver's own predicate, so the two cannot disagree
+    # the driver's own predicate for dataset, year and tracks digest. The driver also passes
+    # its manifest's digest; here manifest identity is the producer check's link below.
+    identity = R.problems(record_path)
     _link(links, "record filed under its dataset and year (the driver's own predicate)", not identity, "; ".join(identity))
     if identity and any("unreadable" in p for p in identity):
         return links
