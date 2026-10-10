@@ -4,7 +4,7 @@
 A reading aid for the field-first reference work (`EASTERN_REFERENCE_FEASIBILITY_2026-10-08.md`,
 section 9). For a declared time interval and cadence it draws a raw 700 hPa wind
 component on the fine grid, shaded, with the wind vectors over it, in a declared box, as
-figures of eight maps each, and writes a record naming the wide case, the steps, the
+figures of up to eight maps each, and writes a record naming the wide case, the steps, the
 dates and the figures. It draws no axis, no candidate, no history and no prepared
 field, so a reader sees the fields and nothing the detector made of them.
 
@@ -16,6 +16,12 @@ figure drawn without `--surface-pressure` is labeled UNMASKED in its title, and 
 says no terrain mask was applied. `--shade u` draws the zonal
 wind instead, on a fixed color scale with out-of-range cells in their own colors and a
 labeled reference arrow, so every map of a sequence reads on one scale.
+
+THE LAYOUT, from 2026-10-10. Each figure holds exactly its maps, in at most four columns,
+and is sized to them, with longitude labels on the lowest map of each column and the long
+titles broken into lines that fit. Before, every figure was an eight-slot grid, so a
+figure of fewer maps left empty space and hid its longitude labels. The maps themselves,
+their scales and the records are drawn as before.
 
 `--surface-pressure` masks the shading and the vectors below model ground. A cell is
 kept where the instantaneous ERA5 surface pressure exceeds the plotted pressure level
@@ -57,6 +63,9 @@ import pilot_alledge_replay as A  # noqa: E402
 
 EPOCH = dt.datetime(1900, 1, 1)
 PANELS = 8
+MAX_COLS = 4
+PANEL_IN = (4.4, 3.7)       # inches given to each map with its title and labels
+MARGIN_IN = (1.3, 1.5)      # the colorbar, and the title lines with the legend
 DAYS_1900_TO_1970 = 25567.0
 LEVEL_HPA = 700.0
 VECTOR_EVERY = 2
@@ -252,10 +261,43 @@ def draw_panel(ax, lon, lat, arr, shade, extended):
     return m
 
 
+def panel_grid(n, max_cols=MAX_COLS):
+    """Rows and columns for n maps, one row up to `max_cols`, never an empty row or column."""
+    cols = min(n, max_cols)
+    return -(-n // cols), cols
+
+
+def make_figure(plt, n):
+    """A figure holding exactly n map axes and sized to them. Longitude labels go on the
+    lowest map of each column, latitude labels on the first column, and no hidden axis is
+    left in the grid."""
+    nrows, ncols = panel_grid(n)
+    fig = plt.figure(figsize=(PANEL_IN[0] * ncols + MARGIN_IN[0], PANEL_IN[1] * nrows + MARGIN_IN[1]), layout="constrained")
+    grid = fig.subplots(nrows, ncols, sharex=True, sharey=True, squeeze=False).ravel()
+    for ax in grid[n:]:
+        fig.delaxes(ax)
+    used = list(grid[:n])
+    for i, ax in enumerate(used):
+        if i + ncols >= n:                                            # no map below it
+            ax.tick_params(labelbottom=True)
+            ax.set_xlabel("longitude (degrees E)", fontsize=9)
+        if i % ncols == 0:
+            ax.set_ylabel("latitude (degrees N)", fontsize=9)
+    return fig, used
+
+
+def wrap_title(fig, text, fontsize):
+    """Line breaks so a title fits the figure's width. The words are unchanged."""
+    import textwrap
+    width = max(40, int(fig.get_figwidth() * 72.0 / (fontsize * 0.56)))
+    return textwrap.fill(text, width=width, break_long_words=False, break_on_hyphens=False)
+
+
 def draw_sequence(wide, steps, box, out_prefix, label, panels=PANELS, shade="v", sp=None, reference=None, level_hpa=LEVEL_HPA, markers=None):
     """Figures of `panels` maps each, a wind component shaded with (u, v) vectors, the 40 E
     line and the 5, 15 and 25 N lines for orientation. With the default shade and no
-    surface pressure or reference, the figures are drawn as before. Returns the figure
+    surface pressure or reference, the maps are drawn as before, in the layout of
+    `make_figure`. Returns the figure
     paths, the panel dates and, per panel, the cell classes, the out-of-range counts and
     the reference overlays drawn."""
     import matplotlib
@@ -280,9 +322,9 @@ def draw_sequence(wide, steps, box, out_prefix, label, panels=PANELS, shade="v",
     figures = []
     for f0 in range(0, len(steps), panels):
         chunk = steps[f0:f0 + panels]
-        fig, axes = plt.subplots(2, 4, figsize=(22, 9), sharex=True, sharey=True)
+        fig, used = make_figure(plt, len(chunk))
         panel_records = []
-        for ax, k in zip(axes.ravel(), chunk):
+        for ax, k in zip(used, chunk):
             sp_k = None if sp is None else sp[steps.index(k)]
             arr = panel_arrays(wide, k, rows, cols, shade, sp_k, level_hpa)
             m = draw_panel(ax, lon1, lat1, arr, shade, extended)
@@ -327,23 +369,22 @@ def draw_sequence(wide, steps, box, out_prefix, label, panels=PANELS, shade="v",
                                             "u_on_segment_valid": None if not seg_u else {"min": round(min(seg_u), 2), "mean": round(float(np.mean(seg_u)), 2), "max": round(max(seg_u), 2), "n": len(seg_u)},
                                             "within_3deg": {"cells": int(near.sum()), "terrain": int((near & (cls == "terrain")).sum())}}
             panel_records.append(rec)
-        for ax in axes.ravel()[len(chunk):]:
-            ax.set_visible(False)
         if not extended:
-            fig.suptitle(f"{label}, raw ERA5 700 hPa meridional wind (shaded) and wind vectors, fine grid, {UNMASKED_LABEL}, no tracker output drawn", fontsize=12)
-            fig.colorbar(m, ax=axes.ravel().tolist(), shrink=0.6, label="700 hPa meridional wind (m/s)")
+            fig.suptitle(wrap_title(fig, f"{label}, raw ERA5 700 hPa meridional wind (shaded) and wind vectors, fine grid, {UNMASKED_LABEL}, no tracker output drawn", 12), fontsize=12)
+            fig.colorbar(m, ax=used, shrink=0.8, label="700 hPa meridional wind (m/s)")
         else:
             masked = f"masked below model ground (surface pressure not above {level_hpa:g} hPa)" if sp is not None else UNMASKED_LABEL
             if shade == "zeta":
                 masked = (f"masked where the cell or a derivative neighbor is below model ground (surface pressure not above {level_hpa:g} hPa)"
                           if sp is not None else UNMASKED_LABEL)
-            fig.suptitle(f"{label}, ERA5 {level_hpa:g} hPa relative vorticity (shaded, centered differences between plotted points) and wind vectors, {masked}, no tracker output drawn", fontsize=10) if shade == "zeta" else fig.suptitle(f"{label}, raw ERA5 {level_hpa:g} hPa {spec['component']} wind {spec['symbol']} (shaded) and wind vectors, fine grid, {masked}, no tracker output drawn", fontsize=11)
+            title = (f"{label}, ERA5 {level_hpa:g} hPa relative vorticity (shaded, centered differences between plotted points) and wind vectors, {masked}, no tracker output drawn" if shade == "zeta"
+                     else f"{label}, raw ERA5 {level_hpa:g} hPa {spec['component']} wind {spec['symbol']} (shaded) and wind vectors, fine grid, {masked}, no tracker output drawn")
             units = spec.get("units", "m/s")
-            fig.text(0.5, 0.925, f"{spec['symbol']} {spec['sign']}. Below {spec['vmin']:g} {units} drawn magenta, above {spec['vmax']:g} {units} drawn black. Vectors on one scale (key {VECTOR_KEY_MS:g} m/s)."
-                     + (" Open symbols and bars are the marker file's declared positions, each drawn only at its own time and never joined." if markers is not None else "")
-                     + (f" Green bar the declared R1 reading (segments A and B, read at {LEVEL_HPA:g} hPa) at its declared times, the reader's interpretation." if reference is not None else ""),
-                     ha="center", fontsize=9)
-            fig.colorbar(m, ax=axes.ravel().tolist(), shrink=0.6, extend="both",
+            note = (f"{spec['symbol']} {spec['sign']}. Below {spec['vmin']:g} {units} drawn magenta, above {spec['vmax']:g} {units} drawn black. Vectors on one scale (key {VECTOR_KEY_MS:g} m/s)."
+                    + (" Open symbols and bars are the marker file's declared positions, each drawn only at its own time and never joined." if markers is not None else "")
+                    + (f" Green bar the declared R1 reading (segments A and B, read at {LEVEL_HPA:g} hPa) at its declared times, the reader's interpretation." if reference is not None else ""))
+            fig.suptitle(wrap_title(fig, title, 10) + "\n" + wrap_title(fig, note, 10), fontsize=10)
+            fig.colorbar(m, ax=used, shrink=0.8, extend="both",
                          label=f"{level_hpa:g} hPa relative vorticity ({units})" if shade == "zeta" else f"{level_hpa:g} hPa {spec['component']} wind {spec['symbol']} (m/s)")
             handles = [Patch(color=TERRAIN_COLOR, label="below model ground at this level, masked"), Patch(color=MISSING_COLOR, label="missing in source")]
             if shade == "zeta":
@@ -354,7 +395,7 @@ def draw_sequence(wide, steps, box, out_prefix, label, panels=PANELS, shade="v",
                     bar = any("lat_range" in pos for pos in mset["positions"])
                     handles.append(Line2D([], [], color=mset["color"], lw=2.5 if bar else 0, marker=None if bar else mset["marker"],
                                           markerfacecolor="none", markeredgecolor=mset["color"], markeredgewidth=2.0, label=mset["label"]))
-            fig.legend(handles=handles, loc="lower right", fontsize=9)
+            fig.legend(handles=handles, loc="outside lower center", ncol=len(handles), fontsize=9)
         path = f"{out_prefix}_p{f0 // panels + 1}.png"
         fig.savefig(path, dpi=100); plt.close(fig)
         entry = {"path": path, "sha256": X.digest(path), "steps": [int(k) for k in chunk], "dates": [date_of(times[k]) for k in chunk]}

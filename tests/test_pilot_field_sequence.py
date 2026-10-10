@@ -36,6 +36,9 @@ def test_the_sequence_figures_carry_the_dates_and_no_tracker_output(tmp_path):
     figs = S.draw_sequence(wide, [0, 1, 2], box, str(tmp_path / "seq"), "test", panels=2)
     assert [f["steps"] for f in figs] == [[0, 1], [2]] and all(os.path.exists(f["path"]) for f in figs)
     assert len(figs[0]["dates"]) == 2 and figs[0]["dates"][0].endswith("Z")
+    import matplotlib.image as mpimg
+    widths = [mpimg.imread(f["path"]).shape[1] for f in figs]
+    assert widths[1] < widths[0]                                         # the one-map figure is sized to its one map
     src = open(os.path.join(ROOT, "scripts", "pilot_field_sequence.py")).read()
     assert "candidate" not in src.split("def draw_sequence")[1].split("def main")[0].replace("no axis, candidate", "")   # the drawing code touches no candidate
 
@@ -178,7 +181,7 @@ def test_figures_without_a_terrain_mask_are_labeled_unmasked(tmp_path):
     real_savefig = plt.Figure.savefig
 
     def capture(self, *a, **k):
-        titles.append(self._suptitle.get_text())
+        titles.append(" ".join(self._suptitle.get_text().split()))     # titles are broken into lines, words unchanged
         return real_savefig(self, *a, **k)
     plt.Figure.savefig = capture
     try:
@@ -190,6 +193,27 @@ def test_figures_without_a_terrain_mask_are_labeled_unmasked(tmp_path):
         plt.Figure.savefig = real_savefig
     assert S.UNMASKED_LABEL in titles[0] and S.UNMASKED_LABEL in titles[1]
     assert S.UNMASKED_LABEL not in titles[2] and "masked below model ground" in titles[2]
+
+
+def test_a_figure_holds_exactly_its_maps_with_longitude_labels_on_every_column():
+    pytest.importorskip("matplotlib")
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    S = _load("pilot_field_sequence")
+    assert [S.panel_grid(n) for n in (1, 3, 4, 5, 8)] == [(1, 1), (1, 3), (1, 4), (2, 4), (2, 4)]
+    sizes = {}
+    for n in (3, 5, 8):
+        fig, used = S.make_figure(plt, n)
+        assert len(used) == n and fig.axes == used                      # no hidden axis left in the grid
+        fig.canvas.draw()
+        ncols = S.panel_grid(n)[1]
+        labeled = [i for i, ax in enumerate(used) if any(t.get_visible() and t.get_text() for t in ax.get_xticklabels())]
+        assert labeled == [i for i in range(n) if i + ncols >= n]       # the lowest map of every column, and no other
+        assert sorted({i % ncols for i in labeled}) == list(range(ncols))
+        sizes[n] = tuple(fig.get_size_inches())
+        plt.close(fig)
+    assert sizes[3][0] < sizes[8][0] and sizes[3][1] < sizes[8][1]      # sized to its maps, not a fixed eight-slot grid
 
 
 def _write_level(path, name, lats, lons, days, values, level, units="m s**-1"):
