@@ -54,13 +54,18 @@ def output_path(year, var_key, out_dir=OUT_DIR):
     return os.path.join(out_dir, f"era5_{var_key}_{year}_6h_region.nc")
 
 
-def request_for(year, var_key):
-    """The exact (dataset, request) pair that is sent, built by the pure builder."""
-    return cds_request(var_key, year, months=MONTHS, hours=SYNOPTIC_HOURS, area=AREA, grid=GRID)
+def request_for(year, var_key, area=None):
+    """The exact (dataset, request) pair that is sent, built by the pure builder. The area
+    is the protocol's unless a declared variant area is passed for this call."""
+    return cds_request(var_key, year, months=MONTHS, hours=SYNOPTIC_HOURS, area=AREA if area is None else list(area), grid=GRID)
 
 
-def plan(years, variables, out_dir=OUT_DIR, repair=True):
-    """What to retrieve, with EXISTING FILES VALIDATED rather than trusted."""
+def plan(years, variables, out_dir=OUT_DIR, repair=True, area_text=None, area=None):
+    """What to retrieve, with EXISTING FILES VALIDATED rather than trusted. A record
+    reconciled at restart names the area the file was validated against, never the
+    protocol's by default (a review found a variant file given a production record)."""
+    area_text = AREA_TEXT if area_text is None else area_text
+    area = AREA if area is None else area
     todo, done = [], []
     for year in years:
         for var in variables:
@@ -68,14 +73,14 @@ def plan(years, variables, out_dir=OUT_DIR, repair=True):
             if not os.path.exists(path):
                 todo.append((year, var, path))
                 continue
-            reason = validate_file(path, year, var, AREA_TEXT, GRID_TEXT)
+            reason = validate_file(path, year, var, area_text, GRID_TEXT)
             if reason is None:
                 # A VALID FILE WITHOUT ITS RECORD IS NOT DONE. The record names the bytes,
                 # and a restart after a stop between the rename and the record must write
                 # it rather than count the file silently.
                 if not record_matches(path):
                     if repair:
-                        dataset, request = request_for(year, var)
+                        dataset, request = request_for(year, var, area)
                         completion_record(path, year, var, None, None, dataset, request, reconciled=True)
                         print(f"  RECONCILED a completion record for {os.path.basename(path)}", flush=True)
                     else:
@@ -135,20 +140,37 @@ def main(argv=None, client=None):
     ap.add_argument("--variables", nargs="+", default=list(VARIABLES))
     ap.add_argument("--out-dir", default=OUT_DIR)
     ap.add_argument("--dry-run", action="store_true", help="print the plan and request nothing")
+    ap.add_argument("--area", nargs=4, type=float, metavar=("N", "W", "S", "E"), default=None,
+                    help="another retrieval area, for a declared domain variant; the default is version 1's buffered grid")
     args = ap.parse_args(argv)
-    want_lat, want_lon = expected_coordinates(AREA_TEXT, GRID_TEXT)
-    if (want_lat.size, want_lon.size) != EXPECTED_SHAPE:
+    # THE AREA, ITS TEXT AND ITS SHAPE ARE LOCAL TO THIS CALL: a review found module
+    # globals mutated by a variant call persisting into a later default call.
+    area, area_text, expected_shape = AREA, AREA_TEXT, EXPECTED_SHAPE
+    if args.area is not None:
+        # A VARIANT AREA IS A DIFFERENT PROTOCOL INPUT, never written into the production
+        # directory, so the output directory must be given with it, compared as resolved
+        # paths (a review bypassed a string comparison with ./, a trailing slash, an
+        # absolute path and a symbolic link).
+        if os.path.realpath(args.out_dir) == os.path.realpath(OUT_DIR):
+            raise SystemExit("REFUSED: a variant area needs its own --out-dir, never the production directory")
+        area = [float(x) for x in args.area]
+        area_text = "/".join(f"{x:g}" for x in area)
+        lat, lon = expected_coordinates(area_text, GRID_TEXT)
+        expected_shape = (lat.size, lon.size)
+    want_lat, want_lon = expected_coordinates(area_text, GRID_TEXT)
+    if (want_lat.size, want_lon.size) != expected_shape:
         raise SystemExit(f"REFUSED: the request would return {want_lat.size}x{want_lon.size}, "
-                         f"not the protocol's {EXPECTED_SHAPE}")
-    todo, done = plan(args.years, args.variables, args.out_dir, repair=not args.dry_run)
-    print("ERA5 retrieval on version 1's buffered one-degree grid")
-    print("  area   (N,W,S,E) %s, grid %s degrees, %dx%d cells" % (AREA, GRID, *EXPECTED_SHAPE))
+                         f"not the protocol's {expected_shape}")
+    todo, done = plan(args.years, args.variables, args.out_dir, repair=not args.dry_run, area_text=area_text, area=area)
+    print("ERA5 retrieval on version 1's buffered one-degree grid" if args.area is None
+          else "ERA5 retrieval on a declared variant area, one degree")
+    print("  area   (N,W,S,E) %s, grid %s degrees, %dx%d cells" % (area, GRID, *expected_shape))
     print("  level  %s hPa at %s, months %d through %d" % (LEVEL, SYNOPTIC_HOURS, MONTHS[0], MONTHS[-1]))
     print("  years  %d through %d" % (min(args.years), max(args.years)))
     print("  files  %d present and valid, %d to retrieve" % (len(done), len(todo)))
     if args.dry_run:
         for year, var, _ in todo[:8]:
-            dataset, request = request_for(year, var)
+            dataset, request = request_for(year, var, area)
             print("    would request %s %d from %s: area %s grid %s level %s"
                   % (var, year, dataset, request["area"], request["grid"], request["pressure_level"]))
         return 0
@@ -163,7 +185,7 @@ def main(argv=None, client=None):
     for n, (year, var, path) in enumerate(todo, start=1):
         started = time.time()
         partial = path + ".partial"
-        dataset, request = request_for(year, var)
+        dataset, request = request_for(year, var, area)
         try:
             client.retrieve(dataset, request, partial)
         except Exception as exc:                      # noqa: BLE001
@@ -173,7 +195,7 @@ def main(argv=None, client=None):
             print("  FAILED %s %d after %.0f s: %s: %s" % (var, year, time.time() - started,
                                                            exc.__class__.__name__, exc), flush=True)
             continue
-        reason = validate_file(partial, year, var, AREA_TEXT, GRID_TEXT)
+        reason = validate_file(partial, year, var, area_text, GRID_TEXT)
         if reason is not None:
             failures += 1
             os.replace(partial, path + ".invalid")
@@ -184,7 +206,7 @@ def main(argv=None, client=None):
         record = completion_record(path, year, var, started, time.time() - started, dataset, request)
         print("  [%d/%d] %s %d  %.1f MB  %.0f s" % (n, len(todo), var, year,
                                                     record["bytes"] / 1e6, record["elapsed_seconds"]), flush=True)
-    remaining, _ = plan(args.years, args.variables, args.out_dir, repair=False)
+    remaining, _ = plan(args.years, args.variables, args.out_dir, repair=False, area_text=area_text, area=area)
     print("done; %d failure(s), %d file(s) still missing or invalid" % (failures, len(remaining)))
     return 0 if not remaining else 1
 

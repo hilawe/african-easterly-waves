@@ -381,6 +381,9 @@ def producer_problems(record, manifest, manifest_sha256, year, side):
     for k in PROTOCOL_KEYS:
         if ps.get(k) != manifest.get(k):
             problems.append(f"{side}: protocol setting {k} is not the manifest's")
+    # a domain variant (the eastern extension) is part of the settings when either side declares one
+    if ps.get("domain_variant") != manifest.get("domain_variant"):
+        problems.append(f"{side}: the domain variant declaration is not the manifest's")
     if ps.get("manifest_sha256") != manifest_sha256:
         problems.append(f"{side}: manifest digest {ps.get('manifest_sha256')} is not the retained manifest's")
     if record.get("stage") != "tracking":

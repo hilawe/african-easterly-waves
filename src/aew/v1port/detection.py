@@ -100,7 +100,8 @@ def trough_axes(latgrid, longrid, advection, level=TROUGH_LEVEL):
 def detect_troughs(time, latgrid_coarse, longrid_coarse, u_coarse,
                    curvature_anomaly_coarse, advection_anomaly_coarse,
                    latgrid_fine, longrid_fine, curvature_anomaly_fine,
-                   coarse_threshold, fine_threshold, absorb=False):
+                   coarse_threshold, fine_threshold, absorb=False,
+                   coarse_clip_radius_deg=None):
     """One timestep of version 1 trough detection.
 
     Parameters mirror what find_ews_f.m has in hand inside its time loop: the coarse grid
@@ -110,6 +111,8 @@ def detect_troughs(time, latgrid_coarse, longrid_coarse, u_coarse,
     Returns the merged wave list from `merge_contours`, which is what the association
     stage consumes. `absorb=True` enables the first-pass absorption version 1's own code
     attempts and never completes; see `contours.merge_contours`.
+    `coarse_clip_radius_deg`, when given, applies the experimental local clip at
+    exhaustion to the COARSE merge only, the fine merge unchanged. Off by default.
     """
     lat_c = np.asarray(latgrid_coarse, dtype=float)[:, 0]
     lat_f = np.asarray(latgrid_fine, dtype=float)[:, 0]
@@ -146,11 +149,13 @@ def detect_troughs(time, latgrid_coarse, longrid_coarse, u_coarse,
                    "lon_mean": float(np.mean(lons))}
                   for lats, lons in axes]
 
-    # BOTH passes take the flag. Version 1 runs the same merge twice and its absorption
-    # is broken in both, so honouring it in one and not the other would be neither
-    # version 1 nor the repair.
+    # BOTH passes take the absorb flag. Version 1 runs the same merge twice and its
+    # absorption is broken in both, so honoring it in one and not the other would be
+    # neither version 1 nor the repair. The clip, by contrast, is coarse-only by design
+    # (its first variant), so the fine call below does not receive it.
     coarse = merge_contours(candidates, latgrid_coarse, longrid_coarse,
-                            curvature_c, coarse_threshold, absorb=absorb)
+                            curvature_c, coarse_threshold, absorb=absorb,
+                            clip_radius_deg=coarse_clip_radius_deg)
     if not coarse:
         return []
     return merge_contours(coarse, latgrid_fine, longrid_fine,

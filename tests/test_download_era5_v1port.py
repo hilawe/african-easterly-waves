@@ -238,3 +238,63 @@ def test_the_validator_refuses_fill_payload_nan_times_a_wrong_epoch_odd_dimensio
     _write_year(p, 1990, lat, lon, two_level_wind=True)
     reason = D.validate_file(p, 1990, "u700", D.AREA_TEXT, D.GRID_TEXT)
     assert reason is not None and ("length" in reason or "dimensions" in reason or "shape" in reason)
+
+
+def test_a_variant_area_is_a_named_option_that_needs_its_own_directory(tmp_path, monkeypatch, capsys):
+    """The eastern extension's retrieval: the area is given on the command line, the
+    expected shape follows from it, and the production directory is never its target."""
+    D = _load()
+    _tiny(monkeypatch, D)
+    monkeypatch.setattr(D, "EXPECTED_SHAPE", (101, 211))               # the protocol's shape, which the tiny area is not
+    with pytest.raises(SystemExit, match="not the protocol's"):
+        D.main(["--years", "1990", "--variables", "u700", "--out-dir", str(tmp_path)], client=_FakeClient("valid"))
+    with pytest.raises(SystemExit, match="needs its own --out-dir"):
+        D.main(["--years", "1990", "--variables", "u700", "--area", "2", "0", "0", "2"], client=_FakeClient("valid"))
+    client = _FakeClient("valid")
+    rc = D.main(["--years", "1990", "--variables", "u700", "--out-dir", str(tmp_path), "--area", "2", "0", "0", "2"], client=client)
+    out = capsys.readouterr().out
+    assert rc == 0 and "declared variant area" in out and len(client.targets) == 1, out
+    record = json.load(open(tmp_path / "era5_u700_1990_6h_region.nc.completion.json"))
+    assert record["request"]["area"] == [2.0, 0.0, 0.0, 2.0]
+
+
+def test_the_production_directory_is_refused_under_every_spelling_and_nothing_persists(tmp_path, monkeypatch, capsys):
+    """A review bypassed the guard with ./, a trailing slash, an absolute path and a
+    symbolic link, and found a variant call's area persisting into a later default call."""
+    D = _load()
+    _tiny(monkeypatch, D)
+    monkeypatch.chdir(tmp_path)
+    production = tmp_path / "data" / "era5" / "v1port_buffered"
+    production.mkdir(parents=True)
+    monkeypatch.setattr(D, "OUT_DIR", "data/era5/v1port_buffered")
+    os.symlink(production, tmp_path / "alias")
+    for spelling in ("data/era5/v1port_buffered", "./data/era5/v1port_buffered", "data/era5/v1port_buffered/", str(production), "alias"):
+        with pytest.raises(SystemExit, match="needs its own --out-dir"):
+            D.main(["--years", "1990", "--variables", "u700", "--out-dir", spelling, "--area", "2", "0", "0", "2"], client=_FakeClient("valid"))
+    assert list(production.iterdir()) == []                                 # nothing was written there
+    variant = tmp_path / "variant"
+    D.main(["--years", "1990", "--variables", "u700", "--out-dir", str(variant), "--area", "3", "0", "0", "3"], client=_FakeClient("valid"))
+    capsys.readouterr()
+    client = _FakeClient("valid")
+    rc = D.main(["--years", "1990", "--variables", "u700", "--out-dir", str(tmp_path / "default"), "--dry-run"], client=client)
+    out = capsys.readouterr().out
+    assert rc == 0 and "version 1's buffered one-degree grid" in out and "[2.0, 0.0, 0.0, 2.0]" in out and "3.0" not in out
+    assert D.AREA == [2.0, 0.0, 0.0, 2.0] and D.EXPECTED_SHAPE == (3, 3)
+
+
+def test_a_reconciled_record_names_the_area_the_file_was_validated_against(tmp_path, monkeypatch, capsys):
+    """A review found a valid variant file without its record given, at restart, a record
+    naming the production area."""
+    D = _load()
+    _tiny(monkeypatch, D)
+    variant = tmp_path / "variant"
+    client = _FakeClient("valid")
+    assert D.main(["--years", "1990", "--variables", "u700", "--out-dir", str(variant), "--area", "2", "0", "0", "2"], client=client) == 0
+    record = variant / "era5_u700_1990_6h_region.nc.completion.json"
+    record.unlink()                                                        # a stop between the rename and the record
+    capsys.readouterr()
+    assert D.main(["--years", "1990", "--variables", "u700", "--out-dir", str(variant), "--area", "2", "0", "0", "2"], client=_FakeClient("valid")) == 0
+    out = capsys.readouterr().out
+    assert "RECONCILED" in out
+    reconciled = json.load(open(record))
+    assert reconciled["reconciled_at_restart"] and reconciled["request"]["area"] == [2.0, 0.0, 0.0, 2.0]

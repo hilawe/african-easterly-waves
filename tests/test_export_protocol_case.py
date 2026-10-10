@@ -426,3 +426,65 @@ def test_a_failed_git_call_leaves_the_tree_state_unknown_never_clean(monkeypatch
         monkeypatch.setattr(E.subprocess, "run", git_answering(status))
         record = E.producer_record(m, digest, "era5", m["datasets"]["era5"], 2010, "tracking", {}, {})
         assert record["git_head"] == head and record["git_dirty"] is dirty, (status, record["git_head"], record["git_dirty"])
+
+
+def test_a_declared_domain_variant_is_accepted_only_inside_the_grid_minus_the_margin(tmp_path, monkeypatch):
+    """The eastern extension's contract: a manifest may declare a detection domain other
+    than the code's only by saying so, and only when the retrieval grid keeps the
+    preprocessing margin on every side. The margin is a code constant, so a manifest cannot
+    declare its way to a narrower one."""
+    E = _load()
+    base, _, _ = _accepted(tmp_path, E)
+    g = base["grid"]
+    assert E.VARIANT_MARGIN_DEG == 15.0
+    monkeypatch.setattr(E, "VARIANT_MARGIN_DEG", 0.5)                  # the fixture grid is tiny
+    def problems(**kw):
+        return [p for p in E.validate_manifest(dict(base, **kw))]
+    # the fixture's own domain is not the code's, so without a declaration it is refused
+    assert any("no domain variant is declared" in p for p in problems())
+    inside = {"lat": [g["lat_last"] + 0.5, g["lat_first"] - 0.5], "lon": [g["lon_first"] + 0.5, g["lon_last"] - 0.5]}
+    note = {"note": "the eastern extension pilot"}
+    assert [p for p in problems(domain=inside, domain_variant=note) if "domain" in p] == []
+    too_far_east = {"lat": inside["lat"], "lon": [inside["lon"][0], g["lon_last"] - 0.4]}
+    assert any("does not lie inside the grid" in p for p in problems(domain=too_far_east, domain_variant=note))
+    too_far_south = {"lat": [g["lat_last"] + 0.4, inside["lat"][1]], "lon": inside["lon"]}
+    assert any("does not lie inside the grid" in p for p in problems(domain=too_far_south, domain_variant=note))
+    reversed_lon = {"lat": inside["lat"], "lon": [inside["lon"][1], inside["lon"][0]]}
+    assert any("does not lie inside the grid" in p for p in problems(domain=reversed_lon, domain_variant=note))
+    assert any("must be a mapping with a note" in p for p in problems(domain=inside, domain_variant={}))
+    assert any("must be a mapping with a note" in p for p in problems(domain=inside, domain_variant="yes"))
+    monkeypatch.setattr(E, "VARIANT_MARGIN_DEG", 0.6)                  # a wider margin refuses the same domain
+    assert any("does not lie inside the grid" in p for p in problems(domain=inside, domain_variant=note))
+
+
+def test_a_tracking_record_carries_the_domain_variant_declaration_when_there_is_one(tmp_path):
+    E = _load()
+    base, _, _ = _accepted(tmp_path, E)
+    record = E.producer_record(base, "m" * 64, "tiny", base["datasets"]["tiny"], 2001, "tracking", {}, {})
+    assert "domain_variant" not in record["protocol_settings"]
+    variant = dict(base, domain_variant={"note": "the eastern extension pilot"})
+    record = E.producer_record(variant, "m" * 64, "tiny", base["datasets"]["tiny"], 2001, "tracking", {}, {})
+    assert record["protocol_settings"]["domain_variant"] == {"note": "the eastern extension pilot"}
+
+
+def test_the_committed_pilot_manifests_declare_the_variant_only_where_the_domain_changes():
+    """The eastern extension pilot's two manifests: the input control keeps version 1's
+    domain on the 75 E grid and declares nothing, the treatment declares the 60 E domain,
+    and the treatment's domain would be refused without its declaration."""
+    E = _load()
+    protocol = os.path.join(ROOT, "docs", "aewc_v2", "protocol")
+    control, _ = E.load_manifest(os.path.join(protocol, "manifest_east75E_control40E_2026-10-05.json"))
+    treatment, _ = E.load_manifest(os.path.join(protocol, "manifest_east75E_pilot60E_2026-10-05.json"))
+    for m in (control, treatment):
+        assert m["grid"]["area_nwse"] == [50.0, -155.0, -50.0, 75.0] and m["grid"]["shape"] == [101, 231]
+        assert m["years"] == [1979, 2010] and m["datasets"]["era5"]["directory"] == "data/era5/pilot_east_75E"
+    assert control["domain"]["lon"] == [-140.0, 40.0] and "domain_variant" not in control
+    assert treatment["domain"]["lon"] == [-140.0, 60.0] and treatment["domain"]["lat"] == [-35.0, 35.0]
+    assert "60 E" in treatment["domain_variant"]["note"]
+    undeclared = {k: v for k, v in treatment.items() if k != "domain_variant"}
+    assert any("no domain variant is declared" in p for p in E.validate_manifest(undeclared))
+    farther = dict(treatment, domain={"lat": [-35.0, 35.0], "lon": [-140.0, 61.0]})
+    assert any("does not lie inside the grid" in p for p in E.validate_manifest(farther))
+    base, _ = E.load_manifest(os.path.join(protocol, "manifest_2026-09-25.json"))
+    same = {k for k in base if k not in ("grid", "datasets", "domain", "domain_variant", "variant") and base[k] == treatment.get(k)}
+    assert same == {k for k in base if k not in ("grid", "datasets", "domain")}       # nothing else differs

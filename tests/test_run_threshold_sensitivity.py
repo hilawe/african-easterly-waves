@@ -16,6 +16,9 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
+ERA5_BASELINE_ARTIFACT = os.path.join(ROOT, "docs", "aewc_v2", "artifacts", "thresholds_protocol_era5_1979_2010.json")
+NEEDS_ERA5_ARTIFACT = pytest.mark.skipif(not os.path.exists(ERA5_BASELINE_ARTIFACT),
+                                         reason="the retained ERA5 threshold artifact is not in this tree")
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 
@@ -909,3 +912,58 @@ def test_an_explicitly_null_tracker_flags_field_is_a_mismatch_beside_and_inside_
                                    MANIFEST, "r", ("tracker_flags",)))
     assert M.settings_problems({"protocol_settings": {"tracker_flags": flags}, "dataset_specific": {}},
                                MANIFEST, "r", ("tracker_flags",)) == []          # absent is bound by the protocol settings
+
+
+@NEEDS_ERA5_ARTIFACT
+def test_the_domain_transfer_pair_reads_the_era5_baseline_artifact_and_nothing_else(tmp_path):
+    """The eastern extension pilot's treatment C: the 40 E baseline's own ERA5 numbers
+    applied to a case prepared on the 60 E domain. The pair is defined for ERA5 only and
+    its source must be an ERA5 calibration artifact, so the ERA-Interim artifact, or the
+    archived constants, cannot be transferred under this name by accident."""
+    M = _load(tmp_path)
+    with pytest.raises(SystemExit):
+        M.threshold_pair("era5-40e-rule-a", "eraint")
+    retained = os.path.join(ROOT, "docs", "aewc_v2", "artifacts", "thresholds_protocol_era5_1979_2010.json")
+    coarse, fine, label, source = M.threshold_pair("era5-40e-rule-a", "era5", retained)
+    art = json.load(open(retained))
+    assert (coarse, fine) == (art["coarse"]["threshold"], art["fine"]["threshold"]) and "domain variant" in label
+    assert source["sha256"] == M.PAIRS["era5-40e-rule-a"]["source_sha256"] == _sha(retained)
+    assert M.threshold_pair("era5-40e-rule-a", "era5")[:2] == (coarse, fine)                 # the default source is that artifact
+    # a review passed a 60 E artifact under this name: any other ERA5 artifact, even with the same numbers, is refused
+    era5 = tmp_path / "thresholds_era5.json"
+    era5.write_text(json.dumps({"schema": "thresholds-v2", "prefix": "era5", "case_id": "diag-e",
+                                "coarse": {"threshold": coarse}, "fine": {"threshold": fine}}))
+    with pytest.raises(SystemExit, match="retained baseline artifact .* and nothing else"):
+        M.threshold_pair("era5-40e-rule-a", "era5", str(era5))
+    eraint = tmp_path / "thresholds_eraint.json"
+    eraint.write_text(json.dumps({"schema": "thresholds-v2", "prefix": "eraint", "coarse": {"threshold": 1}, "fine": {"threshold": 2}}))
+    with pytest.raises(SystemExit, match="era5 thresholds-v2 calibration artifact"):
+        M.threshold_pair("era5-40e-rule-a", "era5", str(eraint))
+    with pytest.raises(SystemExit, match="eraint thresholds-v2 calibration artifact"):
+        M.threshold_pair("eraint-rule-a", "era5", str(era5))              # the dataset transfer still needs ERA-Interim's
+    assert M.PAIRS["era5-40e-rule-a"]["default_source"].endswith("thresholds_protocol_era5_1979_2010.json")
+
+
+@NEEDS_ERA5_ARTIFACT
+def test_the_pair_source_is_hashed_from_the_bytes_it_was_parsed_from(tmp_path, monkeypatch):
+    """A review swapped the source file between a parse and a separate hash and got the
+    numbers of one file under the digest of another. The file is read once: here the first
+    open yields a file with other numbers while the file on disk is the retained artifact,
+    and the transfer is refused because the parsed bytes are not the bound digest."""
+    import builtins, io, shutil
+    M = _load(tmp_path)
+    retained = os.path.join(ROOT, "docs", "aewc_v2", "artifacts", "thresholds_protocol_era5_1979_2010.json")
+    path = tmp_path / "source.json"
+    shutil.copy(retained, path)
+    other = json.load(open(retained)); other["coarse"]["threshold"] = 999.0; other["fine"]["threshold"] = 888.0
+    real_open, served = builtins.open, []
+
+    def swapping_open(file, mode="r", *args, **kwargs):
+        if str(file) == str(path) and not served:
+            served.append(file)
+            return io.BytesIO(json.dumps(other).encode()) if "b" in mode else io.StringIO(json.dumps(other))
+        return real_open(file, mode, *args, **kwargs)
+    monkeypatch.setattr(builtins, "open", swapping_open)
+    with pytest.raises(SystemExit, match="retained baseline artifact"):
+        M.threshold_pair("era5-40e-rule-a", "era5", str(path))
+    assert served                                                            # the swapped bytes were what the pair read

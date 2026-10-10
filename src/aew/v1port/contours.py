@@ -137,8 +137,42 @@ def _extent(values):
     return float(np.abs(np.max(values) - np.min(values)))
 
 
-def _select_region(masks, seed, latgrid, longrid):
+def _clip_to_seed(base_region, last_region, seed, latgrid, longrid, radius_deg):
+    """The local clip at exhaustion, the experimental variant of 2026-10-08.
+
+    The region becomes the 8-connected piece, containing the seed, of the BASE-LEVEL
+    component intersected with the disk of `radius_deg` around the SEED CELL, distance
+    Euclidean in coordinate degrees (the metric the seed choice uses, not a great-circle
+    distance). Other pieces of the intersection are dropped and counted. The result is
+    never empty because the seed is in it, and its extent is at most twice the radius
+    in each coordinate. The base level rather than the last level because the ladder's
+    own device, a stricter threshold, has failed when this runs, and bounding by
+    distance keeps the local anomaly at every strength near the seed, including the
+    axis's own cells, which lie above the base threshold but not necessarily above the
+    last level. The last level's cells inside the disk are counted for comparison.
+    """
+    from scipy import ndimage
+    d2 = (latgrid - latgrid[seed]) ** 2 + (longrid - longrid[seed]) ** 2
+    disk = d2 <= float(radius_deg) ** 2
+    inter = base_region & disk
+    kept = connected_region(inter, seed)
+    _, n_pieces = ndimage.label(inter, structure=np.ones((3, 3), dtype=int))
+    detail = {"radius_deg": float(radius_deg), "base_cells_in_disk": int(inter.sum()),
+              "last_level_cells_in_disk": int((last_region & disk).sum()),
+              "kept_cells": int(kept.sum()), "dropped_pieces": int(n_pieces - 1),
+              "dropped_cells": int(inter.sum() - kept.sum()),
+              "kept_lat_extent": float(_extent(latgrid[kept])),
+              "kept_lon_extent": float(_extent(longrid[kept]))}
+    return kept, detail
+
+
+def _select_region(masks, seed, latgrid, longrid, trace=None, clip_radius_deg=None):
     """Grow the region at each threshold and step up while it is implausibly large.
+
+    `clip_radius_deg`, when given, applies `_clip_to_seed` ONLY when the ladder has run
+    out (the cascade reached the last level and that level's region still reaches the
+    trigger). It is the experimental variant, off by default, and the selection for
+    every other input is unchanged.
 
     FAITHFUL, and the original's phrasing of this is worth preserving. Each escalation
     test examines the region at a FIXED level rather than the currently selected one:
@@ -149,16 +183,39 @@ def _select_region(masks, seed, latgrid, longrid):
 
     Because a stricter threshold can only shrink the region, the levels are nested and
     this cascade lands on the first level that is small enough. It reads as though it
-    might skip a level and it cannot.
+    might skip a level and it cannot. THE LAST LEVEL IS NEVER TESTED, so when the
+    region at the last level still reaches the extent trigger it is retained as it is.
+    That is the ladder running out, and `trace`, when a dict is passed, records it:
+    the cell count and extents at each level, the level the cascade lands on, whether
+    the ladder ran out, and the selected region itself. Recording changes nothing.
     """
     regions = [connected_region(m, seed) for m in masks]
-    chosen = regions[0]
+    extents = [(_extent(latgrid[r]), _extent(longrid[r])) for r in regions]
+    landed = 0
     for level in range(len(regions) - 1):
-        lats = latgrid[regions[level]]
-        lons = longrid[regions[level]]
-        if (_extent(lats) >= MAX_LAT_EXTENT_DEG
-                or _extent(lons) >= MAX_LON_EXTENT_DEG):
-            chosen = regions[level + 1]
+        if (extents[level][0] >= MAX_LAT_EXTENT_DEG
+                or extents[level][1] >= MAX_LON_EXTENT_DEG):
+            landed = level + 1
+    chosen = regions[landed]
+    last = len(regions) - 1
+    exhausted = bool(landed == last and (extents[last][0] >= MAX_LAT_EXTENT_DEG
+                                         or extents[last][1] >= MAX_LON_EXTENT_DEG))
+    clip = None
+    if clip_radius_deg is not None and exhausted:
+        chosen, clip = _clip_to_seed(regions[0], regions[last], seed, latgrid, longrid,
+                                     clip_radius_deg)
+    if trace is not None:
+        trace.update({
+            "levels": [{"multiple": float(m), "cells": int(r.sum()),
+                        "lat_extent": float(e[0]), "lon_extent": float(e[1])}
+                       for m, r, e in zip(THRESHOLD_LADDER, regions, extents)],
+            "level_landed": landed, "last_level": last, "exhausted": exhausted,
+            "selected_cells": int(chosen.sum()),
+            "selected_lat_extent": float(_extent(latgrid[chosen])),
+            "selected_lon_extent": float(_extent(longrid[chosen])),
+            "region": chosen, "base_region": regions[0]})
+        if clip is not None:
+            trace["clip"] = clip
     return chosen
 
 
@@ -186,8 +243,20 @@ def _hull_contains(lons, lats, points_lon, points_lat):
         return np.zeros(len(points_lon), dtype=bool)
 
 
-def merge_contours(candidates, latgrid, longrid, curvature, threshold, absorb=False):
+def merge_contours(candidates, latgrid, longrid, curvature, threshold, absorb=False,
+                   lineage=None, clip_radius_deg=None, position_from_input=False):
     """Merge trough candidates belonging to one wave, from merge_contours_f.m.
+
+    `lineage`, when a list is passed, receives one dict per input candidate recording
+    the seed it took, the region selection (`_select_region`'s trace), and the
+    candidate's fate through the three passes, so that an output can be followed back
+    to the input it came from rather than inferred from overlap. Recording changes
+    nothing in the output. `clip_radius_deg`, when given, is the experimental local
+    clip at exhaustion of `_select_region`, off by default and not version 1.
+    `position_from_input=True`, the experiment of 2026-10-09 and not version 1, gives each
+    pass-one wave its input's own `lat_mean` and `lon_mean` instead of the selected
+    region's median. Region selection, the duplicate pass, the peak refinement and the
+    extent test are unchanged, so later passes still move or drop the position.
 
     THE FIRST PASS ABSORBS NOTHING BY DEFAULT, BECAUSE VERSION 1'S DOES NOT. Its
     absorption test is
@@ -257,6 +326,7 @@ def merge_contours(candidates, latgrid, longrid, curvature, threshold, absorb=Fa
     # --- pass one: grow a region per candidate and absorb those inside its hull -------
     remaining = list(range(len(candidates)))
     merged = []
+    entries = []                    # lineage, one per input, in processing order
     while remaining:
         first = remaining[0]
         others = remaining[1:]
@@ -267,8 +337,17 @@ def merge_contours(candidates, latgrid, longrid, curvature, threshold, absorb=Fa
         nearest = int(np.argmin(d2))
         seed = (base_rows[nearest], base_cols[nearest])
 
-        region = _select_region(masks, seed, latgrid, longrid)
+        trace = {} if lineage is not None else None
+        region = _select_region(masks, seed, latgrid, longrid, trace=trace,
+                                clip_radius_deg=clip_radius_deg)
         lats, lons = latgrid[region], longrid[region]
+        if lineage is not None:
+            entries.append({"input": first, "lat_mean": float(here["lat_mean"]),
+                            "lon_mean": float(here["lon_mean"]),
+                            "seed": {"row": int(seed[0]), "col": int(seed[1]),
+                                     "lat": float(latgrid[seed]), "lon": float(longrid[seed])},
+                            "seed_distance_deg": float(np.sqrt(d2[nearest])),
+                            "select": trace, "merged": len(merged)})
 
         absorbed = []
         if absorb and others:
@@ -287,13 +366,18 @@ def merge_contours(candidates, latgrid, longrid, curvature, threshold, absorb=Fa
         time_source = candidates[absorbed[0]]["time"] if absorbed else here["time"]
         merged.append({
             "time": time_source,
-            "lat_mean": float(np.median(lats)) if lats.size else here["lat_mean"],
-            "lon_mean": float(np.median(lons)) if lons.size else here["lon_mean"],
+            "lat_mean": float(here["lat_mean"]) if position_from_input else (float(np.median(lats)) if lats.size else here["lat_mean"]),
+            "lon_mean": float(here["lon_mean"]) if position_from_input else (float(np.median(lons)) if lons.size else here["lon_mean"]),
             "region": region,
             "lat_wave": lats,
             "lon_wave": lons,
         })
         drop = set(absorbed) | {first}
+        if lineage is not None:
+            for i in absorbed:
+                entries.append({"input": i, "lat_mean": float(candidates[i]["lat_mean"]),
+                                "lon_mean": float(candidates[i]["lon_mean"]),
+                                "absorbed_by": len(merged) - 1, "merged": None})
         remaining = [i for i in remaining if i not in drop]
 
     # FAITHFUL, and surprising enough to be worth naming. The original returns here when
@@ -311,15 +395,20 @@ def merge_contours(candidates, latgrid, longrid, curvature, threshold, absorb=Fa
     # test pins this, because tidying it away is the obvious cleanup and would put the
     # port out of agreement with version 1.
     if len(merged) <= 1:
+        if lineage is not None:
+            for e in entries:
+                e["lone_wave"] = True
+                e["output"] = e["merged"]
+            lineage.extend(entries)
         return merged
 
     # --- pass two: drop centers closer together than the merge distance ---------------
-    kept = []
+    kept = []                       # merged indices, in the order they are kept
     pending = list(range(len(merged)))
     while pending:
         first = pending[0]
         others = pending[1:]
-        kept.append(merged[first])
+        kept.append(first)
         if others:
             distance_deg = great_circle_distance(
                 merged[first]["lat_mean"], merged[first]["lon_mean"],
@@ -332,7 +421,9 @@ def merge_contours(candidates, latgrid, longrid, curvature, threshold, absorb=Fa
 
     # --- pass three: reject waves too short north to south, and refine the center -----
     out = []
-    for wave in kept:
+    out_from = []                   # the merged index each output came from
+    for index in kept:
+        wave = merged[index]
         lats, lons = wave["lat_wave"], wave["lon_wave"]
         if lats.size == 0:
             continue
@@ -351,4 +442,14 @@ def merge_contours(candidates, latgrid, longrid, curvature, threshold, absorb=Fa
                                          np.max(lats), top_lon, "nm") / 60.0
         if span_deg >= MIN_EXTENT_DEG:
             out.append(wave)
+            out_from.append(index)
+    if lineage is not None:
+        for e in entries:
+            m = e["merged"]
+            if m is None:
+                continue
+            e["kept_after_pass_two"] = m in kept
+            e["output"] = out_from.index(m) if m in out_from else None
+            e["rejected_min_extent"] = bool(m in kept and m not in out_from)
+        lineage.extend(entries)
     return out

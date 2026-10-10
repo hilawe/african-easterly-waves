@@ -91,6 +91,12 @@ FIXED_TEXT = {
     ("reporting", "year_end"): "last observation on December 31, counted as potentially censored",
 }
 REGION_PRIORITY = ["NEP", "SEP", "CAM", "SAM", "NAL", "SAL", "AFR"]
+# A DOMAIN VARIANT is a manifest that declares a detection domain other than version 1's,
+# for the eastern extension (2026-10-05). It is accepted only when it says so under
+# "domain_variant", and only when the domain lies inside the retrieval grid with the
+# preprocessing contract's margin on every side. The margin is this constant, not a
+# manifest field, so a narrower margin cannot be declared into acceptance.
+VARIANT_MARGIN_DEG = 15.0
 TRACKING_SOURCES = ("src/aew/v1port/", "scripts/export_protocol_case.py")
 
 
@@ -183,8 +189,20 @@ def validate_manifest(m):
                  f"{dec['achieved_spacing_deg']} do not follow from nominal {dec['nominal_deg']} on {g['spacing_deg']} degrees")
     if float(dec["nominal_deg"]) != P.COARSE_RESOLUTION_DEG:
         p.append(f"nominal decimation {dec['nominal_deg']} is not the code's {P.COARSE_RESOLUTION_DEG}")
-    if tuple(dom["lat"]) != tuple(P.DOMAIN_LAT) or tuple(dom["lon"]) != tuple(P.DOMAIN_LON):
-        p.append(f"domain {dom} is not the code's {P.DOMAIN_LAT} by {P.DOMAIN_LON}")
+    variant = m.get("domain_variant")
+    if variant is None:
+        if tuple(dom["lat"]) != tuple(P.DOMAIN_LAT) or tuple(dom["lon"]) != tuple(P.DOMAIN_LON):
+            p.append(f"domain {dom} is not the code's {P.DOMAIN_LAT} by {P.DOMAIN_LON}, and no domain variant is declared")
+    else:
+        if not isinstance(variant, dict) or not variant.get("note"):
+            p.append("domain_variant must be a mapping with a note saying what the variant is for")
+        lat0, lat1 = (float(x) for x in dom["lat"])
+        lon0, lon1 = (float(x) for x in dom["lon"])
+        inside = (lat1 <= g["lat_first"] - VARIANT_MARGIN_DEG and lat0 >= g["lat_last"] + VARIANT_MARGIN_DEG
+                  and lon0 >= g["lon_first"] + VARIANT_MARGIN_DEG and lon1 <= g["lon_last"] - VARIANT_MARGIN_DEG)
+        if not (lat0 < lat1 and lon0 < lon1 and inside):
+            p.append(f"the variant domain {dom} does not lie inside the grid {g['area_nwse']} with a "
+                     f"{VARIANT_MARGIN_DEG:g} degree margin on every side")
     if int(m["smoothing"]["passes"]) != 1:
         p.append("the code smooths once inside detection, and the manifest asks for another count")
     for keys, text in FIXED_TEXT.items():
@@ -349,7 +367,8 @@ def producer_record(manifest, manifest_sha256, dataset_name, dataset, year, stag
     # (2026-10-03). export_tracker_case.py already records None in this case.
     status = git("status", "--porcelain", "--", "src", "scripts")
     return {"producer": "scripts/export_protocol_case.py",
-            "protocol_settings": {**{k: manifest[k] for k in PROTOCOL_KEYS}, "manifest_sha256": manifest_sha256},
+            "protocol_settings": {**{k: manifest[k] for k in PROTOCOL_KEYS}, "manifest_sha256": manifest_sha256,
+                                  **({"domain_variant": manifest["domain_variant"]} if "domain_variant" in manifest else {})},
             "dataset_specific": {"dataset": dataset_name, "label": dataset["label"], "prefix": dataset["prefix"],
                                  "year": year, "inputs_sha256": inputs_sha256, **extra},
             "stage": stage, "git_head": git("rev-parse", "HEAD"),

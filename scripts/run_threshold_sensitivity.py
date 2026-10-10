@@ -59,8 +59,16 @@ DATASET = "eraint"                                   # the default dataset; the 
 LABEL = "the archived constants of version 1 for ERA-Interim at 700 hPa"
 SOURCE = "src/aew/v1port/profiles.py, V1_ERAINT_700"
 PAIRS = {"archived": {"datasets": ("eraint",), "label": LABEL},
-         "eraint-rule-a": {"datasets": ("era5",), "label": "ERA-Interim's Rule A thresholds transferred numerically to ERA5"}}
-DEFAULT_PAIR_SOURCE = "docs/aewc_v2/artifacts/thresholds_protocol_eraint_1979_2010.json"
+         "eraint-rule-a": {"datasets": ("era5",), "label": "ERA-Interim's Rule A thresholds transferred numerically to ERA5",
+                           "source_prefix": "eraint", "default_source": "docs/aewc_v2/artifacts/thresholds_protocol_eraint_1979_2010.json"},
+         # the eastern extension pilot (2026-10-05): the 40 E baseline's own ERA5 numbers applied
+         # to a case prepared on the 60 E domain, a transfer across domains rather than datasets
+         "era5-40e-rule-a": {"datasets": ("era5",), "label": "the 40 E baseline's ERA5 Rule A thresholds transferred numerically to a domain variant",
+                             "source_prefix": "era5", "default_source": "docs/aewc_v2/artifacts/thresholds_protocol_era5_1979_2010.json",
+                             # THE SOURCE IS THE RETAINED BASELINE ARTIFACT AND NOTHING ELSE: a review passed a
+                             # 60 E artifact under this name, so the pair is bound to the baseline's digest
+                             "source_sha256": "054360b8afe8550a07a6c5c96ad481dc1c299a9235e588ea2b9d87f35d804d0d"}}
+DEFAULT_PAIR_SOURCE = PAIRS["eraint-rule-a"]["default_source"]
 
 
 def archived_constants():
@@ -79,12 +87,22 @@ def threshold_pair(pair, dataset, pair_source=None):
     if pair == "archived":
         coarse, fine = archived_constants()
         return coarse, fine, PAIRS[pair]["label"], {"kind": "port constant table", "where": SOURCE}
-    path = pair_source or DEFAULT_PAIR_SOURCE
-    art = json.load(open(path))
-    if art.get("prefix") != "eraint" or art.get("schema") != "thresholds-v2":
-        raise SystemExit(f"REFUSED: {path} is not the ERA-Interim thresholds-v2 calibration artifact")
+    path = pair_source or PAIRS[pair]["default_source"]
+    # READ ONCE: the bytes that are parsed are the bytes that are hashed, so the digest the
+    # record names is the digest of the numbers it used (a review swapped the file between
+    # a parse and a separate hash)
+    with open(path, "rb") as fh:
+        blob = fh.read()
+    digest = hashlib.sha256(blob).hexdigest()
+    art = json.loads(blob.decode())
+    if art.get("prefix") != PAIRS[pair]["source_prefix"] or art.get("schema") != "thresholds-v2":
+        raise SystemExit(f"REFUSED: {path} is not the {PAIRS[pair]['source_prefix']} thresholds-v2 calibration artifact the pair {pair!r} transfers")
+    expected = PAIRS[pair].get("source_sha256")
+    if expected and digest != expected:
+        raise SystemExit(f"REFUSED: the pair {pair!r} transfers the retained baseline artifact {expected[:12]} and nothing else; "
+                         f"another source is another experiment and needs its own pair")
     coarse, fine = float(art["coarse"]["threshold"]), float(art["fine"]["threshold"])
-    return coarse, fine, PAIRS[pair]["label"], {"kind": "calibration artifact", "path": path, "sha256": _sha256(path), "case_id": art.get("case_id")}
+    return coarse, fine, PAIRS[pair]["label"], {"kind": "calibration artifact", "path": path, "sha256": digest, "case_id": art.get("case_id")}
 
 
 def snapshot_problems(snapshot, commit, embedded):
