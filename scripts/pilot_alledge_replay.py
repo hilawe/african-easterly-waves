@@ -44,8 +44,20 @@ read the eastern-only replay's.
 
     python3 scripts/pilot_alledge_replay.py --preparation margin --control-run <B dir> --control-case <B case> \\
         --wide-dir <wide case dir> --year 1990 --out <fresh json.gz>
+
+SEVERAL WINDOWS AND LINEAGE, from 2026-10-10. `--trace-all-families` traces every family in
+the declaration in one run, logging the union of their windows, and keeps a track's raw
+history when it is seen in the box of a family whose window holds that step. `--lineage`
+records the merge lineage at the declaration's `lineage_dates`, each of which must be a
+logged step: every trough axis with its vertices, and for each input of both merges its
+center, seed, region selection level by level, pass-one position, fate and output, with
+region digests and no field arrays. At each such step the detector is run a second time
+with the lineage attached and the run refuses unless its candidates equal the production
+call's, position for position and region for region, so recording changes nothing. The
+single-family path is unchanged.
 """
 import argparse
+import datetime as dt
 import gzip
 import gzip
 import hashlib
@@ -186,6 +198,36 @@ def ring_counts(a, b):
     return {"interior": int(np.count_nonzero(diff & ~ring)), "ring": int(np.count_nonzero(diff & ring)), "corners": int(np.count_nonzero(diff & corners))}
 
 
+def _region_summary(mask, latgrid, longrid):
+    m = np.asarray(mask, bool)
+    return {"cells": int(m.sum()), "region_sha256": R.region_digest(m),
+            "median_lat": float(np.median(latgrid[m])) if m.any() else None,
+            "median_lon": float(np.median(longrid[m])) if m.any() else None}
+
+
+def serialize_lineage(lin, grids):
+    """The lineage `detect_from_prepared` fills, as JSON: every axis with its vertices and
+    mean (the coarse merge's input center), and each merge's entries with the selected
+    region summarized by cells, digest and median (the pass-one position), the base
+    region by its cells, and no array."""
+    def entries(rows, latgrid, longrid):
+        out = []
+        for e in rows:
+            row = {k: v for k, v in e.items() if k != "select"}
+            sel = e.get("select")
+            if sel is not None:
+                row["select"] = {k: v for k, v in sel.items() if k not in ("region", "base_region", "clip")}
+                row["select"]["region"] = _region_summary(sel["region"], latgrid, longrid)
+                row["select"]["base_region_cells"] = int(np.asarray(sel["base_region"], bool).sum())
+            out.append(row)
+        return out
+    axes = [{"index": i, "lat": [float(x) for x in np.asarray(la, float)], "lon": [float(x) for x in np.asarray(lo, float)],
+             "lat_mean": float(np.mean(la)), "lon_mean": float(np.mean(lo)), "n_vertices": int(np.asarray(la).size)}
+            for i, (la, lo) in enumerate(lin.get("axes") or [])]
+    return {"axes": axes, "coarse": entries(lin.get("coarse") or [], grids["latgrid_c"], grids["longrid_c"]),
+            "fine": entries(lin.get("fine") or [], grids["latgrid_f"], grids["longrid_f"])}
+
+
 def run_season(case_b, grids, ct, ft, flags, wide=None, sel=None, trace=None):
     """The loop. Native mode (`wide` None) prepares on the control case and binds to
     `detect_troughs`. Margin mode prepares on the wide case, crops, and verifies against the
@@ -205,6 +247,12 @@ def run_season(case_b, grids, ct, ft, flags, wide=None, sel=None, trace=None):
     tracks, states = [], []
     registry, graveyard, fates = {}, [], {}
     trace_steps = set(trace["steps"]) if trace is not None else set()
+    lineage_steps = set(trace.get("lineage_steps") or ()) if trace is not None else set()
+    if not lineage_steps <= trace_steps:
+        raise SystemExit("REFUSED: a lineage step is not a logged step")
+
+    def boxes_at(step):
+        return (trace.get("boxes_by_step") or {}).get(step) or [trace["box"]]
     trace_log, touched, born, pruned_at, histories, finished_index = [], set(), {}, {}, {}, {}
     bound_steps, verification = 0, {"steps": 0, "interior_differing_max": 0, "ring_differing_total": {n: 0 for n, _g in PREPARED}, "corner_differing_total": {n: 0 for n, _g in PREPARED},
                                     "ring_differing_steps": {n: 0 for n, _g in PREPARED}}
@@ -230,6 +278,13 @@ def run_season(case_b, grids, ct, ft, flags, wide=None, sel=None, trace=None):
                 verification["ring_differing_steps"][name] += int(c["ring"] > 0)
             verification["steps"] += 1
             waves = detect_from_prepared(fields, t, ct, ft, grids, absorb=absorb)
+        lineage_record = None
+        if step in lineage_steps:                                     # a second detection with the lineage attached, never used by the loop
+            lin = {}
+            again = detect_from_prepared(fields, t, ct, ft, grids, absorb=absorb, lineage=lin)
+            if MR.signature(again) != MR.signature(waves):
+                raise SystemExit(f"REFUSED: at step {step} recording the lineage changed the detector's candidates")
+            lineage_record = serialize_lineage(lin, grids)
         um, vm = PL._median_over(fields["fine_zonal_wind_smoothed"]), PL._median_over(fields["fine_meridional_wind_smoothed"])
         logged = step in trace_steps
         if logged:                                                   # read before the production call, never acted on
@@ -237,6 +292,8 @@ def run_season(case_b, grids, ct, ft, flags, wide=None, sel=None, trace=None):
                      "candidates": R.describe_candidates(waves, um, vm, trace["families"]),
                      "live_before": R.live_snapshot(tracks, states, step, registry),
                      "matching": R.read_matching(tracks, states, waves, step, exclusive, registry) if waves else []}
+            if lineage_record is not None:
+                entry["lineage"] = lineage_record
         n_before = {id(tr): len(tr["time"]) for tr in tracks}
         tracks, states = associate_step(tracks, states, waves, step, um, vm, exclusive=exclusive)
         claims, seeds = [], []
@@ -258,10 +315,10 @@ def run_season(case_b, grids, ct, ft, flags, wide=None, sel=None, trace=None):
                     raise SystemExit(f"REFUSED: at step {step} the matching read chose {m['chosen']} for track {m['birth']} and the production call claimed {actual}")
             entry["claims"], entry["seeds"] = claims, seeds
             for row in entry["live_before"]:
-                if R.in_box(row["last_lat"], row["last_lon"], trace["box"]):
+                if any(R.in_box(row["last_lat"], row["last_lon"], b) for b in boxes_at(step)):
                     touched.add(row["birth"])
             for s in seeds + claims:
-                if R.in_box(s["lat"], s["lon"], trace["box"]):
+                if any(R.in_box(s["lat"], s["lon"], b) for b in boxes_at(step)):
                     touched.add(s["birth"])
             nearest = None
             if trace.get("point") is not None and waves:
@@ -378,14 +435,18 @@ def main(argv=None):
     ap.add_argument("--domain-calibration", action="store_true", help="declare that the audit is of this control's own domain, anchored to another run's released pair on it")
     ap.add_argument("--trace-families", help="a diagnostic families file. With --trace-family, the loop is traced at that family's window steps as a side record")
     ap.add_argument("--trace-family", help="the name of the family to trace")
+    ap.add_argument("--trace-all-families", action="store_true", help="trace every family in the declaration in one run, each window with its own box")
+    ap.add_argument("--lineage", action="store_true", help="record the merge lineage at the declaration's lineage_dates, each a logged step")
     ap.add_argument("--trace-point", nargs=3, type=float, metavar=("LAT", "LON", "DAYS_SINCE_1900"), help="a documented point. At each traced step the candidate nearest it is recorded")
     ap.add_argument("--trace-radius", type=float, default=5.0, help="degrees within which a candidate or a seed counts as near the point")
     ap.add_argument("--reproduces", help="a retained replay record whose finished histories this run must reproduce exactly, refused otherwise")
     args = ap.parse_args(argv)
     if os.path.exists(args.out):
         raise SystemExit(f"REFUSED: {args.out} exists and a record is never overwritten")
-    if (args.trace_family or args.trace_point) and not args.trace_families:
-        raise SystemExit("REFUSED: a trace needs --trace-families and --trace-family")
+    if (args.trace_family or args.trace_point or args.trace_all_families or args.lineage) and not args.trace_families:
+        raise SystemExit("REFUSED: a trace needs --trace-families and --trace-family or --trace-all-families")
+    if args.trace_families and bool(args.trace_family) == bool(args.trace_all_families):
+        raise SystemExit("REFUSED: name one family with --trace-family or trace them all with --trace-all-families, not both or neither")
     if args.preparation == "native" and (args.calibration or args.transfer or args.domain_calibration):
         raise SystemExit("REFUSED: native reproduction stays under the released configuration and takes no calibration input")
     run = P.load_run(args.control_run, year=args.year)
@@ -403,11 +464,26 @@ def main(argv=None):
         raise SystemExit(f"REFUSED: the wide case differs from the control case on the control's own cells: {raw}")
     trace = None
     if args.trace_families:
-        fams = [f for f in json.load(open(args.trace_families))["families"] if f["name"] == args.trace_family]
-        if len(fams) != 1:
-            raise SystemExit(f"REFUSED: {args.trace_families} holds no single family named {args.trace_family!r}")
-        steps, _per = R.window_steps(np.asarray(case_b["time"], float).ravel(), fams)
-        trace = {"steps": set(steps), "box": fams[0]["box"], "families": fams, "point": tuple(args.trace_point) if args.trace_point else None, "radius_deg": args.trace_radius}
+        declaration = json.load(open(args.trace_families))
+        fams = declaration["families"] if args.trace_all_families else [f for f in declaration["families"] if f["name"] == args.trace_family]
+        if not fams or (args.trace_family and len(fams) != 1) or len({f["name"] for f in fams}) != len(fams):
+            raise SystemExit(f"REFUSED: {args.trace_families} holds no single family named {args.trace_family!r}" if args.trace_family
+                             else f"REFUSED: {args.trace_families} holds no families, or two with one name")
+        times_all = np.asarray(case_b["time"], float).ravel()
+        steps, per = R.window_steps(times_all, fams)
+        boxes_by_step = {k: [f["box"] for f in fams if k in per[f["name"]]] for k in steps}
+        lineage_steps = set()
+        if args.lineage:
+            for d in declaration.get("lineage_dates") or []:
+                day = (dt.datetime.strptime(d[:13], "%Y-%m-%dT%H") - dt.datetime(1900, 1, 1)).total_seconds() / 86400.0
+                hit = [k for k in range(times_all.size) if abs(times_all[k] - day) < 1.0 / 1440.0]
+                if len(hit) != 1 or hit[0] not in steps:
+                    raise SystemExit(f"REFUSED: the lineage date {d} is not exactly one logged step")
+                lineage_steps.add(hit[0])
+            if not lineage_steps:
+                raise SystemExit("REFUSED: --lineage needs the declaration's lineage_dates")
+        trace = {"steps": set(steps), "box": fams[0]["box"], "families": fams, "boxes_by_step": boxes_by_step, "lineage_steps": lineage_steps,
+                 "point": tuple(args.trace_point) if args.trace_point else None, "radius_deg": args.trace_radius}
     t0 = time.perf_counter()
     if args.preparation == "native":
         finished, counts, bound, verification = run_season(case_b, grids, ct, ft, flags, trace=trace)
@@ -432,6 +508,8 @@ def main(argv=None):
     if trace is not None:
         fam = trace["families"][0]
         trace_out = {"families_file": args.trace_families, "families_sha256": X.digest(args.trace_families), "family": fam["name"], "window": fam["window"], "box": fam["box"],
+                     "families_traced": [{"name": f["name"], "window": f["window"], "box": f["box"]} for f in trace["families"]],
+                     "lineage_steps": sorted(trace["lineage_steps"]),
                      "point": None if trace["point"] is None else {"lat": trace["point"][0], "lon": trace["point"][1], "days_since_1900": trace["point"][2]},
                      "radius_deg": trace["radius_deg"], "logged_steps": sorted(trace["steps"]), **trace["result"]}
     out = {"generated_by": "scripts/pilot_alledge_replay.py", "script_sha256": X.digest(os.path.abspath(__file__)), "year": args.year, "preparation": args.preparation, "margin_edges": "all",

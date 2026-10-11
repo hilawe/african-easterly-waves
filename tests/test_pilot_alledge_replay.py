@@ -214,3 +214,64 @@ def test_a_trace_is_a_side_record_that_leaves_the_loop_unchanged_and_names_every
     assert first is not None and first["distance_deg"] == 0.0 and first["held_by"] in res["born"] and first["within_radius"] is True
     assert all(row["fate"] in ("finished", "pruned_in_loop", "removed_as_single_observation", "removed_by_final_speed_filter") for row in res["summary"])
     assert sum(1 for row in res["summary"] if row["fate"] == "finished") == len(res["finished_index"]) == sum(1 for b in res["born"] if b in {f["birth"] for f in traced})
+
+
+def test_several_windows_keep_a_history_only_when_seen_in_the_box_of_a_family_holding_that_step(tmp_path):
+    A = _load("pilot_alledge_replay")
+    case_b, wide = analytic_case(35.0, -140.0, 39.0), analytic_case(39.0, -144.0, 43.0)
+    grids, sel = A.MR.control_grids(case_b), A.selection(case_b, wide)
+    plain, counts, _b, _v = A.run_season(case_b, grids, 4.0e-7, 2.5e-6, FLAGS, wide=wide, sel=sel)
+    everywhere, nowhere = {"lat": [-90.0, 90.0], "lon": [-180.0, 180.0]}, {"lat": [80.0, 89.0], "lon": [170.0, 179.0]}
+    fams = [{"name": "E", "box": everywhere, "window": ["s", "s"]}, {"name": "N", "box": nowhere, "window": ["s", "s"]}]
+    # the everywhere box holds only steps 0 to 3; steps 4 to 11 are logged under the empty box only
+    trace = {"steps": set(range(12)), "box": nowhere, "families": fams, "point": None, "radius_deg": 5.0,
+             "boxes_by_step": {k: ([everywhere, nowhere] if k < 4 else [nowhere]) for k in range(12)}}
+    traced, counts_t, _b2, _v2 = A.run_season(case_b, grids, 4.0e-7, 2.5e-6, FLAGS, wide=wide, sel=sel, trace=trace)
+    assert traced == plain and counts_t == counts
+    res = trace["result"]
+    seen_early = {o["birth"] for e in res["steps"] if e["step"] < 4 for o in e["seeds"] + e["claims"]} | \
+                 {r["birth"] for e in res["steps"] if e["step"] < 4 for r in e["live_before"]}
+    assert res["touched"] and set(res["touched"]) == seen_early                  # nothing is kept from the steps whose only box is empty
+
+
+def test_lineage_is_recorded_at_declared_steps_with_axis_vertices_and_leaves_the_loop_unchanged(tmp_path):
+    import json
+    A = _load("pilot_alledge_replay")
+    case_b, wide = analytic_case(35.0, -140.0, 39.0), analytic_case(39.0, -144.0, 43.0)
+    grids, sel = A.MR.control_grids(case_b), A.selection(case_b, wide)
+    plain, counts, _b, _v = A.run_season(case_b, grids, 4.0e-7, 2.5e-6, FLAGS, wide=wide, sel=sel)
+    box = {"lat": [-90.0, 90.0], "lon": [-180.0, 180.0]}
+    trace = {"steps": set(range(12)), "box": box, "families": [{"name": "T", "box": box, "window": ["s", "s"]}], "point": None, "radius_deg": 5.0,
+             "lineage_steps": {2, 5}}
+    traced, counts_t, _b2, _v2 = A.run_season(case_b, grids, 4.0e-7, 2.5e-6, FLAGS, wide=wide, sel=sel, trace=trace)
+    assert traced == plain and counts_t == counts
+    with_lineage = [e for e in trace["result"]["steps"] if "lineage" in e]
+    assert [e["step"] for e in with_lineage] == [2, 5]
+    for e in with_lineage:
+        lin = e["lineage"]
+        json.dumps(lin)                                                         # serializable, no arrays
+        assert lin["axes"] and all(len(a["lat"]) == len(a["lon"]) == a["n_vertices"] > 0 for a in lin["axes"])
+        assert len([c for c in lin["coarse"] if "absorbed_by" not in c]) == len(lin["axes"])
+        for c in lin["coarse"]:
+            assert {"input", "lat_mean", "lon_mean", "select", "output"} <= set(c) and len(c["select"]["region"]["region_sha256"]) == 64
+        finals = {c["region_sha256"] for c in e["candidates"]}
+        assert len([f for f in lin["fine"] if f.get("output") is not None]) == len(e["candidates"]) and finals
+    with pytest.raises(SystemExit, match="lineage step is not a logged step"):
+        A.run_season(case_b, grids, 4.0e-7, 2.5e-6, FLAGS, wide=wide, sel=sel, trace={**trace, "steps": {0, 1}, "lineage_steps": {5}})
+
+
+def test_the_run_refuses_if_recording_the_lineage_changes_the_candidates(monkeypatch):
+    A = _load("pilot_alledge_replay")
+    case_b, wide = analytic_case(35.0, -140.0, 39.0), analytic_case(39.0, -144.0, 43.0)
+    grids, sel = A.MR.control_grids(case_b), A.selection(case_b, wide)
+    real = A.detect_from_prepared
+
+    def altered(*a, **k):
+        out = real(*a, **k)
+        return out[:-1] if k.get("lineage") is not None else out              # a lineage path that drops a candidate
+    monkeypatch.setattr(A, "detect_from_prepared", altered)
+    box = {"lat": [-90.0, 90.0], "lon": [-180.0, 180.0]}
+    trace = {"steps": set(range(12)), "box": box, "families": [{"name": "T", "box": box, "window": ["s", "s"]}], "point": None, "radius_deg": 5.0,
+             "lineage_steps": {3}}
+    with pytest.raises(SystemExit, match="recording the lineage changed"):
+        A.run_season(case_b, grids, 4.0e-7, 2.5e-6, FLAGS, wide=wide, sel=sel, trace=trace)
