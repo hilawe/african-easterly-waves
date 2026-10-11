@@ -20,8 +20,10 @@ labeled reference arrow, so every map of a sequence reads on one scale.
 THE LAYOUT, from 2026-10-10. Each figure holds exactly its maps, in at most four columns,
 and is sized to them, with longitude labels on the lowest map of each column and the long
 titles broken into lines that fit. Before, every figure was an eight-slot grid, so a
-figure of fewer maps left empty space and hid its longitude labels. The maps themselves,
-their scales and the records are drawn as before.
+figure of fewer maps left empty space and hid its longitude labels. The image is saved at
+150 dpi, opaque, with the layout kept a quarter inch inside every edge, so no label or
+title sits at the image edge, where a viewer that frames or scales the image could clip
+it. The maps themselves, their scales and the records are drawn as before.
 
 `--surface-pressure` masks the shading and the vectors below model ground. A cell is
 kept where the instantaneous ERA5 surface pressure exceeds the plotted pressure level
@@ -66,6 +68,9 @@ PANELS = 8
 MAX_COLS = 4
 PANEL_IN = (4.4, 3.7)       # inches given to each map with its title and labels
 MARGIN_IN = (1.3, 1.5)      # the colorbar, and the title lines with the legend
+SAVE_DPI = 150
+SAVE_PAD_IN = 0.25          # white margin kept around everything drawn, on every side
+HEADER_GAP_IN = 0.12        # space between the title block and the maps' own titles
 DAYS_1900_TO_1970 = 25567.0
 LEVEL_HPA = 700.0
 VECTOR_EVERY = 2
@@ -272,7 +277,11 @@ def make_figure(plt, n):
     lowest map of each column, latitude labels on the first column, and no hidden axis is
     left in the grid."""
     nrows, ncols = panel_grid(n)
-    fig = plt.figure(figsize=(PANEL_IN[0] * ncols + MARGIN_IN[0], PANEL_IN[1] * nrows + MARGIN_IN[1]), layout="constrained")
+    w, h = PANEL_IN[0] * ncols + MARGIN_IN[0] + 2 * SAVE_PAD_IN, PANEL_IN[1] * nrows + MARGIN_IN[1] + 2 * SAVE_PAD_IN
+    fig = plt.figure(figsize=(w, h), layout="constrained")
+    # The layout runs inside a rectangle that leaves SAVE_PAD_IN on every side. A tight save
+    # would resize the figure and re-run the layout, which moves an outside legend back to the edge.
+    fig.get_layout_engine().set(rect=(SAVE_PAD_IN / w, SAVE_PAD_IN / h, 1 - 2 * SAVE_PAD_IN / w, 1 - 2 * SAVE_PAD_IN / h))
     grid = fig.subplots(nrows, ncols, sharex=True, sharey=True, squeeze=False).ravel()
     for ax in grid[n:]:
         fig.delaxes(ax)
@@ -280,10 +289,23 @@ def make_figure(plt, n):
     for i, ax in enumerate(used):
         if i + ncols >= n:                                            # no map below it
             ax.tick_params(labelbottom=True)
-            ax.set_xlabel("longitude (degrees E)", fontsize=9)
+            ax.set_xlabel("longitude (degrees E)", fontsize=10)
         if i % ncols == 0:
-            ax.set_ylabel("latitude (degrees N)", fontsize=9)
+            ax.set_ylabel("latitude (degrees N)", fontsize=10)
     return fig, used
+
+
+def set_header(fig, text, fontsize):
+    """The figure's title block, SAVE_PAD_IN below the top edge, with the maps laid out
+    below it. A title at a fixed position gets no space from the constrained layout, so its
+    measured height is taken out of the layout's rectangle instead."""
+    h = fig.get_figheight()
+    title = fig.suptitle(text, fontsize=fontsize, y=1 - SAVE_PAD_IN / h, va="top")
+    height_in = title.get_window_extent(fig.canvas.get_renderer()).height / fig.dpi
+    engine = fig.get_layout_engine()
+    x0, y0, rw, _ = engine.get()["rect"]
+    engine.set(rect=(x0, y0, rw, 1 - (SAVE_PAD_IN + height_in + HEADER_GAP_IN) / h - y0))
+    return title
 
 
 def wrap_title(fig, text, fontsize):
@@ -332,7 +354,7 @@ def draw_sequence(wide, steps, box, out_prefix, label, panels=PANELS, shade="v",
             for y in (5.0, 15.0, 25.0):
                 ax.axhline(y, color="0.4", lw=0.5, ls=":")
             date = date_of(times[k])
-            ax.set_title(date, fontsize=10)
+            ax.set_title(date, fontsize=12)
             ax.set_xlim(box[2], box[3]); ax.set_ylim(box[0], box[1])
             if not extended:
                 continue
@@ -370,7 +392,7 @@ def draw_sequence(wide, steps, box, out_prefix, label, panels=PANELS, shade="v",
                                             "within_3deg": {"cells": int(near.sum()), "terrain": int((near & (cls == "terrain")).sum())}}
             panel_records.append(rec)
         if not extended:
-            fig.suptitle(wrap_title(fig, f"{label}, raw ERA5 700 hPa meridional wind (shaded) and wind vectors, fine grid, {UNMASKED_LABEL}, no tracker output drawn", 12), fontsize=12)
+            set_header(fig, wrap_title(fig, f"{label}, raw ERA5 700 hPa meridional wind (shaded) and wind vectors, fine grid, {UNMASKED_LABEL}, no tracker output drawn", 12), 12)
             fig.colorbar(m, ax=used, shrink=0.8, label="700 hPa meridional wind (m/s)")
         else:
             masked = f"masked below model ground (surface pressure not above {level_hpa:g} hPa)" if sp is not None else UNMASKED_LABEL
@@ -383,7 +405,7 @@ def draw_sequence(wide, steps, box, out_prefix, label, panels=PANELS, shade="v",
             note = (f"{spec['symbol']} {spec['sign']}. Below {spec['vmin']:g} {units} drawn magenta, above {spec['vmax']:g} {units} drawn black. Vectors on one scale (key {VECTOR_KEY_MS:g} m/s)."
                     + (" Open symbols and bars are the marker file's declared positions, each drawn only at its own time and never joined." if markers is not None else "")
                     + (f" Green bar the declared R1 reading (segments A and B, read at {LEVEL_HPA:g} hPa) at its declared times, the reader's interpretation." if reference is not None else ""))
-            fig.suptitle(wrap_title(fig, title, 10) + "\n" + wrap_title(fig, note, 10), fontsize=10)
+            set_header(fig, wrap_title(fig, title, 10) + "\n" + wrap_title(fig, note, 10), 10)
             fig.colorbar(m, ax=used, shrink=0.8, extend="both",
                          label=f"{level_hpa:g} hPa relative vorticity ({units})" if shade == "zeta" else f"{level_hpa:g} hPa {spec['component']} wind {spec['symbol']} (m/s)")
             handles = [Patch(color=TERRAIN_COLOR, label="below model ground at this level, masked"), Patch(color=MISSING_COLOR, label="missing in source")]
@@ -395,9 +417,10 @@ def draw_sequence(wide, steps, box, out_prefix, label, panels=PANELS, shade="v",
                     bar = any("lat_range" in pos for pos in mset["positions"])
                     handles.append(Line2D([], [], color=mset["color"], lw=2.5 if bar else 0, marker=None if bar else mset["marker"],
                                           markerfacecolor="none", markeredgecolor=mset["color"], markeredgewidth=2.0, label=mset["label"]))
-            fig.legend(handles=handles, loc="outside lower center", ncol=len(handles), fontsize=9)
+            fig.legend(handles=handles, loc="outside lower center", ncol=len(handles), fontsize=9,
+                       borderaxespad=SAVE_PAD_IN * 72.0 / 9)                # the margin, in font-size units, off the figure edge
         path = f"{out_prefix}_p{f0 // panels + 1}.png"
-        fig.savefig(path, dpi=100); plt.close(fig)
+        fig.savefig(path, dpi=SAVE_DPI, facecolor="white"); plt.close(fig)
         entry = {"path": path, "sha256": X.digest(path), "steps": [int(k) for k in chunk], "dates": [date_of(times[k]) for k in chunk]}
         if extended:
             entry["panels"] = panel_records

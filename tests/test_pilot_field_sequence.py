@@ -216,6 +216,43 @@ def test_a_figure_holds_exactly_its_maps_with_longitude_labels_on_every_column()
     assert sizes[3][0] < sizes[8][0] and sizes[3][1] < sizes[8][1]      # sized to its maps, not a fixed eight-slot grid
 
 
+def test_the_saved_image_keeps_a_margin_around_every_label_and_title(tmp_path):
+    pytest.importorskip("matplotlib")
+    import matplotlib.image as mpimg
+    S = _load("pilot_field_sequence")
+    wide = _wide_with_distinct_u(steps=3)
+    lat1, lon1 = wide["latgrid"][:, 0], wide["longrid"][0]
+    box = [float(lat1.min()), float(lat1.max()), float(lon1.min()), float(lon1.max())]
+    sp = np.full((3,) + wide["u"].shape[1:], 95000.0)
+    figs = S.draw_sequence(wide, [0, 1, 2], box, str(tmp_path / "pad"), "test", panels=3, shade="u", sp=sp)
+    img = mpimg.imread(figs[0]["path"])
+    ink = img[..., :3].sum(axis=2) < 1.2                                  # any dark pixel: text, ticks, frames
+    rows, cols = np.flatnonzero(ink.any(axis=1)), np.flatnonzero(ink.any(axis=0))
+    margin = 0.8 * S.SAVE_PAD_IN * S.SAVE_DPI                              # pixels, allowing for antialiasing
+    assert rows.min() >= margin and cols.min() >= margin, (rows.min(), cols.min(), margin)
+    assert img.shape[0] - 1 - rows.max() >= margin and img.shape[1] - 1 - cols.max() >= margin
+    assert img.shape[2] == 3 or np.all(img[..., 3] == 1.0)                 # opaque, so no text sits on a transparent ground
+
+
+def test_the_title_block_never_covers_a_map_or_its_timestamp():
+    pytest.importorskip("matplotlib")
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    S = _load("pilot_field_sequence")
+    for n, lines in ((3, 4), (8, 2)):
+        fig, used = S.make_figure(plt, n)
+        for ax in used:
+            ax.set_title("1990-09-08 12Z", fontsize=12)
+        title = S.set_header(fig, "\n".join(["a long title line"] * lines), 10)
+        fig.canvas.draw()
+        r = fig.canvas.get_renderer()
+        bottom = title.get_window_extent(r).y0
+        assert all(ax.get_tightbbox(r).y1 <= bottom for ax in used)       # every map with its title sits below the block
+        assert fig.bbox.y1 - title.get_window_extent(r).y1 >= 0.9 * S.SAVE_PAD_IN * fig.dpi
+        plt.close(fig)
+
+
 def _write_level(path, name, lats, lons, days, values, level, units="m s**-1"):
     import netCDF4
     d = netCDF4.Dataset(path, "w")
