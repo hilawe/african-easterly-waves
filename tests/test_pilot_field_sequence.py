@@ -372,3 +372,23 @@ def test_markers_are_drawn_only_at_their_own_time_and_never_joined(tmp_path):
     p0, p1 = figs[0]["panels"]
     assert p0["markers_drawn"] == [] and [d["set"] for d in p1["markers_drawn"]] == ["center", "tick"]
     assert set(p1["classes"]) == set(S.ZETA_CLASSES) and p1["classes"]["edge"] > 0
+
+
+def test_the_terrain_note_states_how_the_drawn_winds_were_read(tmp_path):
+    pytest.importorskip("netCDF4")
+    import json
+    S = _load("pilot_field_sequence")
+    lats, lons = np.arange(3.0, -0.5, -1.0), np.arange(30.0, 33.5, 1.0)
+    days = [S.to_day("2000-07-28T00"), S.to_day("2000-07-28T12")]
+    shape = (2, 1, lats.size, lons.size)
+    u, v = str(tmp_path / "u600.nc"), str(tmp_path / "v600.nc")
+    _write_level(u, "u", lats, lons, days, np.full(shape, 2.0), 600.0)
+    _write_level(v, "v", lats, lons, days, np.full(shape, -1.0), 600.0)
+    sp = str(tmp_path / "sp.nc"); _write_sp(sp, lats, lons, days, np.full((2, lats.size, lons.size), 95000.0))
+    out = str(tmp_path / "o.json")
+    S.main(["--start", "2000-07-28T00", "--end", "2000-07-28T12", "--out", out, "--png-prefix", str(tmp_path / "p"), "--label", "t", "--year", "2000",
+            "--box", "0", "3", "30", "33", "--level-files", u, v, "--level-hpa", "600", "--surface-pressure", sp])
+    note = json.load(open(out))["terrain"]["not_removed"]
+    assert note == S.mask_limit_note([u, v]) and "without interpolation" in note and "were interpolated to the plotted grid" not in note
+    assert S.mask_limit_note(None).startswith("the winds were interpolated to the plotted grid before this mask")   # the wide case's note, unchanged
+

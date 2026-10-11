@@ -30,8 +30,12 @@ kept where the instantaneous ERA5 surface pressure exceeds the plotted pressure 
 (strictly), and masked where it is equal, lower or not finite. Surface pressure is read
 in pascals from a retained file whose grid must contain every plotted cell at the same
 coordinates and whose times must match every plotted step, or the run refuses. The mask
-is a display and record mask. The winds were interpolated to the plotted grid before it,
-so any influence of below-ground source values on above-ground cells is not removed by it.
+is a display and record mask. The wide case's winds were interpolated to the plotted grid
+before it, so any influence of below-ground source values on above-ground cells is not
+removed by it. Winds drawn from `--level-files` are read at the plotted points without
+interpolation by this tool, and the record says so. Their values still come from the
+retrieval service's regridding of ERA5 to the files' grid, whose influence the mask does
+not remove either.
 
 `--level-files U V` with `--level-hpa` draws another retained single-level ERA5 wind pair
 instead of the wide case's 700 hPa winds. With a wide case they are read at its grid points
@@ -428,6 +432,17 @@ def draw_sequence(wide, steps, box, out_prefix, label, panels=PANELS, shade="v",
     return figures
 
 
+def mask_limit_note(level_files):
+    """What the terrain mask does not remove, for the winds actually drawn. The wide case's
+    winds were interpolated to the plotted grid by this project. Level-file winds are read at
+    the plotted points without interpolation here, but their values come from the retrieval
+    service's regridding of ERA5, so neither mask removes below-ground influence."""
+    if level_files:
+        return ("this tool reads the level files' winds at the plotted points without interpolation; their values come from the retrieval service's "
+                "regridding of ERA5 to the files' grid, so influence of below-ground native values through that regridding on kept cells is not removed")
+    return "the winds were interpolated to the plotted grid before this mask, so influence of below-ground source values on kept cells is not removed"
+
+
 def grid_from_level_file(path, year):
     """A grid and time axis taken from a retained level file, for a year with no wide case:
     the file's integer-degree latitudes and longitudes, in the file's order, and its times
@@ -537,7 +552,7 @@ def main(argv=None):
             "rule": f"kept where surface pressure > {args.level_hpa:g} hPa, strictly; equal or lower is below model ground and masked; non-finite surface pressure is masked and counted apart",
             "alignment": "every plotted cell a coordinate of the surface-pressure grid within 1e-6 degrees, every step one of its times within one minute, no interpolation",
             "sensitivity": "terrain_with_25hPa_buffer counts the cells the project's terrain module would mask with its default 25 hPa buffer",
-            "not_removed": "the winds were interpolated to the plotted grid before this mask, so influence of below-ground source values on kept cells is not removed"}
+            "not_removed": mask_limit_note(args.level_files)}
         if args.shade == "zeta":
             out["shaded"]["method"] = ("dv/dx - du/dy + u tan(lat)/a on the sphere, a = 6.371e6 m, centered differences between the neighboring plotted points; "
                                        "kept only where the cell and its four stencil neighbors are above model ground with finite winds; box-edge cells left blank")
