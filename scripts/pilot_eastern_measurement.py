@@ -24,6 +24,7 @@ read longitude it equals the R1 pilot's distance to the axis segment.
 """
 import argparse
 import gzip
+import hashlib
 import json
 import math
 import os
@@ -44,7 +45,10 @@ def lon_range(m):
 
 def ref_distance(lat, lon, m):
     """Euclidean degrees to the nearest point of the read longitude (value or range) by the
-    read latitude range."""
+    read latitude range. A map carrying several `geometries` (an alternative reading with
+    two rows at one date) takes the nearest of them."""
+    if m.get("geometries"):
+        return min(ref_distance(lat, lon, g) for g in m["geometries"])
     lo, hi = lon_range(m)
     dlon = max(lo - float(lon), 0.0, float(lon) - hi)
     la0, la1 = float(m["lat_range"][0]), float(m["lat_range"][1])
@@ -213,10 +217,48 @@ def segment_summaries(per_map, seg, name):
     return out
 
 
+def apply_alternative_reading(ref, path):
+    """The declaration's maps with their read geometry replaced by an alternative reading's
+    at the dates the reading scores (status identified or weak), the other maps set aside
+    and named. Segments, case boxes and scored flags are the declaration's. A transition
+    whose map the reading leaves unscored is set aside too. The families, windows and
+    lineage dates stay the declaration's, so the trace's binding to it is unchanged."""
+    with open(path, "rb") as fh:
+        blob = fh.read()
+    alt = json.loads(blob)
+    maps, unscored, weak = [], [], []
+    for m in ref["maps"]:
+        rows = alt["maps"].get(m["date"]) or []
+        geoms = [g for g in rows if g.get("status") in ("identified", "weak")]
+        if not geoms:
+            unscored.append({"date": m["date"], "segment": m["segment"], "scored": m["scored"], "status": [g.get("status") for g in rows] or ["not reported"]})
+            continue
+        m2 = {k: v for k, v in m.items() if k not in ("axis_lon", "axis_lon_range", "lat_range")}
+        first = geoms[0]
+        if "axis_lon_range" in first:
+            m2["axis_lon_range"] = first["axis_lon_range"]
+        else:
+            m2["axis_lon"] = first["axis_lon"]
+        m2["lat_range"] = first["lat_range"]
+        m2["geometries"] = [{k: g[k] for k in ("axis_lon", "axis_lon_range", "lat_range") if k in g} for g in geoms]
+        m2["reading_status"] = [g["status"] for g in geoms]
+        if all(g["status"] == "weak" for g in geoms):
+            weak.append(m["date"])
+        maps.append(m2)
+    dates = {m["date"] for m in maps}
+    transitions = [t for t in ref.get("transitions", []) if t["from"]["date"] in dates and t["to"]["date"] in dates]
+    kept = {t["name"] for t in transitions}
+    block = {"path": path, "sha256": hashlib.sha256(blob).hexdigest(), "source": alt.get("source"), "maps_scored": len(maps), "maps_unscored": unscored,
+             "weak_only_maps": weak, "transitions_skipped": [t["name"] for t in ref.get("transitions", []) if t["name"] not in kept],
+             "label": "an additional model interpretation of the fields, not a scientific adjudication and not a calibrated uncertainty estimate"}
+    return dict(ref, maps=maps, transitions=transitions), block
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     for name in ("--reference", "--trace", "--finished", "--out", "--trace-digest"):
         ap.add_argument(name, required=True)
+    ap.add_argument("--alternative-reading", help="a parsed alternative reading whose geometry replaces the declaration's at the dates it scores (EASTERN_ALTERNATIVE_READINGS_2026-10-13.md)")
     args = ap.parse_args(argv)
     if os.path.exists(args.out):
         raise SystemExit(f"REFUSED: {args.out} exists and a record is never overwritten")
@@ -225,6 +267,9 @@ def main(argv=None):
         raise SystemExit("REFUSED: the trace's digest does not begin with the one the replay logged")
     decl = json.load(open(args.reference))
     ref, tols = decl["reference"], decl["tolerances"]
+    alt_block = None
+    if args.alternative_reading:
+        ref, alt_block = apply_alternative_reading(ref, args.alternative_reading)
     tol, alt = float(tols["positional_deg"]), float(tols["alternative_deg"])
     with gzip.open(args.trace, "rb") as fh:
         trace = json.loads(fh.read())
@@ -267,7 +312,8 @@ def main(argv=None):
                        "maps_covered_by_a_history": sm["maps_covered"], "maps_uncovered_by_a_history": sm["maps_uncovered"],
                        "one_history_observes_every_map": sm["one_history_observes_every_map"], "histories_touching": sm["histories_touching_count"],
                        "overlapping_maps": len(sm["overlapping_coverage"]), "confirmed_duplicates": len(sm["confirmed_duplicates"]),
-                       "west_of_40E_maps": [m["date"] for m in maps if m["west_of_40E"]]}
+                       "west_of_40E_maps": [m["date"] for m in maps if m["west_of_40E"]],
+                       "maps_unscored_by_reading": [u["date"] for u in (alt_block or {}).get("maps_unscored", []) if u["segment"] == s]}
         summary[name] = {"segments": rows, "transitions": {t["name"]: t["transition"] for t in r["transitions"]}}
     summary["intervals"] = {iv["interval"]["name"]: iv["displacement_category_counts_by_stationary_parameter"] for iv in intervals}
     summary["finished_histories_near_a_scored_map"] = len(fin)
@@ -277,7 +323,7 @@ def main(argv=None):
                       "trace": {"path": args.trace, "sha256": M.sha256_of(args.trace), "sha256_decompressed": trace_digest, "declared_digest": args.trace_digest,
                                 "limit": "agreement with the fingerprint the replay logged, not the correctness or completeness of the replay's logging"},
                       "finished": {"path": args.finished, "sha256": M.sha256_of(args.finished), "sha256_decompressed": M.sha256_decompressed(args.finished)}},
-           "input_contract_checked": True, "reference_declared": decl, "scored_only_at_inspected_maps": True,
+           "input_contract_checked": True, "reference_declared": decl, "scored_only_at_inspected_maps": True, "alternative_reading": alt_block,
            "replay": {"reproduces": trace.get("reproduces"), "elapsed_seconds": trace.get("elapsed_seconds"), "logged_steps": len(tr["steps"]), "configuration": trace.get("configuration")},
            "summary": summary, "results": results, "intervals": intervals,
            "finished_stage": {"note": "reported separately; raw and smoothed positions side by side; not required for detection", "finished_histories_near_a_scored_map": fin},

@@ -178,3 +178,38 @@ def test_a_broken_chain_is_unresolved_and_a_map_without_lineage_refuses():
     assert r["stage"].startswith("unresolved")
     with pytest.raises(SystemExit, match="carries no lineage"):
         L.read_map({"candidates": []}, M0, 3.0)
+
+
+# --- an alternative reading (EASTERN_ALTERNATIVE_READINGS_2026-10-13.md, section 1) --------
+
+def test_a_map_with_several_geometries_takes_the_nearest():
+    m = {"axis_lon": 44.0, "lat_range": [10.0, 20.0], "geometries": [{"axis_lon": 44.0, "lat_range": [10.0, 20.0]}, {"axis_lon_range": [58.0, 60.0], "lat_range": [10.0, 20.0]}]}
+    assert E.ref_distance(15.0, 57.0, m) == pytest.approx(1.0) and E.ref_distance(15.0, 46.0, m) == pytest.approx(2.0)
+
+
+def test_an_alternative_reading_replaces_geometry_where_it_scores_and_sets_the_rest_aside(tmp_path):
+    argv, out = _fixture(tmp_path)
+    alt = {"source": "synthetic", "maps": {"2006-08-01T12": [{"status": "identified", "axis_lon": 48.0, "lat_range": [10.0, 20.0]}],
+                                           "2006-08-02T00": [{"status": "identified", "axis_lon": 44.0, "lat_range": [10.0, 20.0]},
+                                                             {"status": "weak", "axis_lon": 40.5, "lat_range": [10.0, 20.0]}],
+                                           "2006-08-02T12": [{"status": "indeterminate"}]}}
+    alt_path = tmp_path / "alt.json"
+    alt_path.write_text(json.dumps(alt))
+    assert E.main(argv + ["--alternative-reading", str(alt_path)]) == 0
+    rec = json.loads(out.read_text())
+    block = rec["alternative_reading"]
+    assert block["source"] == "synthetic" and block["maps_scored"] == 2 and [u["date"] for u in block["maps_unscored"]] == ["2006-08-02T12"]
+    assert block["transitions_skipped"] == [] and block["weak_only_maps"] == []
+    tol = rec["summary"]["tolerance"]["segments"]
+    assert tol["S1"]["maps"] == 1 and tol["S2"]["maps"] == 1 and tol["S2"]["maps_unscored_by_reading"] == ["2006-08-02T12"]
+    assert tol["S2"]["maps_with_an_unclaimed_candidate_within"] == ["2006-08-02T00"], "the 40.5 E candidate is within tolerance of the second geometry"
+    per = {m["date"]: m for m in rec["results"]["tolerance"]["maps"]}
+    assert set(per) == {"2006-08-01T12", "2006-08-02T00"} and per["2006-08-02T00"]["detection"]["nearest"]["distance_deg"] == 0.0
+    assert rec["summary"]["tolerance"]["transitions"] == {"S1_S2": "continues"} and rec["reference_declared"]["reference"]["maps"][2]["axis_lon"] == 39.0, "the declaration is recorded unchanged"
+    alt["maps"]["2006-08-01T12"] = [{"status": "none"}]
+    alt_path.write_text(json.dumps(alt))
+    out2 = tmp_path / "m2.json"
+    argv2 = [a if a != str(out) else str(out2) for a in argv]
+    assert E.main(argv2 + ["--alternative-reading", str(alt_path)]) == 0
+    rec2 = json.loads(out2.read_text())
+    assert rec2["alternative_reading"]["transitions_skipped"] == ["S1_S2"] and rec2["summary"]["tolerance"]["transitions"] == {}
