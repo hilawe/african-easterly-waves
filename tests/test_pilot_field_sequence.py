@@ -392,3 +392,50 @@ def test_the_terrain_note_states_how_the_drawn_winds_were_read(tmp_path):
     assert note == S.mask_limit_note([u, v]) and "without interpolation" in note and "were interpolated to the plotted grid" not in note
     assert S.mask_limit_note(None).startswith("the winds were interpolated to the plotted grid before this mask")   # the wide case's note, unchanged
 
+
+
+def test_marked_meridians_are_drawn_on_every_map_and_named_in_the_record(tmp_path):
+    pytest.importorskip("matplotlib")
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.axes
+    S = _load("pilot_field_sequence")
+    wide = _wide_with_distinct_u(steps=3)
+    lat1, lon1 = wide["latgrid"][:, 0], wide["longrid"][0]
+    box = [float(lat1.min()), float(lat1.max()), float(lon1.min()), float(lon1.max())]
+    drawn = []
+    real = matplotlib.axes.Axes.axvline
+
+    def capture(self, x, *a, **k):
+        drawn.append(float(x))
+        return real(self, x, *a, **k)
+    matplotlib.axes.Axes.axvline = capture
+    try:
+        S.draw_sequence(wide, [0, 1, 2], box, str(tmp_path / "mk"), "test", panels=2, shade="u", mark_lons=[60.0])
+    finally:
+        matplotlib.axes.Axes.axvline = real
+    assert drawn.count(60.0) == 3 and drawn.count(40.0) == 3, "one 60 E mark and one 40 E line per map"
+    drawn.clear()
+    matplotlib.axes.Axes.axvline = capture
+    try:
+        S.draw_sequence(wide, [0], box, str(tmp_path / "nomk"), "test", panels=1, shade="u")
+    finally:
+        matplotlib.axes.Axes.axvline = real
+    assert 60.0 not in drawn and drawn.count(40.0) == 1, "nothing is marked unless asked"
+
+
+def test_the_record_names_the_marked_meridians(tmp_path):
+    pytest.importorskip("netCDF4")
+    import json
+    S = _load("pilot_field_sequence")
+    lats, lons = np.arange(3.0, -0.5, -1.0), np.arange(30.0, 33.5, 1.0)
+    days = [S.to_day("2000-07-28T00"), S.to_day("2000-07-28T12")]
+    shape = (2, 1, lats.size, lons.size)
+    u, v = str(tmp_path / "u700.nc"), str(tmp_path / "v700.nc")
+    _write_level(u, "u", lats, lons, days, np.full(shape, 2.0), 700.0)
+    _write_level(v, "v", lats, lons, days, np.full(shape, -1.0), 700.0)
+    out = str(tmp_path / "o.json")
+    S.main(["--start", "2000-07-28T00", "--end", "2000-07-28T12", "--out", out, "--png-prefix", str(tmp_path / "p"), "--label", "t", "--year", "2000",
+            "--box", "0", "3", "30", "33", "--level-files", u, v, "--mark-lons", "60"])
+    rec = json.load(open(out))["declared"]
+    assert rec["mark_lons"] == [60.0] and "the 40 E line, the 60 E line, 5, 15 and 25 N lines" in rec["drawn"]

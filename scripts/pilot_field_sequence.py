@@ -319,9 +319,10 @@ def wrap_title(fig, text, fontsize):
     return textwrap.fill(text, width=width, break_long_words=False, break_on_hyphens=False)
 
 
-def draw_sequence(wide, steps, box, out_prefix, label, panels=PANELS, shade="v", sp=None, reference=None, level_hpa=LEVEL_HPA, markers=None):
+def draw_sequence(wide, steps, box, out_prefix, label, panels=PANELS, shade="v", sp=None, reference=None, level_hpa=LEVEL_HPA, markers=None, mark_lons=()):
     """Figures of `panels` maps each, a wind component shaded with (u, v) vectors, the 40 E
-    line and the 5, 15 and 25 N lines for orientation. With the default shade and no
+    line and the 5, 15 and 25 N lines for orientation, and a dash-dotted meridian at each
+    of `mark_lons` (the detector's 60 E edge, when the box runs past it). With the default shade and no
     surface pressure or reference, the maps are drawn as before, in the layout of
     `make_figure`. Returns the figure
     paths, the panel dates and, per panel, the cell classes, the out-of-range counts and
@@ -355,6 +356,8 @@ def draw_sequence(wide, steps, box, out_prefix, label, panels=PANELS, shade="v",
             arr = panel_arrays(wide, k, rows, cols, shade, sp_k, level_hpa)
             m = draw_panel(ax, lon1, lat1, arr, shade, extended)
             ax.axvline(40.0, color="k", lw=0.8, ls="--")
+            for x in mark_lons:
+                ax.axvline(float(x), color="k", lw=0.8, ls="-.")
             for y in (5.0, 15.0, 25.0):
                 ax.axhline(y, color="0.4", lw=0.5, ls=":")
             date = date_of(times[k])
@@ -495,6 +498,7 @@ def main(argv=None):
                     help="retained ERA5 single-level u and v files to draw instead of the wide case's 700 hPa winds, read at the wide case's points and times exactly, or without a wide case at the U file's integer-degree points and times")
     ap.add_argument("--markers", help="a marker file of declared positions, each drawn only on the map at its own time, never joined across times")
     ap.add_argument("--level-hpa", type=float, default=LEVEL_HPA, help="the pressure level drawn; must be the level the files hold, and 700 without --level-files")
+    ap.add_argument("--mark-lons", nargs="+", type=float, default=[], metavar="LON", help="meridians to mark on every map besides the 40 E line, for example the detector's 60 E edge")
     args = ap.parse_args(argv)
     if args.level_files is None and args.level_hpa != LEVEL_HPA:
         raise SystemExit(f"REFUSED: the wide case holds {LEVEL_HPA:g} hPa only; another level needs --level-files")
@@ -526,16 +530,17 @@ def main(argv=None):
         level_winds = {"latgrid": lat[rows, :][:, cols], "longrid": lon[rows, :][:, cols], "time": np.asarray(step_days, float),
                        "u": field_on(args.level_files[0], "u", "m s**-1", lat[rows, 0], lon[0, cols], step_days, args.level_hpa),
                        "v": field_on(args.level_files[1], "v", "m s**-1", lat[rows, 0], lon[0, cols], step_days, args.level_hpa)}
-        figures = draw_sequence(level_winds, list(range(len(steps))), args.box, args.png_prefix, args.label, shade=args.shade, sp=sp, reference=reference, level_hpa=args.level_hpa, markers=markers)
+        figures = draw_sequence(level_winds, list(range(len(steps))), args.box, args.png_prefix, args.label, shade=args.shade, sp=sp, reference=reference, level_hpa=args.level_hpa, markers=markers, mark_lons=args.mark_lons)
         figures = remap_steps(figures, steps)
     else:
-        figures = draw_sequence(wide, steps, args.box, args.png_prefix, args.label, shade=args.shade, sp=sp, reference=reference, markers=markers)
+        figures = draw_sequence(wide, steps, args.box, args.png_prefix, args.label, shade=args.shade, sp=sp, reference=reference, markers=markers, mark_lons=args.mark_lons)
     spec = SHADES[args.shade]
+    marks = "".join(f", the {x:g} E line" for x in args.mark_lons)
     out = {"generated_by": "scripts/pilot_field_sequence.py", "script_sha256": X.digest(os.path.abspath(__file__)), "year": args.year,
            "wide": ({"dir": args.wide_dir, "case_sha256": wide["sha256"], "record_sha256": wide["record_sha256"]} if args.wide_dir
                     else {"dir": None, "grid_from": args.level_files[0], "sha256": wide["sha256"], "points": "the file's integer-degree latitudes and longitudes"}),
-           "declared": {"start": args.start, "end": args.end, "every_hours": args.every_hours, "box": [float(x) for x in args.box], "label": args.label,
-                        "drawn": f"{spec['symbol']}{args.level_hpa:g} shaded, (u, v) vectors, the 40 E line, 5, 15 and 25 N lines; no axis, candidate, history or prepared field"},
+           "declared": {"start": args.start, "end": args.end, "every_hours": args.every_hours, "box": [float(x) for x in args.box], "label": args.label, "mark_lons": [float(x) for x in args.mark_lons],
+                        "drawn": f"{spec['symbol']}{args.level_hpa:g} shaded, (u, v) vectors, the 40 E line{marks}, 5, 15 and 25 N lines; no axis, candidate, history or prepared field"},
            "steps": steps, "figures": figures,
            "terrain_mask": "applied, see terrain" if sp is not None else "none applied, the figures are labeled UNMASKED"}
     if args.level_files:
