@@ -64,9 +64,9 @@ def main(argv=None):
     print(f"wrote {path}")
     print(f"  {field.shape} at {native} deg -> {port.shape} at "
           f"{args.coarse_resolution}")
-    print(f"  kernel width {width}, stride {stride}   "
-          f"{'EVEN, so the window convention matters here' if width % 2 == 0 else
-             'odd, so both conventions agree and this case cannot detect the defect'}")
+    parity = ("EVEN, so the window convention matters here" if width % 2 == 0
+              else "odd, so both conventions agree and this case cannot detect the defect")
+    print(f"  kernel width {width}, stride {stride}   {parity}")
     return 0
 
 

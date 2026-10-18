@@ -114,7 +114,8 @@ def main(argv=None):
                 continue
             e = m["edge"]["primary"]["lon"]; rv = m["reversal"]["lon"]
             z = m["zs"] or m["za"]
-            cells.append(f"{m['i1']['lon']:g}|{'-' if e is None else f'{e:g}'}|{'-' if rv is None else f'{rv:.1f}'}|{'-' if not z else f'{z['lon']:g}'}")
+            zl = None if not z else z["lon"]   # kept outside the f-string, which Python 3.10 cannot nest with the same quotes
+            cells.append(f"{m['i1']['lon']:g}|{'-' if e is None else f'{e:g}'}|{'-' if rv is None else f'{rv:.1f}'}|{'-' if zl is None else f'{zl:g}'}")
         print(f"{row} N: " + "  ".join(cells))
     if a.with_minima:
         print(f"# every wind minimum per row and step{'' if a.minima_below is None else f' at or under {a.minima_below:g} m/s'}, lon(v): '*' the selected (deepest inside the window), 'W' west of the window, 'E' second window, 'o' other; competing minima are read here, not from the selection")
