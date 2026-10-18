@@ -14,6 +14,16 @@ side of the streak, capped at eight days centered on it. A season with no qualif
 streak falls through to the next season by amplitude, and the fallback is recorded.
 
     python3 scripts/pilot_stage_d_select.py RECORD... --exclude 1990 2005 2006 --out OUT.json
+
+Corrected for stage E (`EASTERN_STAGE_E_EVALUATION_2026-10-17.md`, section 2) on 2026-10-17,
+after the stage D record (section 6, corrected at section 15) recorded two latent defects:
+the slope's time axis assumed a quarter day per sample without reading the record's
+cadence, and the eight-day cap centered on a streak could put a window bound between the
+record's time steps. The cadence is now read from the record and a non-uniform one is
+refused, the slope uses real elapsed hours, the window is chosen among the record's own
+time steps (the cap is a whole number of steps centered on the streak's middle sample), and
+the output names the band's latitude bounds from the record it read. The rule is otherwise
+unchanged. The stage D selection record (script digest 3fa6ab051c7df6c4) stands as produced.
 """
 import argparse
 import datetime as dt
@@ -46,6 +56,16 @@ def hours_between(a, b):
     return (_parse(b) - _parse(a)).total_seconds() / 3600.0
 
 
+def cadence_hours(record):
+    """The one uniform step of the record's times, in hours. A record whose consecutive
+    times are not all the same positive step is refused rather than assumed six-hourly."""
+    times = record["times"]
+    steps = sorted({round(hours_between(a, b), 6) for a, b in zip(times, times[1:])})
+    if len(steps) != 1 or steps[0] <= 0:
+        raise SystemExit(f"REFUSED: the record's times are not on one uniform cadence (steps {steps} h)")
+    return float(steps[0])
+
+
 def _array(record):
     lons = np.asarray(record["lons"], float)
     series = np.array([[np.nan if x is None else x for x in row] for row in record["bands"][BAND]["series"]], float)
@@ -63,6 +83,7 @@ def streaks(record):
     """Every maximal run for each sign, qualifying or not, in time order."""
     lons, series, inside = _array(record)
     times = record["times"]
+    cadence_hours(record)
     sub = series[:, inside]; sub_lons = lons[inside]
     out = []
     for sign in (1, -1):
@@ -85,7 +106,7 @@ def streaks(record):
             while j + 1 < len(times) and ext_lon[j + 1] is not None and abs(ext_lon[j + 1] - ext_lon[j]) <= MAX_STEP_DEG:
                 j += 1
             hours = hours_between(times[k], times[j])
-            tt = np.arange(j - k + 1) * 0.25
+            tt = np.array([hours_between(times[k], times[i]) for i in range(k, j + 1)]) / 24.0   # real elapsed days, not an assumed quarter day per sample
             ll = np.array(ext_lon[k:j + 1])
             slope = float(np.polyfit(tt, ll, 1)[0]) if len(tt) >= 2 else 0.0
             amp = float(max(ext_val[k:j + 1]))
@@ -105,13 +126,17 @@ def select_streak(record):
 
 
 def window_for(streak, record):
-    s, e = _parse(streak["start"]) - dt.timedelta(hours=PAD_HOURS), _parse(streak["end"]) + dt.timedelta(hours=PAD_HOURS)
-    if (e - s).total_seconds() / 3600.0 > MAX_WINDOW_HOURS:
-        mid = _parse(streak["start"]) + (_parse(streak["end"]) - _parse(streak["start"])) / 2
-        s, e = mid - dt.timedelta(hours=MAX_WINDOW_HOURS / 2), mid + dt.timedelta(hours=MAX_WINDOW_HOURS / 2)
-    first, last = _parse(record["times"][0]), _parse(record["times"][-1])
-    s, e = max(s, first), min(e, last)
-    return {"start": s.strftime("%Y-%m-%dT%H"), "end": e.strftime("%Y-%m-%dT%H"), "hours": (e - s).total_seconds() / 3600.0}
+    """The window as indices into the record's times, so every bound is a record time:
+    one day of padding either side, and when that exceeds the cap, a whole number of
+    steps centered on the streak's middle sample, clipped to the record."""
+    times = record["times"]; cad = cadence_hours(record); n = len(times)
+    pad = int(round(PAD_HOURS / cad)); cap = int(round(MAX_WINDOW_HOURS / cad))
+    i0, i1 = streak["i_start"] - pad, streak["i_end"] + pad
+    if i1 - i0 > cap:
+        mid = (streak["i_start"] + streak["i_end"]) // 2
+        i0, i1 = mid - cap // 2, mid + cap // 2
+    i0, i1 = max(0, i0), min(n - 1, i1)
+    return {"start": times[i0], "end": times[i1], "i_start": i0, "i_end": i1, "hours": hours_between(times[i0], times[i1]), "steps": i1 - i0 + 1}
 
 
 def main(argv=None):
@@ -133,12 +158,17 @@ def main(argv=None):
         if sel is None:
             fallbacks.append({"year": s["year"], "amplitude": s["amplitude"], "reason": "no qualifying streak"})
             continue
+        band = (s["record"].get("declared") or {}).get("bands", {}).get(BAND)
         chosen = {"year": s["year"], "path": s["path"], "sha256": s["sha256"], "amplitude": s["amplitude"], "streak": sel, "window": window_for(sel, s["record"]),
+                  "cadence_hours": cadence_hours(s["record"]),
+                  "band": {"name": BAND, "lat_lo": band.get("lat_lo") if band else None, "lat_hi": band.get("lat_hi") if band else None, "source": "the record's declared bands" if band else "not declared in the record"},
                   "all_streaks": [dict(x) for x in streaks(s["record"])]}
         break
     out = {"generated_by": "scripts/pilot_stage_d_select.py", "script_sha256": sha256_of(os.path.abspath(__file__)),
-           "declared": "EASTERN_STAGE_D_EVALUATION_2026-10-17.md, section 2", "rule": {"lon_range": LON_RANGE, "min_magnitude_ms": MIN_MAGNITUDE, "max_step_deg": MAX_STEP_DEG,
-           "min_hours": MIN_HOURS, "min_west_rate_deg_per_day": MIN_WEST_RATE, "pad_hours": PAD_HOURS, "max_window_hours": MAX_WINDOW_HOURS, "band": BAND},
+           "declared": "EASTERN_STAGE_D_EVALUATION_2026-10-17.md, section 2, as corrected for stage E in EASTERN_STAGE_E_EVALUATION_2026-10-17.md, section 2",
+           "rule": {"lon_range": LON_RANGE, "min_magnitude_ms": MIN_MAGNITUDE, "max_step_deg": MAX_STEP_DEG,
+           "min_hours": MIN_HOURS, "min_west_rate_deg_per_day": MIN_WEST_RATE, "pad_hours": PAD_HOURS, "max_window_hours": MAX_WINDOW_HOURS, "band": BAND,
+           "cadence": "read from each record and refused unless uniform", "window": "bounds chosen among the record's time steps"},
            "excluded": a.exclude, "ranking": [{"year": s["year"], "amplitude": s["amplitude"], "sha256": s["sha256"]} for s in seasons], "fallbacks": fallbacks, "selected": chosen}
     with open(a.out, "w", encoding="utf-8") as fh:
         json.dump(out, fh)

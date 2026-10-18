@@ -73,3 +73,52 @@ def test_a_jump_breaks_a_streak_and_a_short_one_does_not_qualify():
     neg = [s for s in S.streaks(rec) if s["sign"] == -1]
     assert len(neg) == 2 and all(s["hours"] < 48 for s in neg) and not any(s["qualifies"] for s in neg), neg
     assert S.select_streak(rec) is None
+
+
+# ------------------------------------------------------------------ stage E corrections (2026-10-17)
+# The stage D record (section 6, corrected at section 15) recorded two latent defects of the
+# selector: it assumed a six-hour cadence without validating it (the slope's time axis was a
+# fixed 0.25 day per sample), and the eight-day cap centered on a streak could put a window
+# bound between the record's time steps. Both are corrected before the stage E selection.
+
+def test_the_cadence_is_read_from_the_record_and_a_non_uniform_one_is_refused():
+    import datetime as dt
+    import pytest
+    S = _load()
+    lons = np.arange(30.0, 70.5, 0.5)
+    series = []
+    for k in range(20):   # a 12-hourly record: 2 degrees per day is 1 degree per sample
+        row = np.zeros(lons.shape)
+        c = 60.0 - 1.0 * k
+        row -= 3.0 * np.exp(-0.5 * ((lons - c) / 2.0) ** 2)
+        series.append([float(x) for x in row])
+    t0 = dt.datetime(2000, 7, 1)
+    rec = {"year": 2000, "lons": list(lons), "times": [(t0 + dt.timedelta(hours=12 * k)).strftime("%Y-%m-%dT%H") for k in range(20)], "bands": {"northern": {"series": series}}}
+    assert S.cadence_hours(rec) == 12.0
+    sel = S.select_streak(rec)
+    assert sel is not None and abs(sel["slope_deg_per_day"] + 2.0) < 0.15, "the slope is per real day, not per assumed quarter day"
+    rec["times"][5] = "2000-07-03T09"   # one off-cadence stamp
+    with pytest.raises(SystemExit):
+        S.cadence_hours(rec)
+
+
+def test_the_capped_window_lands_on_the_record_grid_and_covers_the_streak_center():
+    S = _load()
+    lons = np.arange(30.0, 70.5, 0.5)
+    n = 60   # 15 days at six hours
+    series = []
+    for k in range(n):
+        row = np.zeros(lons.shape)
+        if 4 <= k <= 45:   # a 42-sample streak (41 steps, an odd span whose midpoint falls between steps), longer than the cap
+            c = 59.0 - 1.5 * (k - 4) / 4.0
+            row -= 3.0 * np.exp(-0.5 * ((lons - c) / 2.0) ** 2)
+        series.append([float(x) for x in row])
+    rec = _record(series, lons)
+    sel = S.select_streak(rec)
+    assert sel is not None and sel["samples"] == 42
+    w = S.window_for(sel, rec)
+    assert w["start"] in rec["times"] and w["end"] in rec["times"], "every window bound is a record time"
+    assert w["hours"] <= 8 * 24 and w["hours"] >= 8 * 24 - 6
+    mid = rec["times"][(sel["i_start"] + sel["i_end"]) // 2]
+    assert w["start"] <= mid <= w["end"]
+    assert w["i_start"] == rec["times"].index(w["start"]) and w["i_end"] == rec["times"].index(w["end"])
