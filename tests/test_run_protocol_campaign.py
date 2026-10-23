@@ -21,6 +21,14 @@ FAKE = textwrap.dedent("""
         print("REFUSED: the retained case already exists"); sys.exit(1)
     open(case, "wb").write(b"case")                            # the case is published BEFORE tracking
     import time; time.sleep(float(os.environ.get("ENTRY_SLEEP", "0")))
+    if os.environ.get("BARRIER"):                              # wait until every racing command has reached this run
+        mine = os.path.join(os.environ["BARRIER"], f"{dataset}_{year}.{os.getpid()}")
+        open(mine, "w").close()
+        deadline = time.time() + 60
+        while sum(n.startswith(f"{dataset}_{year}.") for n in os.listdir(os.environ["BARRIER"])) < int(os.environ["BARRIER_COUNT"]):
+            if time.time() > deadline:
+                print("the barrier was not reached"); sys.exit(1)
+            time.sleep(0.05)
     if f"{dataset} {year}" in os.environ.get("LATE_RUNS", ""):
         # a publisher that outlives its parent: after this process has failed and its parent moved on,
         # a detached child publishes a record at the pathnames this attempt was given
@@ -101,13 +109,15 @@ def test_a_publisher_surviving_its_attempt_can_never_land_a_record_in_the_promot
 def test_two_campaign_commands_on_one_root_cannot_both_promote_the_same_run(tmp_path):
     """The promotion lock: when two commands race on one run, exactly one promotes, the
     other fails its run and says the lock or the destination was taken, and the promoted
-    run holds no nested run directory."""
-    import time
+    run holds no nested run directory. A barrier in the fake entry holds each run until
+    both commands have reached it, so both pass the start checks before either promotes,
+    however late the second command starts."""
     fake = tmp_path / "fake_entry.py"
     fake.write_text(FAKE)
     out = tmp_path / "campaign"
+    barrier = tmp_path / "barrier"; barrier.mkdir()
     env = dict(os.environ, OUT=str(out), YEARS="2001-2001", ENTRY=f"{sys.executable} {fake}", PYTHON=sys.executable,
-               FAIL_RUNS="", SILENT_RUNS="", LATE_RUNS="", ENTRY_SLEEP="1.0",
+               FAIL_RUNS="", SILENT_RUNS="", LATE_RUNS="", ENTRY_SLEEP="0", BARRIER=str(barrier), BARRIER_COUNT="2",
                MANIFEST=_manifest(tmp_path)[0], CAL_eraint="c", CAL_era5="c", CACHE_eraint="k", CACHE_era5="k")
     procs = [subprocess.Popen(["bash", SCRIPT], env=env, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) for _ in range(2)]
     outs = [p.communicate()[0] for p in procs]
@@ -125,10 +135,11 @@ def test_two_campaign_commands_on_one_root_cannot_both_promote_the_same_run(tmp_
 PROMOTE = os.path.join(ROOT, "scripts", "campaign_promote.sh")
 
 
-def _promote(src, dst):
+def _promote(src, dst, env=None):
     """The driver's promote function alone, sourced from its own file, so the lock's
     semantics are tested without timing: a held lock refuses, a free one promotes."""
-    return subprocess.run(["bash", "-c", f'. "{PROMOTE}"; promote "$1" "$2"', "_", str(src), str(dst)], capture_output=True, text=True)
+    return subprocess.run(["bash", "-c", f'. "{PROMOTE}"; promote "$1" "$2"', "_", str(src), str(dst)], capture_output=True, text=True,
+                          env=dict(os.environ, PYTHON=sys.executable, **(env or {})))
 
 
 def test_promotion_refuses_while_the_lock_is_held_and_leaves_everything_in_place(tmp_path):
@@ -147,6 +158,34 @@ def test_promotion_refuses_while_the_lock_is_held_and_leaves_everything_in_place
     (tmp_path / "attempt2" / "era5_2001").mkdir(parents=True)
     r = _promote(tmp_path / "attempt2" / "era5_2001", dst)               # the destination now exists
     assert r.returncode == 1 and "it exists" in r.stdout and not lock.exists() and (tmp_path / "attempt2" / "era5_2001").exists()
+
+
+def test_the_lock_does_not_rest_on_the_mkdir_command(tmp_path):
+    """Ubuntu 26.04's mkdir command (uutils coreutils 0.10.0) can report success to both of
+    two racing processes. A shim that always succeeds stands in for it here: with the lock
+    held, promotion must still refuse, because the lock is taken by the mkdir system call."""
+    shim = tmp_path / "shim"; shim.mkdir()
+    for tool in ("mkdir", "mv"):
+        (shim / tool).write_text("#!/bin/sh\nexit 0\n"); (shim / tool).chmod(0o755)
+    src = tmp_path / "attempt" / "era5_2001"; src.mkdir(parents=True)
+    (src / "tracking_era5_2001.json").write_text("{}")
+    dst = tmp_path / "era5_2001"
+    lock = tmp_path / "era5_2001.promoting"; lock.mkdir()
+    path = f"{shim}{os.pathsep}{os.environ.get('PATH', '')}"
+    r = _promote(src, dst, {"PATH": path})
+    assert r.returncode == 1 and "is held" in r.stdout and src.exists() and not dst.exists() and lock.exists()
+    lock.rmdir()
+    r = _promote(src, dst, {"PATH": path})                                # the shim mv would move nothing
+    assert r.returncode == 0 and (dst / "tracking_era5_2001.json").exists() and not src.exists() and not lock.exists()
+
+
+def test_promotion_never_nests_a_run_inside_an_existing_one(tmp_path):
+    src = tmp_path / "attempt" / "era5_2001"; src.mkdir(parents=True)
+    (src / "tracking_era5_2001.json").write_text("{}")
+    dst = tmp_path / "era5_2001"; dst.mkdir()
+    (dst / "tracking_era5_2001.json").write_text("{}")
+    r = _promote(src, dst)
+    assert r.returncode == 1 and "it exists" in r.stdout and not (dst / "era5_2001").exists() and src.exists()
 
 
 def test_a_file_at_the_record_path_that_is_not_this_runs_record_is_neither_skipped_nor_counted(tmp_path):
