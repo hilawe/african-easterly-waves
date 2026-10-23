@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""The builder of the eastern westward-history subset, version 2
-(`EASTERN_WESTWARD_HISTORIES_SUBSET_2026-10-22.md`, sections 1 to 9 and 10). It recomputes the westward histories of the
+"""The builder of the eastern westward-history subset, version 3
+(`EASTERN_WESTWARD_HISTORIES_SUBSET_2026-10-22.md`, sections 1 to 9, 10 and 12). It recomputes the westward histories of the
 declared combination (RB9 with the LN linker) from the 96 regime month records, refuses unless
 the month records are the ones the stored minima-history record was made from and every
 history's summary equals that record in order, compares the rebuilt tables with a retained
@@ -9,7 +9,10 @@ members and a manifest whose population descriptors are read from records made f
 inputs. Version 2 adds each history's position against the season's available days and a table
 of which histories and days enter each descriptor, read with the records' own functions and
 refused unless its counts sum to the records' and the readings recomputed from the same rows
-equal them. Every history carries the travel status 'unresolved'. A
+equal them. Version 3 adds the days each descriptor read for each history, checked against the
+readers' day-by-day eligibility, and the daily profile over the cohort of histories it reads on
+all five days, read from its own record and refused unless that cohort is the participation
+table's. Every history carries the travel status 'unresolved'. A
 history is a sequence of linked minima, not an identified feature. The builder changes no saved
 file.
 
@@ -32,6 +35,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
 import eastern_joint_standing as G  # noqa: E402
+import eastern_matched_profile as MP  # noqa: E402
 import eastern_minima_histories as HI  # noqa: E402
 import eastern_wobble_climatology as W  # noqa: E402
 
@@ -42,19 +46,19 @@ RECORDS = f"{EXT}/climatology"
 STORED = f"{EXT}/eval60_hist_archive_r1.json"
 SOURCES = {"shape": f"{EXT}/eval60_shape_archive_r2.json", "coherence": f"{EXT}/eval60_coherence_archive.json",
            "lobe": f"{EXT}/eval60_lobe_archive.json", "joint": f"{EXT}/eval60_joint_archive.json",
-           "prestart": f"{EXT}/eval60_prestart_constructions.json"}
+           "prestart": f"{EXT}/eval60_prestart_constructions.json", "matched_profile": f"{EXT}/eval60_matched_profile_r1.json"}
 XBAND = f"{EXT}/xband"
 INJECT = f"{EXT}/eval60_inject_archive_r1.json"
-VERSION = 2
-VERSION_BUILT = {1: "2026-10-22", 2: "2026-10-23"}
-DESCRIPTORS = ("average_structure", "coherence_departure", "lobe_contrast", "first_day", "daily_profile")
+VERSION = 3
+VERSION_BUILT = {1: "2026-10-22", 2: "2026-10-23", 3: "2026-10-23"}
+DESCRIPTORS = ("average_structure", "coherence_departure", "lobe_contrast", "first_day", "daily_profile", "daily_profile_matched")
 PRIMARY_BANDS = ("15 to 19.5 N", "20 to 24.5 N")
 PRIMARY_HISTORIES = 86
 TRAVEL_STATUS = "unresolved"
 HIST_COLUMNS = ["history_id", "season", "band", "primary", "first_date", "last_date", "days", "first_lon", "last_lon", "net_deg",
                 "speed_deg_per_day", "westward_step_fraction", "deepest_anomaly_ms", "cut_east", "cut_west", "ends_at_or_west_of_40",
                 "rule_class", "travel_status", "starts_on_first_available_day", "ends_on_last_available_day"]
-PARTICIPATION_COLUMNS = ["descriptor", "history_id", "participates", "days_used", "days_excluded", "exclusion_reason"]
+PARTICIPATION_COLUMNS = ["descriptor", "history_id", "participates", "days_used", "days_excluded", "exclusion_reason", "used_offsets"]
 MEMBER_COLUMNS = ["history_id", "member", "date", "day_of_season", "lon", "anomaly_ms"]
 COLUMN_DEFINITIONS = {
     "history_id": "season, band code and the history's order among that season and band's westward histories",
@@ -87,6 +91,9 @@ COLUMN_DEFINITIONS = {
     "days_used": "the history-days the descriptor's reader read for this history",
     "days_excluded": "the history-days the reader would read that it skipped",
     "exclusion_reason": "why each skipped day, or the whole history, was left out",
+    "used_offsets": ("the days after the history's first day that the descriptor read, separated by spaces; for coherence_departure the "
+                     "anomaly at the first longitude on those days, which may fall after the last member, and for the others the member on "
+                     "that day"),
 }
 
 
@@ -205,6 +212,15 @@ def _source(name, root, digests, stored_sha):
     return rec, {"path": path, "sha256": sha256_of(os.path.join(root, path))}
 
 
+def same_inputs(gen, joint_rec, name):
+    """The five numerical inputs a record or a load names are the joint record's, file by file,
+    by the matched-profile script's own check, or the build is refused."""
+    missing = [k for k in MP.INPUTS if k not in (gen or {})]
+    if missing:
+        raise SystemExit(f"REFUSED: the {name} names no {missing[0]} input")
+    MP.check_same_inputs(gen, joint_rec)
+
+
 def _population(rec_value, name):
     if rec_value != PRIMARY_HISTORIES:
         raise SystemExit(f"REFUSED: the {name} record measured {rec_value} histories, not the {PRIMARY_HISTORIES} of 15 to 24.5 N")
@@ -235,6 +251,26 @@ def descriptors(root, digests, stored_sha):
     out.append({"name": "daily_profile", "value": {"ratio_by_day": j["profile"], "history_days_by_day": j["profile_days"]},
                 "definition": "exploratory and outside every declared reading: on each of days 0 to 4, the other-season anomaly 6 degrees east of that day's member over the summed magnitude at those members, over a sample that changes by day",
                 "population": pop, "source": src})
+    joint_src, joint_rec = src, rec
+    rec, src = _source("matched_profile", root, digests, stored_sha); m = rec["results"]
+    if rec["generated_by"].get("joint_archive", {}).get("sha256") != joint_src["sha256"]:
+        raise SystemExit("REFUSED: the matched-profile record was read against another joint record")
+    same_inputs(rec["generated_by"], joint_rec, "matched-profile record")
+    _population(m["changing"]["histories"], "matched-profile")
+    if (m["changing"]["by_day"], m["changing"]["days"]) != (j["profile"], j["profile_days"]):
+        raise SystemExit("REFUSED: the matched-profile record's curve over every history differs from the joint record")
+    cohort = m["cohort"]
+    if m["matched"]["histories"] != len(cohort) or m["matched"]["days"] != [len(cohort)] * len(G.PROFILE_DAYS):
+        raise SystemExit("REFUSED: the matched-profile record's cohort is not read on every day")
+    out.append({"name": "daily_profile_matched",
+                "value": {"ratio_by_day": m["matched"]["by_day"], "histories": len(cohort), "numerator_by_day_ms": m["matched"]["numerator"],
+                          "denominator_by_day_ms": m["matched"]["denominator"]},
+                "definition": "exploratory and outside every declared reading: the daily profile's ratio on each of days 0 to 4 over a cohort held fixed "
+                              "across the days, with each day's summed anomaly east of the members and summed magnitude at them; no noise reference was computed",
+                "population": (f"the {len(cohort)} westward histories in 15 to 24.5 N whose daily_profile participation row has days_used "
+                               f"{len(G.PROFILE_DAYS)}, pooled; selected by length and start position, so a property of that cohort, not of the "
+                               f"{PRIMARY_HISTORIES}, and not of any one history"),
+                "cohort": cohort, "source": src})
     rec, src = _source("prestart", root, digests, stored_sha)
     out.append({"name": "prestart", "value": None, "status": "not measured",
                 "definition": "the other-season anomaly at the first longitude over the 2 days before the first day; the declared stopping rule failed in "
@@ -248,18 +284,28 @@ def history_participation(hid, h, b1_rows, b0_rows, band):
     history's rows: the shape record's composite, the coherence record's end series, the
     lobe-position record's accumulator, and the joint record's daily-profile rule."""
     x = h["lons"]; n = len(x); off = lambda lon: lon + P.OFFSET > A.LONS[-1]
+    offsets = lambda ks: " ".join(str(k) for k in ks)
     comp = Sh.composite({(0, band): b1_rows}, {(0, band): [h]}, (band,))
     center = int(comp["count"][list(Sh.DX).index(0.0)])
-    rows = [{"descriptor": "average_structure", "history_id": hid, "participates": center > 0, "days_used": center, "days_excluded": 0, "exclusion_reason": ""}]
+    rows = [{"descriptor": "average_structure", "history_id": hid, "participates": center > 0, "days_used": center, "days_excluded": 0, "exclusion_reason": "",
+             "used_offsets": offsets(range(n))}]
     e = C.ends(b1_rows, h)
     rows.append({"descriptor": "coherence_departure", "history_id": hid, "participates": e is not None, "days_used": 1 + len(C.LAG_DAYS) if e else 0,
                  "days_excluded": 0 if e else 1 + len(C.LAG_DAYS),
-                 "exclusion_reason": "" if e else f"fewer than {C.CURVE_DAYS[-1]} days of the season after the first day or before the last day"})
+                 "exclusion_reason": "" if e else f"fewer than {C.CURVE_DAYS[-1]} days of the season after the first day or before the last day",
+                 "used_offsets": offsets((0,) + tuple(C.LAG_DAYS)) if e else ""})
     acc = P.new_acc(); P.accumulate(b0_rows, h, acc)
+    lobe_days, before = [], 0
+    for k in P.CP_DAYS:                                        # the lobe-position reader on the history cut after day k
+        a_k = P.new_acc(); P.accumulate(b0_rows, {"days": h["days"][:k + 1], "lons": x[:k + 1]}, a_k)
+        lobe_days.append(a_k["samples"] - before); before = a_k["samples"]
+    if before != acc["samples"]:
+        raise SystemExit(f"REFUSED: {hid}'s lobe-position days differ from the reader's count")
     why = [f"day {k} beyond the last member" for k in P.CP_DAYS if k >= n]
     why += [f"day {k} with a position {P.OFFSET:g} degrees east lying east of {A.LONS[-1]:g} E" for k in P.CP_DAYS if k < n and (off(x[0]) or off(x[k]))]
     rows.append({"descriptor": "lobe_contrast", "history_id": hid, "participates": acc["samples"] > 0, "days_used": acc["samples"],
-                 "days_excluded": len(P.CP_DAYS) - acc["samples"], "exclusion_reason": ", ".join(why)})
+                 "days_excluded": len(P.CP_DAYS) - acc["samples"], "exclusion_reason": ", ".join(why),
+                 "used_offsets": offsets(k for k in P.CP_DAYS if k < n and not off(x[0]) and not off(x[k]))})
     used = [k for k in G.PROFILE_DAYS if k < n and not off(x[k])]
     mask_days = [int(k in used) for k in G.PROFILE_DAYS]; mask_off = [int(k < n and off(x[k])) for k in G.PROFILE_DAYS]
     try:                                                       # the joint record's own reader on this one history
@@ -270,13 +316,14 @@ def history_participation(hid, h, b1_rows, b0_rows, band):
         if "no first day enters" not in str(ex) or 0 in used:
             raise
     rows.append({"descriptor": "first_day", "history_id": hid, "participates": 0 in used, "days_used": int(0 in used), "days_excluded": int(0 not in used),
-                 "exclusion_reason": "" if 0 in used else f"the position {P.OFFSET:g} degrees east of the first longitude lies east of {A.LONS[-1]:g} E"})
+                 "exclusion_reason": "" if 0 in used else f"the position {P.OFFSET:g} degrees east of the first longitude lies east of {A.LONS[-1]:g} E",
+                 "used_offsets": offsets([0] if 0 in used else [])})
     why = [f"day {k} beyond the last member" if k >= n else f"day {k} with its position {P.OFFSET:g} degrees east lying east of {A.LONS[-1]:g} E"
            for k in G.PROFILE_DAYS if k not in used]
     rows.append({"descriptor": "daily_profile", "history_id": hid, "participates": bool(used), "days_used": len(used),
-                 "days_excluded": len(G.PROFILE_DAYS) - len(used), "exclusion_reason": ", ".join(why)})
+                 "days_excluded": len(G.PROFILE_DAYS) - len(used), "exclusion_reason": ", ".join(why), "used_offsets": offsets(used)})
     return rows, {"history_id": hid, "center": center, "coherence": e is not None, "lobe_samples": acc["samples"], "lobe_off_grid": acc["off_grid"],
-                  "profile_days": mask_days, "profile_off_grid": mask_off}
+                  "lobe_days": lobe_days, "profile_days": mask_days, "profile_off_grid": mask_off}
 
 
 def expected_fields(mask):
@@ -290,9 +337,22 @@ def expected_fields(mask):
             "daily_profile": (sum(mask["profile_days"]) > 0, sum(mask["profile_days"]), npd - sum(mask["profile_days"]))}
 
 
+def expected_offsets(mask):
+    """The days after the first day each descriptor must list, from the readers' day-by-day
+    eligibility: every member counted at the composite's center, the coherence reader's
+    reference and lag days, and the lobe-position and joint readers' days."""
+    pick = lambda days, flags: [k for k, f in zip(days, flags) if f]
+    return {"average_structure": list(range(mask["center"])),
+            "coherence_departure": [0, *C.LAG_DAYS] if mask["coherence"] else [],
+            "lobe_contrast": pick(P.CP_DAYS, mask["lobe_days"]),
+            "first_day": pick(G.PROFILE_DAYS[:1], mask["profile_days"][:1]),
+            "daily_profile": pick(G.PROFILE_DAYS, mask["profile_days"])}
+
+
 def check_rows(rows, masks):
-    """Every exported row agrees with its history's eligibility, a reason is given exactly when
-    days were skipped, and each history has one row per descriptor, or the build is refused."""
+    """Every exported row agrees with its history's eligibility, lists the days the readers
+    read, a reason is given exactly when days were skipped, and each history has one row per
+    descriptor, or the build is refused."""
     by = {}
     for r in rows:
         key = (r["descriptor"], r["history_id"])
@@ -300,12 +360,16 @@ def check_rows(rows, masks):
             raise SystemExit(f"REFUSED: two participation rows for {key}")
         by[key] = r
     for mask in masks:
+        days = expected_offsets(mask)
         for d, (part, used, skipped) in expected_fields(mask).items():
             r = by.pop((d, mask["history_id"]), None)
             if r is None:
                 raise SystemExit(f"REFUSED: no {d} row for {mask['history_id']}")
             if (r["participates"], r["days_used"], r["days_excluded"]) != (part, used, skipped) or bool(r["exclusion_reason"]) != (skipped > 0):
                 raise SystemExit(f"REFUSED: the {d} row of {mask['history_id']} disagrees with its eligibility")
+            listed = [int(t) for t in r["used_offsets"].split()]
+            if listed != days[d] or len(listed) != r["days_used"]:
+                raise SystemExit(f"REFUSED: the {d} row of {mask['history_id']} lists days {listed}, not the readers' {days[d]}")
     if by:
         raise SystemExit(f"REFUSED: participation rows for histories outside the population ({sorted(by)[:3]})")
 
@@ -369,6 +433,16 @@ def participation(items, hist, by_x, records):
                   "lobe": P.measure({b: {y: b0[(y, b)] for y in W.YEARS} for b in L.BAND_LAT}, hist, PRIMARY_BANDS),
                   "profile": G.profile(b0, hist, PRIMARY_BANDS)}
     return out, check_pooled(out, extras, recomputed, records)
+
+
+def check_cohort(desc, part):
+    """The matched-profile cohort is the set of histories whose daily_profile row lists every
+    day, or the build is refused."""
+    cohort = next(x for x in desc if x["name"] == "daily_profile_matched")["cohort"]
+    full = [r["history_id"] for r in part if r["descriptor"] == "daily_profile" and r["days_used"] == len(G.PROFILE_DAYS)]
+    if sorted(cohort) != sorted(full):
+        raise SystemExit(f"REFUSED: the matched-profile cohort ({len(cohort)}) is not the {len(full)} histories read on every day of the daily profile")
+    return "equal"
 
 
 def failure_modes(stored, travel_source):
@@ -471,10 +545,12 @@ def main(argv=None):
     desc = descriptors(a.root, digests, stored_sha)
     ns = argparse.Namespace(shape=os.path.join(a.root, SOURCES["shape"]), inject=os.path.join(a.root, INJECT), records=os.path.join(a.root, RECORDS),
                             histories=os.path.join(a.root, STORED), xband=os.path.join(a.root, XBAND))
-    hist, _, by_x, _, _ = C.load_inputs(ns)
+    hist, _, by_x, _, loaded = C.load_inputs(ns)
     records = {k: _source(k, a.root, digests, stored_sha)[0] for k in ("shape", "coherence", "lobe", "joint")}
+    same_inputs(loaded, records["joint"], "builder's load")
     part, part_checks = participation(items, hist, by_x, records)
-    tables = {"histories": (HIST_COLUMNS, rows), "members": (MEMBER_COLUMNS, members), "participation": (PARTICIPATION_COLUMNS, part)}
+    part_checks["daily_profile_matched cohort"] = check_cohort(desc, part)
+    tables = {"histories":(HIST_COLUMNS, rows), "members": (MEMBER_COLUMNS, members), "participation": (PARTICIPATION_COLUMNS, part)}
     texts = {k: csv_text(cols, rs) for k, (cols, rs) in tables.items()}
     ref = (check_reference(os.path.abspath(a.reference), tables) if a.reference
            else {"path": None, "performed": False, "result": "not performed, no retained version was given"})
@@ -501,7 +577,8 @@ def main(argv=None):
         "identity_check": ("the month records equal those the stored history record was made from, file by file; every recomputed history's "
                            "summary (season, band, first date, member count, end longitudes) equals the stored record's in order; every "
                            "history's members fall on consecutive days; every descriptor record was made from the same month records and "
-                           "history record. The summaries do not bind interior longitudes or depths, which the member digest and the "
+                           "history record; the inputs the builder loads and those the matched-profile record names equal the joint "
+                           "record's, file by file. The summaries do not bind interior longitudes or depths, which the member digest and the "
                            "reference check carry"),
         "member_digest": member_digest(members), "implementation": implementation(), "reference_check": ref,
         "counts": {"histories": len(rows), "by_band": by_band, "primary": sum(1 for r in rows if r["primary"]), "members": len(members),
