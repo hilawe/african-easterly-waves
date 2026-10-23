@@ -1,0 +1,350 @@
+#!/usr/bin/env python3
+"""The builder of the eastern westward-history subset, version 1
+(`EASTERN_WESTWARD_HISTORIES_SUBSET_2026-10-22.md`). It recomputes the westward histories of the
+declared combination (RB9 with the LN linker) from the 96 regime month records, refuses unless
+the month records are the ones the stored minima-history record was made from and every
+history's summary equals that record in order, compares the rebuilt tables with a retained
+earlier version when one is given, and writes a table of histories, a table of their daily
+members and a manifest whose population descriptors are read from records made from the same
+inputs. Every history carries the travel status 'unresolved'. A
+history is a sequence of linked minima, not an identified feature. The builder changes no saved
+file.
+
+    python3 scripts/build_eastern_westward_histories.py --out-dir DIR --travel-source PATH [--reference RETAINED_DIR] [--build-note TEXT]
+
+The travel-status source is the document that states why every history's travel status is
+unresolved, given by path relative to the root and recorded with its digest.
+"""
+import argparse
+import csv
+import datetime
+import glob
+import hashlib
+import io
+import json
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(HERE, ".."))
+sys.path.insert(0, HERE)
+import eastern_minima_histories as HI  # noqa: E402
+import eastern_wobble_climatology as W  # noqa: E402
+
+A = W.A
+EXT = "docs/aewc_v2/evidence/validation/eastern_pilot_2026-10-05/reports/extent"
+RECORDS = f"{EXT}/climatology"
+STORED = f"{EXT}/eval60_hist_archive_r1.json"
+SOURCES = {"shape": f"{EXT}/eval60_shape_archive_r2.json", "coherence": f"{EXT}/eval60_coherence_archive.json",
+           "lobe": f"{EXT}/eval60_lobe_archive.json", "joint": f"{EXT}/eval60_joint_archive.json",
+           "prestart": f"{EXT}/eval60_prestart_constructions.json"}
+PRIMARY_BANDS = ("15 to 19.5 N", "20 to 24.5 N")
+PRIMARY_HISTORIES = 86
+TRAVEL_STATUS = "unresolved"
+HIST_COLUMNS = ["history_id", "season", "band", "primary", "first_date", "last_date", "days", "first_lon", "last_lon", "net_deg",
+                "speed_deg_per_day", "westward_step_fraction", "deepest_anomaly_ms", "cut_east", "cut_west", "ends_at_or_west_of_40",
+                "rule_class", "travel_status"]
+MEMBER_COLUMNS = ["history_id", "member", "date", "day_of_season", "lon", "anomaly_ms"]
+COLUMN_DEFINITIONS = {
+    "history_id": "season, band code and the history's order among that season and band's westward histories",
+    "season": "the June to September season",
+    "band": "the latitude band of the 700 hPa band mean",
+    "primary": "true in 15 to 24.5 N, the population every pooled descriptor was measured on",
+    "first_date": "the date of the first member, where the linker first joined a westward minimum, not a physical onset",
+    "last_date": "the date of the last member, after which no minimum was linked",
+    "days": "the number of members, one per consecutive day",
+    "first_lon": "the first member's longitude, degrees east",
+    "last_lon": "the last member's longitude, degrees east",
+    "net_deg": "last_lon minus first_lon, degrees",
+    "speed_deg_per_day": "net_deg over days minus one, the stored record's speed",
+    "westward_step_fraction": "the share of day-to-day steps that move west, at least 0.75 by the class rule",
+    "deepest_anomaly_ms": "the most negative member anomaly against the centered nine-day mean, m/s",
+    "cut_east": "the first member lies within 3 degrees of 75 E, the box's eastern edge, so the history may have begun east of the box; proximity, not demonstrated truncation",
+    "cut_west": "the last member lies within 3 degrees of 20 E, the box's western edge, so the history may continue west of the box; proximity, not demonstrated truncation",
+    "ends_at_or_west_of_40": "the last member lies at or west of 40 E",
+    "rule_class": "westward, the minima-history record's class rule (at least 4 days, net at most -8 degrees, at least 0.75 of steps west)",
+    "travel_status": "unresolved for every history, see the manifest's travel_status entry",
+    "member": "the member's order in its history, from 0",
+    "date": "the member's date",
+    "day_of_season": "days since 1 June of the season",
+    "lon": "the member's longitude, degrees east",
+    "anomaly_ms": "the member's anomaly against the centered nine-day mean of the daily band mean, m/s, exact at stored precision",
+}
+
+
+def sha256_of(path):
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest()
+
+
+def band_code(band):
+    """'15 to 19.5 N' gives '15N'."""
+    return band.split(" ")[0] + "N"
+
+
+def load_records(records_dir):
+    files = sorted(glob.glob(os.path.join(records_dir, "eval60_regime_????_??.json.gz")))
+    recs = [W.SC.load_record(p) for p in files]
+    W.SC.check_archive_identity(files, recs)
+    by = {}
+    for r in recs:
+        by.setdefault(int(r["year"]), {})[int(r["month"])] = r
+    return by, files
+
+
+def month_digests(files):
+    return {os.path.basename(p): sha256_of(p) for p in files}
+
+
+def check_inputs(digests, stored):
+    """The month records read now are the ones the stored minima-history record was made from,
+    file by file."""
+    expected = stored["generated_by"]["month_records"]
+    if digests != expected:
+        diff = sorted(k for k in set(digests) | set(expected) if digests.get(k) != expected.get(k))
+        raise SystemExit(f"REFUSED: the month records differ from those the stored history record was made from ({diff[:5]})")
+
+
+def recompute(by):
+    """(season, band, dates, history) for every westward history of the declared combination,
+    in the stored record's order: band, then season, then the linker's order."""
+    rep, linker = W.HISTORIES
+    month_of = A.month_index(); out = []
+    bands = list(by[W.YEARS[0]][W.MONTHS[0]]["bands"])
+    for b in sorted(bands):
+        for y in W.YEARS:
+            dates, H = A.season_hundredths(by[y], b)
+            for h in HI.link(HI.rep_minima(rep, H, month_of, W.LONS), linker):
+                if HI.classify(h) == "westward":
+                    out.append((y, b, dates, h))
+    return out
+
+
+def check_identity(items, stored):
+    """Every recomputed history's summary, by the minima-history script's own summary function,
+    equals the stored record's in order, and every history's members fall on consecutive days.
+    A summary binds the season, band, first date, member count and end longitudes, not the
+    interior longitudes or any depth, which the input digests and the retained reference bind."""
+    rep, linker = W.HISTORIES
+    expected = stored["tables"][HI.combo(rep, linker)]["westward_histories"]
+    mine = json.loads(json.dumps([HI.summarize_westward(h, dates, y, b) for y, b, dates, h in items]))
+    if len(mine) != len(expected):
+        raise SystemExit(f"REFUSED: {len(mine)} recomputed westward histories, not the stored {len(expected)}")
+    for k, (m, e) in enumerate(zip(mine, expected)):
+        if m != e:
+            raise SystemExit(f"REFUSED: recomputed history {k} differs from the stored record ({m} against {e})")
+    for y, b, dates, h in items:
+        if h["days"] != list(range(h["days"][0], h["days"][0] + len(h["days"]))):
+            raise SystemExit(f"REFUSED: a history in {y} {b} has members on non-consecutive days")
+
+
+def history_rows(items):
+    rows, members, seen = [], [], {}
+    for y, b, dates, h in items:
+        k = seen[(y, b)] = seen.get((y, b), 0) + 1
+        hid = f"{y}-{band_code(b)}-{k:02d}"
+        x = h["lons"]; n = len(x)
+        steps = [x[i + 1] - x[i] for i in range(n - 1)]
+        s = HI.summarize_westward(h, dates, y, b)
+        rows.append({"history_id": hid, "season": y, "band": b, "primary": b in PRIMARY_BANDS, "first_date": dates[h["days"][0]],
+                     "last_date": dates[h["days"][-1]], "days": n, "first_lon": x[0], "last_lon": x[-1], "net_deg": s["net_deg"],
+                     "speed_deg_per_day": s["speed_deg_per_day"], "westward_step_fraction": sum(1 for d in steps if d < 0) / len(steps),
+                     "deepest_anomaly_ms": min(h["depths"]), "cut_east": s["cut_east"], "cut_west": s["cut_west"],
+                     "ends_at_or_west_of_40": s["ends_at_or_west_of_40"], "rule_class": HI.classify(h), "travel_status": TRAVEL_STATUS})
+        june1 = datetime.date(y, 6, 1)
+        for i, (d, lon, dep) in enumerate(zip(h["days"], h["lons"], h["depths"])):
+            date = dates[d]
+            members.append({"history_id": hid, "member": i, "date": date,
+                            "day_of_season": (datetime.date.fromisoformat(date) - june1).days, "lon": lon, "anomaly_ms": dep})
+    return rows, members
+
+
+def _source(name, root, digests, stored_sha):
+    """A descriptor record, refused unless it was made from the same month records and the same
+    stored history record as the subset."""
+    path = SOURCES[name]
+    with open(os.path.join(root, path), encoding="utf-8") as fh:
+        rec = json.load(fh)
+    g = rec["generated_by"]
+    if g.get("records") != digests:
+        raise SystemExit(f"REFUSED: the {name} record was made from other month records")
+    if (g.get("histories") or {}).get("sha256") != stored_sha:
+        raise SystemExit(f"REFUSED: the {name} record was made from another history record")
+    return rec, {"path": path, "sha256": sha256_of(os.path.join(root, path))}
+
+
+def _population(rec_value, name):
+    if rec_value != PRIMARY_HISTORIES:
+        raise SystemExit(f"REFUSED: the {name} record measured {rec_value} histories, not the {PRIMARY_HISTORIES} of 15 to 24.5 N")
+
+
+def descriptors(root, digests, stored_sha):
+    """The pooled descriptors of the 86 histories in 15 to 24.5 N, each read from the record that
+    measured it with that record's path and digest, refused when a record was made from other
+    inputs or its population is not the 86 histories."""
+    pop = "the 86 westward histories in 15 to 24.5 N, pooled; a property of the population, not of any one history"
+    out = []
+    rec, src = _source("shape", root, digests, stored_sha); p = rec["results"]["composite"]["primary"]; _population(p["histories"], "shape")
+    out.append({"name": "average_structure", "value": {"center_ms": p["center"], "east_flank": p["east"], "west_flank": p["west"], "member_days": p["members"]},
+                "definition": "the own-month anomaly averaged around the member-days, its center and its largest flank values east and west as fractions of the center",
+                "population": pop, "source": src})
+    rec, src = _source("coherence", root, digests, stored_sha); c = rec["results"]["measure"]["primary"]; _population(c["histories"], "coherence")
+    out.append({"name": "coherence_departure", "value": c["departure"],
+                "definition": "the own-month anomaly at the first longitude averaged over 2 to 4 days after the first day, summed, over its summed first-day value",
+                "population": pop, "source": src})
+    rec, src = _source("lobe", root, digests, stored_sha); l = rec["results"]["measure"]["primary"]; _population(l["histories"], "lobe")
+    out.append({"name": "lobe_contrast", "value": {"carried": l["carried"], "pinned": l["pinned"], "contrast": l["contrast"], "history_days": l["samples"]},
+                "definition": "on days 2 and 3, the other-season anomaly 6 degrees east of the current minimum (carried) and of the first longitude (pinned), summed, over the summed magnitude at the minimum",
+                "population": pop, "source": src})
+    rec, src = _source("joint", root, digests, stored_sha); j = rec["results"]["measure"]; _population(j["histories"], "joint")
+    out.append({"name": "first_day", "value": {"ratio": j["first_day"], "starts": j["profile_days"][0]},
+                "definition": "on the first day, the other-season anomaly 6 degrees east of the first longitude, summed, over the summed magnitude at the first longitude",
+                "population": pop, "source": src})
+    out.append({"name": "daily_profile", "value": {"ratio_by_day": j["profile"], "history_days_by_day": j["profile_days"]},
+                "definition": "exploratory and outside every declared reading: on each of days 0 to 4, the other-season anomaly 6 degrees east of that day's member over the summed magnitude at those members, over a sample that changes by day",
+                "population": pop, "source": src})
+    rec, src = _source("prestart", root, digests, stored_sha)
+    out.append({"name": "prestart", "value": None, "status": "not measured",
+                "definition": "the other-season anomaly at the first longitude over the 2 days before the first day; the declared stopping rule failed in "
+                              f"{len(rec['verdict']['failures'])} of its 16 checks, so the archive was not measured",
+                "population": pop, "source": src})
+    return out
+
+
+def failure_modes(stored, travel_source):
+    """The known ways the subset misrepresents the flow, with the numbers read from the stored record."""
+    rep, linker = W.HISTORIES
+    bands = stored["tables"][HI.combo(rep, linker)]["bands"]
+    at_net = {b: {"-6": v["westward_at_net"]["-6"], "-8": v["westward"], "-10": v["westward_at_net"]["-10"]} for b, v in bands.items()}
+    return [
+        {"mode": "a weak slow passage through a wobbling standing feature breaks into histories before and after it, so one passage may appear as two histories",
+         "source": "EASTERN_MINIMA_HISTORIES_2026-10-19.md"},
+        {"mode": "the centered nine-day background is undefined within four days of each season's ends, so no member falls on the first or last four days of a season",
+         "source": "EASTERN_MINIMA_HISTORIES_2026-10-19.md"},
+        {"mode": "the net-displacement threshold of -8 degrees shapes the population and its speeds; westward counts by band at -6, -8 and -10 degrees",
+         "value": at_net, "source": STORED},
+        {"mode": "the first and last members are where the linker joined and stopped, not physical onset or decay; histories within 3 degrees of the box's edges are flagged cut_east or cut_west as possibly truncated",
+         "source": "EASTERN_JOINT_STANDING_2026-10-22.md"},
+        {"mode": "outside 15 to 24.5 N the westward counts do not exceed the mean of the spread-matched noise ensemble under every combination, and that mean is not a false-history rate",
+         "source": "EASTERN_MINIMA_HISTORIES_2026-10-19.md"},
+        {"mode": "whether the histories travel as troughs with their southerly lobe or move past southerly anomaly standing near where they begin is unresolved, and the pooled descriptors do not separate them from minima that noise produces beyond five placements of one noise model",
+         "source": travel_source},
+    ]
+
+
+def refuse_existing(paths):
+    for p in paths:
+        if os.path.exists(p):
+            raise SystemExit(f"REFUSED: {p} exists and a product file is never overwritten")
+
+
+def csv_text(columns, rows):
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=columns); w.writeheader()
+    for r in rows:
+        w.writerow(r)
+    return buf.getvalue()
+
+
+def member_digest(members):
+    """A digest of every member's history, date, longitude and anomaly in order, the canonical
+    member sequence a later build is compared with."""
+    canon = json.dumps([[m["history_id"], m["date"], m["lon"], m["anomaly_ms"]] for m in members], separators=(",", ":"))
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
+
+
+def implementation():
+    """The digests of the modules whose functions computed the members."""
+    return {os.path.relpath(os.path.abspath(m.__file__), ROOT): sha256_of(os.path.abspath(m.__file__)) for m in (HI, A, W, W.SC)}
+
+
+def check_reference(ref_dir, texts):
+    """The retained earlier version, refused unless its tables match its own manifest, and the
+    rebuilt tables equal its tables byte for byte."""
+    with open(os.path.join(ref_dir, "manifest.json"), encoding="utf-8") as fh:
+        man = json.load(fh)
+    for k, name in (("histories", "histories.csv"), ("members", "members.csv")):
+        p = os.path.join(ref_dir, name)
+        if sha256_of(p) != man["tables"][k]["sha256"]:
+            raise SystemExit(f"REFUSED: the reference {name} does not match its manifest")
+        with open(p, encoding="utf-8", newline="") as fh:
+            if fh.read() != texts[k]:
+                raise SystemExit(f"REFUSED: the rebuilt {name} differs from the retained reference")
+    return {"path": ref_dir, "manifest_sha256": sha256_of(os.path.join(ref_dir, "manifest.json")), "performed": True, "result": "equal"}
+
+
+def write_text(path, text):
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--out-dir", required=True)
+    ap.add_argument("--root", default=ROOT)
+    ap.add_argument("--travel-source", required=True, help="the document stating why the travel status is unresolved, relative to the root")
+    ap.add_argument("--reference", default=None, help="a retained earlier version whose tables the rebuild must equal")
+    ap.add_argument("--build-note", default="")
+    a = ap.parse_args(argv)
+    out = os.path.abspath(a.out_dir)
+    paths = {k: os.path.join(out, f) for k, f in (("histories", "histories.csv"), ("members", "members.csv"), ("manifest", "manifest.json"))}
+    refuse_existing(paths.values())
+    if not os.path.isfile(os.path.join(a.root, a.travel_source)):
+        raise SystemExit(f"REFUSED: the travel-status source {a.travel_source} does not exist")
+    with open(os.path.join(a.root, STORED), encoding="utf-8") as fh:
+        stored = json.load(fh)
+    stored_sha = sha256_of(os.path.join(a.root, STORED))
+    by, files = load_records(os.path.join(a.root, RECORDS))
+    digests = month_digests(files)
+    check_inputs(digests, stored)
+    items = recompute(by)
+    check_identity(items, stored)
+    rows, members = history_rows(items)
+    desc = descriptors(a.root, digests, stored_sha)
+    texts = {"histories": csv_text(HIST_COLUMNS, rows), "members": csv_text(MEMBER_COLUMNS, members)}
+    ref = (check_reference(os.path.abspath(a.reference), texts) if a.reference
+           else {"path": None, "performed": False, "result": "not performed, no retained version was given"})
+    if ref["path"]:
+        ref["path"] = os.path.relpath(ref["path"], a.root)
+    os.makedirs(out, exist_ok=True)
+    write_text(paths["histories"], texts["histories"])
+    write_text(paths["members"], texts["members"])
+    rel = lambda p: os.path.relpath(p, a.root)
+    by_band = {b: sum(1 for r in rows if r["band"] == b) for b in sorted({r["band"] for r in rows})}
+    rep, linker = W.HISTORIES
+    manifest = {
+        "product": "eastern westward-history subset, version 1", "part_of": "EASTERN_DESCRIPTIVE_PRODUCT_2026-10-19.md, layer L2",
+        "declared": "EASTERN_WESTWARD_HISTORIES_SUBSET_2026-10-22.md", "built": "2026-10-22",
+        "builder": {"path": "scripts/build_eastern_westward_histories.py", "sha256": sha256_of(os.path.abspath(__file__))},
+        "label": "linked minima and their positions, depths and dates, with rule-defined classes; no identity, no tracked disturbance, no physical classification",
+        "definition": {"representation": rep, "linker": linker, "max_link_deg": HI.S_MAX, "floor_ms": HI.REP_SPEC[rep][1], "prominence_ms": A.PROMINENCE,
+                       "class_rule": {"min_days": HI.W_MIN_LEN, "max_net_deg": HI.W_NET, "min_westward_step_fraction": HI.W_FRAC},
+                       "field": "ERA5 700 hPa meridional wind, band means of four latitude bands on 20 to 75 E at 0.5 degrees, daily means of six-hourly values",
+                       "seasons": f"June to September, {W.YEARS[0]} to {W.YEARS[-1]} without 2005, which is held out and unopened"},
+        "build_note": a.build_note,
+        "inputs": {"month_records": {"dir": RECORDS, "count": len(files), "sha256": digests},
+                   "stored_histories": {"path": STORED, "sha256": stored_sha}},
+        "identity_check": ("the month records equal those the stored history record was made from, file by file; every recomputed history's "
+                           "summary (season, band, first date, member count, end longitudes) equals the stored record's in order; every "
+                           "history's members fall on consecutive days; every descriptor record was made from the same month records and "
+                           "history record. The summaries do not bind interior longitudes or depths, which the member digest and the "
+                           "reference check carry"),
+        "member_digest": member_digest(members), "implementation": implementation(), "reference_check": ref,
+        "counts": {"histories": len(rows), "by_band": by_band, "primary": sum(1 for r in rows if r["primary"]), "members": len(members)},
+        "tables": {k: {"path": rel(paths[k]), "sha256": sha256_of(paths[k]), "rows": n, "columns": cols}
+                   for k, n, cols in (("histories", len(rows), HIST_COLUMNS), ("members", len(members), MEMBER_COLUMNS))},
+        "column_definitions": COLUMN_DEFINITIONS,
+        "travel_status": {"vocabulary": [TRAVEL_STATUS], "value": TRAVEL_STATUS,
+                          "meaning": "the records do not separate troughs traveling with their southerly lobe from minima moving past southerly anomaly standing near where they begin",
+                          "source": {"path": a.travel_source, "sha256": sha256_of(os.path.join(a.root, a.travel_source))}},
+        "descriptors": desc, "failure_modes": failure_modes(stored, a.travel_source),
+        "use": "the population the westward-history records measured, listed member by member so that any later per-history study starts from the same histories",
+    }
+    with open(paths["manifest"], "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=1)
+    print(f"{len(rows)} histories ({by_band}), {manifest['counts']['primary']} primary, {len(members)} members, {len(desc)} descriptors")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
