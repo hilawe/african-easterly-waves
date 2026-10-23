@@ -26,7 +26,7 @@ GROUPS = (
     ("L2", "anomaly minima", "EASTERN_BACKGROUND_REMOVAL_2026-10-19.md",
      (f"{EXTENT}/eval60_anom_constructions_r1.*", f"{EXTENT}/eval60_anom_archive.json", f"{EXTENT}/eval60_anom_tables.md", f"{EXTENT}/eval60_anom_recurrence.png")),
     ("L2", "minima histories", "EASTERN_MINIMA_HISTORIES_2026-10-19.md", (f"{EXTENT}/eval60_hist_*_r1.*",)),
-    ("L2", "westward-history subset, version 1", "EASTERN_WESTWARD_HISTORIES_SUBSET_2026-10-22.md", ("docs/aewc_v2/eastern_westward_histories_v1_r2/*",)),
+    ("L2", "westward-history subset, version 2", "EASTERN_WESTWARD_HISTORIES_SUBSET_2026-10-22.md", ("docs/aewc_v2/eastern_westward_histories_v2_r1/*",)),
     ("L2", "westward histories, lag regression", "EASTERN_LAG_REGRESSION_2026-10-21.md", (f"{EXTENT}/eval60_lagreg_*_r2.*",)),
     ("L2", "westward histories, injection recovery", "EASTERN_INJECTION_RECOVERY_2026-10-21.md", (f"{EXTENT}/eval60_inject_*_r1.*",)),
     ("L2", "westward histories, average shape", "EASTERN_HISTORY_SHAPE_2026-10-21.md", (f"{EXTENT}/eval60_shape_*_r2.*",)),

@@ -50,8 +50,8 @@ def test_the_real_groups_resolve_in_the_repository(tmp_path):
     names = [f["path"] for r in rows for f in r["contents"]]
     assert not any(n.endswith("eval60_hist_archive.json") or n.endswith("eval60_lookback_archive.json") or n.endswith("eval60_twosided_archive.json") or n.endswith("eval60_lookback_constructions_r1.json") or n.endswith("eval60_lookback_constructions.json") for n in names), "superseded builds are not listed"
     assert by["QTrack look-back"]["files"] == 7 and by["minima histories"]["files"] == 7 and by["two-sided look-back"]["files"] == 5
-    assert by["westward-history subset, version 1"]["files"] == 3 and by["westward histories, lobe position"]["files"] == 4
-    assert not any("eastern_westward_histories_v1/" in n or "eastern_westward_histories_v1_r1/" in n for n in names), "the current build is listed, not the earlier ones"
+    assert by["westward-history subset, version 2"]["files"] == 4 and by["westward histories, lobe position"]["files"] == 4
+    assert not any("eastern_westward_histories_v1" in n or "eastern_westward_histories_v2/" in n for n in names), "the current build is listed, not the earlier builds"
     assert not any("lobe_feasibility" in n or n.endswith(("eval60_lagreg_archive_r1.json", "eval60_shape_archive_r1.json", "eval60_inject_archive.json")) for n in names), "only current builds"
     assert json.loads(json.dumps(rows)) == rows
     oj, om = tmp_path / "i.json", tmp_path / "i.md"

@@ -6,6 +6,7 @@ import json
 import os
 import sys
 
+import numpy as np
 import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -13,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(HERE), "scripts"))
 import build_eastern_westward_histories as B  # noqa: E402
 
 HI, W, A = B.HI, B.W, B.A
+AVAIL = {(1990, b): (4, 117) for b in ("10 to 14.5 N", "15 to 19.5 N", "20 to 24.5 N", "25 to 29.5 N")}
 DATES = [f"1990-06-{d:02d}" for d in range(1, 31)] + [f"1990-07-{d:02d}" for d in range(1, 32)]
 
 
@@ -46,14 +48,18 @@ def test_the_identity_check_compares_every_summary_in_order():
 def test_history_and_member_rows():
     items = [item([3, 4, 5, 6], [60.0, 58.0, 58.5, 52.0], [-2.5, -6.25, -4.0, -3.0]), item([20, 21, 22, 23], [70.0, 66.0, 64.0, 61.0]),
              item([8, 9, 10, 11], [65.0, 62.0, 60.0, 56.0], band="25 to 29.5 N")]
-    rows, members = B.history_rows(items)
+    rows, members = B.history_rows(items, AVAIL)
     assert [r["history_id"] for r in rows] == ["1990-15N-01", "1990-15N-02", "1990-25N-01"]
     r = rows[0]
     assert (r["first_date"], r["last_date"], r["days"], r["net_deg"], r["deepest_anomaly_ms"]) == ("1990-06-04", "1990-06-07", 4, -8.0, -6.25)
     assert r["westward_step_fraction"] == 2 / 3 and r["speed_deg_per_day"] == -8.0 / 3 and r["primary"] is True and rows[2]["primary"] is False
     assert {x["travel_status"] for x in rows} == {"unresolved"} and r["rule_class"] == HI.classify(items[0][3])
+    assert (r["starts_on_first_available_day"], r["ends_on_last_available_day"]) == (False, False)
+    edge, _ = B.history_rows([item([4, 5, 6, 7], [60.0, 58.0, 55.0, 51.5]), item([57, 58, 59, 60], [60.0, 58.0, 55.0, 51.5])],
+                             {(1990, "15 to 19.5 N"): (4, 60)})
+    assert [(e["starts_on_first_available_day"], e["ends_on_last_available_day"]) for e in edge] == [(True, False), (False, True)]
     assert len(members) == 12 and members[1] == {"history_id": "1990-15N-01", "member": 1, "date": "1990-06-05", "day_of_season": 4, "lon": 58.0, "anomaly_ms": -6.25}
-    still, _ = B.history_rows([item([3, 4, 5, 6], [60.0, 58.0, 58.0, 52.0])])
+    still, _ = B.history_rows([item([3, 4, 5, 6], [60.0, 58.0, 58.0, 52.0])], AVAIL)
     assert still[0]["westward_step_fraction"] == 2 / 3                       # a step that stays put is not westward
     second = [m for m in members if m["history_id"] == "1990-15N-02"]
     assert second[-1]["date"] == "1990-06-24" and second[-1]["day_of_season"] == 23
@@ -130,24 +136,152 @@ def test_the_month_records_must_be_those_of_the_stored_history_record(tmp_path):
 
 def test_the_member_digest_and_the_retained_reference_bind_interior_positions_and_depths(tmp_path):
     items = [item([3, 4, 5, 6, 7], [54.0, 51.5, 51.5, 46.5, 42.5], [-2.76, -4.16, -9.04, -6.18, -4.58])]
-    rows, members = B.history_rows(items)
-    texts = {"histories": B.csv_text(B.HIST_COLUMNS, rows), "members": B.csv_text(B.MEMBER_COLUMNS, members)}
+    rows, members = B.history_rows(items, AVAIL)
+    old_cols = B.HIST_COLUMNS[:-2]                                             # a version 1 reference, without the later columns
+    tables = {"histories": (B.HIST_COLUMNS, rows), "members": (B.MEMBER_COLUMNS, members)}
     ref = tmp_path / "ref"; ref.mkdir()
-    for k, name in (("histories", "histories.csv"), ("members", "members.csv")):
-        B.write_text(str(ref / name), texts[k])
-    (ref / "manifest.json").write_text(json.dumps({"tables": {k: {"sha256": hashlib.sha256((ref / f"{k}.csv").read_bytes()).hexdigest()} for k in ("histories", "members")}}))
-    assert B.check_reference(str(ref), texts)["result"] == "equal"
+    B.write_text(str(ref / "histories.csv"), B.csv_text(old_cols, [{c: r[c] for c in old_cols} for r in rows]))
+    B.write_text(str(ref / "members.csv"), B.csv_text(B.MEMBER_COLUMNS, members))
+    def write_manifest():
+        (ref / "manifest.json").write_text(json.dumps({"tables": {k: {"sha256": hashlib.sha256((ref / f"{k}.csv").read_bytes()).hexdigest(), "columns": c}
+                                                                for k, c in (("histories", old_cols), ("members", B.MEMBER_COLUMNS))}}))
+    write_manifest()
+    got = B.check_reference(str(ref), tables)
+    assert got["result"] == "equal" and got["compared_columns"]["histories"] == old_cols    # added columns are allowed
+    with pytest.raises(SystemExit, match="lacks the reference's columns"):
+        B.check_reference(str(ref), {"histories": (old_cols[:-1], rows), "members": tables["members"]})
     for change in ("lon", "depth"):
         it = [item([3, 4, 5, 6, 7], [54.0, 52.0 if change == "lon" else 51.5, 51.5, 46.5, 42.5], [-2.76, -5.16 if change == "depth" else -4.16, -9.04, -6.18, -4.58])]
         assert B.check_identity(it, stored_for(items)) is None                 # the summaries cannot see an interior change
-        r2, m2 = B.history_rows(it)
+        r2, m2 = B.history_rows(it, AVAIL)
         assert B.member_digest(m2) != B.member_digest(members)
-        t2 = {"histories": B.csv_text(B.HIST_COLUMNS, r2), "members": B.csv_text(B.MEMBER_COLUMNS, m2)}
         with pytest.raises(SystemExit, match="differs from the retained reference"):
-            B.check_reference(str(ref), t2)
-    (ref / "members.csv").write_text(texts["members"].replace("-4.16", "-4.17"))
+            B.check_reference(str(ref), {"histories": (B.HIST_COLUMNS, r2), "members": (B.MEMBER_COLUMNS, m2)})
+    (ref / "members.csv").write_text(B.csv_text(B.MEMBER_COLUMNS, members).replace("-4.16", "-4.17"))
     with pytest.raises(SystemExit, match="reference members.csv does not match its manifest"):
-        B.check_reference(str(ref), texts)
+        B.check_reference(str(ref), tables)
+
+
+def test_available_days_are_where_the_representation_is_defined(monkeypatch):
+    monkeypatch.setattr(W, "YEARS", (1990,))
+    by = {1990: {W.MONTHS[0]: {"bands": {"15 to 19.5 N": 17.25}}}}
+    monkeypatch.setattr(A, "season_hundredths", lambda months, b: (None, "H"))
+    monkeypatch.setattr(HI, "rep_minima", lambda rep, H, month_of, lons: [None] * 4 + [[]] * 3 + [[{"lon": 50.0}]] + [None] * 2)
+    assert B.available_days(by) == {(1990, "15 to 19.5 N"): (4, 7)}
+
+
+def rows_with(values):
+    rows = [np.zeros(len(A.LONS)) for _ in range(A.SEASON_DAYS)]
+    for d, lon, v in values:
+        rows[d][B.P.col(lon)] = v
+    return rows
+
+
+def test_one_historys_participation_by_the_readers_own_functions():
+    h = {"days": [20, 21, 22, 23, 24], "lons": [60.0, 58.0, 56.0, 54.0, 52.0], "depths": [-3.0] * 5}
+    b1 = rows_with([(d, x, -2.0) for d, x in zip(h["days"], h["lons"])])
+    b0 = rows_with([(d, x, -2.0) for d, x in zip(h["days"], h["lons"])])
+    rows, extra = B.history_participation("1990-15N-01", h, b1, b0, "15 to 19.5 N")
+    by = {r["descriptor"]: r for r in rows}
+    assert list(by) == ["average_structure", "coherence_departure", "lobe_contrast", "first_day", "daily_profile"]
+    assert by["average_structure"]["days_used"] == 5 and by["coherence_departure"]["days_used"] == 4 and by["lobe_contrast"]["days_used"] == 2
+    assert by["first_day"]["participates"] and by["daily_profile"]["days_used"] == 5 and extra["profile_off_grid"] == [0] * 5
+    east = {"days": [20, 21, 22], "lons": [70.0, 67.0, 65.0], "depths": [-3.0] * 3}         # 76 E is off the grid, and day 3 is missing
+    rows, extra = B.history_participation("1990-15N-02", east, b1, b0, "15 to 19.5 N")
+    by = {r["descriptor"]: r for r in rows}
+    assert by["first_day"]["participates"] is False and "east of 75 E" in by["first_day"]["exclusion_reason"]
+    assert by["lobe_contrast"]["days_used"] == 0 and by["lobe_contrast"]["days_excluded"] == 2 and extra["lobe_off_grid"] == 1
+    assert by["lobe_contrast"]["exclusion_reason"] == "day 3 beyond the last member, day 2 with a position 6 degrees east lying east of 75 E"
+    assert by["daily_profile"]["days_used"] == 2 and extra["profile_days"] == [0, 1, 1, 0, 0] and extra["profile_off_grid"] == [1, 0, 0, 0, 0]
+    early = {"days": [2, 3, 4, 5], "lons": [60.0, 58.0, 56.0, 54.0], "depths": [-3.0] * 4}  # fewer than 6 days of season before its last day
+    eb = rows_with([(d, x, -2.0) for d, x in zip(early["days"], early["lons"])])              # the early history's own member anomalies
+    by = {r["descriptor"]: r for r in B.history_participation("1990-15N-03", early, eb, eb, "15 to 19.5 N")[0]}
+    assert by["coherence_departure"]["participates"] is False and by["coherence_departure"]["days_excluded"] == 4
+
+
+def test_participation_covers_the_primary_histories_and_needs_both_loads_to_agree(monkeypatch):
+    monkeypatch.setattr(W, "YEARS", (1990,))
+    monkeypatch.setattr(B.L, "BAND_LAT", {"15 to 19.5 N": 17.25, "25 to 29.5 N": 27.25})
+    monkeypatch.setattr(B.L, "season_samples", lambda months, b: None)
+    monkeypatch.setattr(B.Sh, "b1_rows", lambda S, month_of: (None, "b1"))
+    monkeypatch.setattr(B.P, "daily_hundredths", lambda S: None)
+    monkeypatch.setattr(B.P, "b0_rows", lambda Hb, month_of: {y: "b0" for y in Hb})
+    for mod, name in ((B.Sh, "composite"), (B.Sh, "flank_readers"), (B.C, "measure"), (B.P, "measure"), (B.G, "profile")):
+        monkeypatch.setattr(mod, name, lambda *a, **k: {})
+    seen = []
+    monkeypatch.setattr(B, "history_participation", lambda hid, h, b1, b0, band: (seen.append(hid) or [{"history_id": hid}], {}))
+    monkeypatch.setattr(B, "check_pooled", lambda rows, extras, rc, rec: {"all": "equal"})
+    real_check_rows = B.check_rows
+    monkeypatch.setattr(B, "check_rows", lambda rows, masks: None)
+    items = [item([3, 4, 5, 6], [60.0, 58.0, 55.0, 51.5]), item([8, 9, 10, 11], [65.0, 62.0, 60.0, 56.0], band="25 to 29.5 N")]
+    hist = {(y, b): [h] for y, b, _, h in items}
+    rows, checks = B.participation(items, hist, {1990: {}}, {})
+    assert seen == ["1990-15N-01"] and rows == [{"history_id": "1990-15N-01"}] and checks == {"all": "equal"}     # outer bands carry no descriptor
+    other = {k: [dict(v[0], lons=[61.0] + v[0]["lons"][1:])] for k, v in hist.items()}
+    with pytest.raises(SystemExit, match="two loads of the histories differ"):
+        B.participation(items, other, {1990: {}}, {})
+    monkeypatch.setattr(B, "check_rows", real_check_rows)                     # rows that do not match their eligibility are refused
+    one_row = lambda hid: [{"descriptor": "first_day", "history_id": hid, "participates": False, "days_used": 0, "days_excluded": 1, "exclusion_reason": "x"}]
+    monkeypatch.setattr(B, "history_participation", lambda hid, h, b1, b0, band: (one_row(hid), {"history_id": hid, "center": 4, "coherence": False,
+                                                                                    "lobe_samples": 0, "lobe_off_grid": 0, "profile_days": [0] * 5, "profile_off_grid": [0] * 5}))
+    with pytest.raises(SystemExit, match="no average_structure row"):
+        B.participation(items, hist, {1990: {}}, {})
+
+
+def test_every_exported_row_must_agree_with_its_historys_eligibility():
+    four = {"days": [20, 21, 22, 23], "lons": [60.0, 58.0, 56.0, 54.0], "depths": [-3.0] * 4}
+    b = rows_with([(d, x, -2.0) for d, x in zip(four["days"], four["lons"])])
+    rows, mask = B.history_participation("1990-15N-01", four, b, b, "15 to 19.5 N")
+    prof = next(r for r in rows if r["descriptor"] == "daily_profile")
+    assert (prof["days_used"], prof["days_excluded"], prof["exclusion_reason"]) == (4, 1, "day 4 beyond the last member")    # the four-member case
+    B.check_rows(rows, [mask])
+    for field, value in (("days_used", 5), ("days_excluded", 0), ("participates", False), ("exclusion_reason", ""), ("days_used", 0)):
+        bad = json.loads(json.dumps(rows)); next(r for r in bad if r["descriptor"] == "daily_profile")[field] = value
+        with pytest.raises(SystemExit, match="daily_profile row of 1990-15N-01 disagrees"):
+            B.check_rows(bad, [mask])
+    with pytest.raises(SystemExit, match="two participation rows"):
+        B.check_rows(rows + rows[:1], [mask])
+    with pytest.raises(SystemExit, match="no lobe_contrast row"):
+        B.check_rows([r for r in rows if r["descriptor"] != "lobe_contrast"], [mask])
+    with pytest.raises(SystemExit, match="outside the population"):
+        B.check_rows(rows + [dict(rows[0], history_id="1990-15N-09")], [mask])
+
+
+def test_the_daily_profile_mask_is_bound_to_the_joint_reader(monkeypatch):
+    h = {"days": [20, 21, 22, 23, 24], "lons": [60.0, 58.0, 56.0, 54.0, 52.0], "depths": [-3.0] * 5}
+    b = rows_with([(d, x, -2.0) for d, x in zip(h["days"], h["lons"])])
+    monkeypatch.setattr(B.G, "profile", lambda b0, hs, bands: {"days": [1, 1, 1, 1, 0], "off_grid": [0] * 5, "by_day": []})
+    with pytest.raises(SystemExit, match="differ from the joint reader's"):
+        B.history_participation("1990-15N-01", h, b, b, "15 to 19.5 N")
+    def refuses(b0, hs, bands):
+        raise SystemExit("REFUSED: no first day enters the measure")
+    monkeypatch.setattr(B.G, "profile", refuses)
+    with pytest.raises(SystemExit, match="no first day enters"):
+        B.history_participation("1990-15N-01", h, b, b, "15 to 19.5 N")              # day 0 is on the grid, so the reader must not refuse
+    east = {"days": [20, 21, 22], "lons": [70.0, 67.0, 65.0], "depths": [-3.0] * 3}
+    assert B.history_participation("1990-15N-02", east, b, b, "15 to 19.5 N")[1]["profile_days"][0] == 0     # off the grid, the refusal is expected
+
+
+def test_the_pooled_checks_refuse_any_disagreement():
+    rows = [{"descriptor": d, "history_id": "x", "participates": True, "days_used": u, "days_excluded": 0, "exclusion_reason": ""}
+            for d, u in (("average_structure", 5), ("coherence_departure", 4), ("lobe_contrast", 2), ("first_day", 1), ("daily_profile", 5))]
+    extras = [{"lobe_off_grid": 0, "profile_days": [1, 1, 1, 1, 1], "profile_off_grid": [0] * 5}]
+    shape = {"center": -5.0, "east": 0.4, "west": 0.1, "members": 5, "histories": 1}
+    rec = {"shape": {"results": {"composite": {"primary": dict(shape)}}}, "coherence": {"results": {"measure": {"primary": {"departure": -0.4}}}},
+           "lobe": {"results": {"measure": {"primary": {"carried": 0.5, "pinned": 0.1, "contrast": 0.4, "samples": 2, "off_grid": 0}}}},
+           "joint": {"results": {"measure": {"profile": [0.1] * 5, "profile_days": [1] * 5, "profile_off_grid": [0] * 5}}}}
+    rc = {"shape": dict(shape), "coherence": {"departure": -0.4, "histories": 1},
+          "lobe": {"carried": 0.5, "pinned": 0.1, "contrast": 0.4, "samples": 2, "off_grid": 0}, "profile": {"by_day": [0.1] * 5, "days": [1] * 5, "off_grid": [0] * 5}}
+    assert set(B.check_pooled(rows, extras, rc, rec).values()) == {"equal"}
+    for descriptor, used, name in (("daily_profile", 4, "daily_profile exported history-days"), ("coherence_departure", 3, "coherence_departure exported history-days")):
+        bad = json.loads(json.dumps(rows)); next(r for r in bad if r["descriptor"] == descriptor)["days_used"] = used
+        with pytest.raises(SystemExit, match=name):
+            B.check_pooled(bad, extras, rc, rec)
+    for path, value, name in ((("lobe", "samples"), 3, "lobe_contrast history-days"), (("coherence", "departure"), -0.41, "coherence record"),
+                              (("profile", "off_grid"), [1, 0, 0, 0, 0], "daily_profile days off the grid by day"), (("shape", "members"), 6, "average_structure member-days")):
+        bad = json.loads(json.dumps(rc)); bad[path[0]][path[1]] = value
+        with pytest.raises(SystemExit, match=name):
+            B.check_pooled(rows, extras, bad, rec)
 
 
 def test_failure_modes_carry_the_net_sensitivity_from_the_record():
@@ -168,18 +302,25 @@ def test_main_writes_the_tables_and_manifest_and_never_overwrites(tmp_path, monk
     monkeypatch.setattr(B, "recompute", lambda by: items)
     monkeypatch.setattr(B, "check_identity", lambda its, st: None)
     monkeypatch.setattr(B, "check_inputs", lambda dg, st: None)
+    monkeypatch.setattr(B, "available_days", lambda by: AVAIL)
+    monkeypatch.setattr(B.C, "load_inputs", lambda ns: ({}, None, {}, None, None))
+    part = [{"descriptor": "first_day", "history_id": "1990-15N-01", "participates": True, "days_used": 1, "days_excluded": 0, "exclusion_reason": ""}]
+    monkeypatch.setattr(B, "participation", lambda items, hist, by_x, records: (part, {"first_day starts": "equal"}))
     monkeypatch.setattr(B, "failure_modes", lambda st, tr: [])
     out = tmp_path / "out"
     assert B.main(["--out-dir", str(out), "--root", str(root), "--travel-source", TRAVEL]) == 0
     man = json.loads((out / "manifest.json").read_text())
-    assert man["counts"] == {"histories": 2, "by_band": {"15 to 19.5 N": 1, "25 to 29.5 N": 1}, "primary": 1, "members": 8}
+    assert man["counts"] == {"histories": 2, "by_band": {"15 to 19.5 N": 1, "25 to 29.5 N": 1}, "primary": 1, "members": 8,
+                             "starts_on_first_available_day": 0, "ends_on_last_available_day": 0, "participation_rows": 1}
+    assert man["participation_check"] == {"first_day starts": "equal"} and man["tables"]["participation"]["rows"] == 1 and man["product"].endswith("version 2")
+    assert (man["built"], man["first_version_built"]) == ("2026-10-23", "2026-10-22")
     assert man["tables"]["members"]["sha256"] == hashlib.sha256((out / "members.csv").read_bytes()).hexdigest()
     assert man["travel_status"]["vocabulary"] == ["unresolved"] and man["travel_status"]["source"]["path"] == TRAVEL
     assert man["definition"]["class_rule"] == {"min_days": 4, "max_net_deg": -8.0, "min_westward_step_fraction": 0.75} and man["definition"]["prominence_ms"] == A.PROMINENCE
     rows = list(csv.DictReader(open(out / "histories.csv")))
     assert [r["history_id"] for r in rows] == ["1990-15N-01", "1990-25N-01"] and list(rows[0]) == B.HIST_COLUMNS
     assert man["reference_check"] == {"path": None, "performed": False, "result": "not performed, no retained version was given"}
-    assert man["member_digest"] == B.member_digest(B.history_rows(items)[1])
+    assert man["member_digest"] == B.member_digest(B.history_rows(items, AVAIL)[1])
     with pytest.raises(SystemExit, match="never overwritten"):
         B.main(["--out-dir", str(out), "--root", str(root), "--travel-source", TRAVEL])
     out2 = tmp_path / "out2"

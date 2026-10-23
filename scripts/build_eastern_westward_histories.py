@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""The builder of the eastern westward-history subset, version 1
-(`EASTERN_WESTWARD_HISTORIES_SUBSET_2026-10-22.md`). It recomputes the westward histories of the
+"""The builder of the eastern westward-history subset, version 2
+(`EASTERN_WESTWARD_HISTORIES_SUBSET_2026-10-22.md`, sections 1 to 9 and 10). It recomputes the westward histories of the
 declared combination (RB9 with the LN linker) from the 96 regime month records, refuses unless
 the month records are the ones the stored minima-history record was made from and every
 history's summary equals that record in order, compares the rebuilt tables with a retained
 earlier version when one is given, and writes a table of histories, a table of their daily
 members and a manifest whose population descriptors are read from records made from the same
-inputs. Every history carries the travel status 'unresolved'. A
+inputs. Version 2 adds each history's position against the season's available days and a table
+of which histories and days enter each descriptor, read with the records' own functions and
+refused unless its counts sum to the records' and the readings recomputed from the same rows
+equal them. Every history carries the travel status 'unresolved'. A
 history is a sequence of linked minima, not an identified feature. The builder changes no saved
 file.
 
@@ -28,22 +31,30 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
+import eastern_joint_standing as G  # noqa: E402
 import eastern_minima_histories as HI  # noqa: E402
 import eastern_wobble_climatology as W  # noqa: E402
 
 A = W.A
+P, C, Sh, L = G.P, G.C, G.H, G.L
 EXT = "docs/aewc_v2/evidence/validation/eastern_pilot_2026-10-05/reports/extent"
 RECORDS = f"{EXT}/climatology"
 STORED = f"{EXT}/eval60_hist_archive_r1.json"
 SOURCES = {"shape": f"{EXT}/eval60_shape_archive_r2.json", "coherence": f"{EXT}/eval60_coherence_archive.json",
            "lobe": f"{EXT}/eval60_lobe_archive.json", "joint": f"{EXT}/eval60_joint_archive.json",
            "prestart": f"{EXT}/eval60_prestart_constructions.json"}
+XBAND = f"{EXT}/xband"
+INJECT = f"{EXT}/eval60_inject_archive_r1.json"
+VERSION = 2
+VERSION_BUILT = {1: "2026-10-22", 2: "2026-10-23"}
+DESCRIPTORS = ("average_structure", "coherence_departure", "lobe_contrast", "first_day", "daily_profile")
 PRIMARY_BANDS = ("15 to 19.5 N", "20 to 24.5 N")
 PRIMARY_HISTORIES = 86
 TRAVEL_STATUS = "unresolved"
 HIST_COLUMNS = ["history_id", "season", "band", "primary", "first_date", "last_date", "days", "first_lon", "last_lon", "net_deg",
                 "speed_deg_per_day", "westward_step_fraction", "deepest_anomaly_ms", "cut_east", "cut_west", "ends_at_or_west_of_40",
-                "rule_class", "travel_status"]
+                "rule_class", "travel_status", "starts_on_first_available_day", "ends_on_last_available_day"]
+PARTICIPATION_COLUMNS = ["descriptor", "history_id", "participates", "days_used", "days_excluded", "exclusion_reason"]
 MEMBER_COLUMNS = ["history_id", "member", "date", "day_of_season", "lon", "anomaly_ms"]
 COLUMN_DEFINITIONS = {
     "history_id": "season, band code and the history's order among that season and band's westward histories",
@@ -69,6 +80,13 @@ COLUMN_DEFINITIONS = {
     "day_of_season": "days since 1 June of the season",
     "lon": "the member's longitude, degrees east",
     "anomaly_ms": "the member's anomaly against the centered nine-day mean of the daily band mean, m/s, exact at stored precision",
+    "starts_on_first_available_day": "the first member falls on the season's first day with a nine-day background, so the history may have begun before the data allow it to be seen",
+    "ends_on_last_available_day": "the last member falls on the season's last day with a nine-day background, so the history may have continued after the data allow it to be seen",
+    "descriptor": "the population descriptor of the manifest the row concerns",
+    "participates": "whether any of the history's days enter the descriptor",
+    "days_used": "the history-days the descriptor's reader read for this history",
+    "days_excluded": "the history-days the reader would read that it skipped",
+    "exclusion_reason": "why each skipped day, or the whole history, was left out",
 }
 
 
@@ -105,6 +123,19 @@ def check_inputs(digests, stored):
         raise SystemExit(f"REFUSED: the month records differ from those the stored history record was made from ({diff[:5]})")
 
 
+def available_days(by):
+    """The first and last day of each season and band on which the declared representation is
+    defined, as the linker saw them through the minima-history script's own function."""
+    rep, _ = W.HISTORIES
+    month_of = A.month_index(); out = {}
+    for b in list(by[W.YEARS[0]][W.MONTHS[0]]["bands"]):
+        for y in W.YEARS:
+            mins = HI.rep_minima(rep, A.season_hundredths(by[y], b)[1], month_of, W.LONS)
+            ok = [d for d, m in enumerate(mins) if m is not None]
+            out[(y, b)] = (ok[0], ok[-1])
+    return out
+
+
 def recompute(by):
     """(season, band, dates, history) for every westward history of the declared combination,
     in the stored record's order: band, then season, then the linker's order."""
@@ -138,7 +169,7 @@ def check_identity(items, stored):
             raise SystemExit(f"REFUSED: a history in {y} {b} has members on non-consecutive days")
 
 
-def history_rows(items):
+def history_rows(items, avail):
     rows, members, seen = [], [], {}
     for y, b, dates, h in items:
         k = seen[(y, b)] = seen.get((y, b), 0) + 1
@@ -150,7 +181,8 @@ def history_rows(items):
                      "last_date": dates[h["days"][-1]], "days": n, "first_lon": x[0], "last_lon": x[-1], "net_deg": s["net_deg"],
                      "speed_deg_per_day": s["speed_deg_per_day"], "westward_step_fraction": sum(1 for d in steps if d < 0) / len(steps),
                      "deepest_anomaly_ms": min(h["depths"]), "cut_east": s["cut_east"], "cut_west": s["cut_west"],
-                     "ends_at_or_west_of_40": s["ends_at_or_west_of_40"], "rule_class": HI.classify(h), "travel_status": TRAVEL_STATUS})
+                     "ends_at_or_west_of_40": s["ends_at_or_west_of_40"], "rule_class": HI.classify(h), "travel_status": TRAVEL_STATUS,
+                     "starts_on_first_available_day": h["days"][0] == avail[(y, b)][0], "ends_on_last_available_day": h["days"][-1] == avail[(y, b)][1]})
         june1 = datetime.date(y, 6, 1)
         for i, (d, lon, dep) in enumerate(zip(h["days"], h["lons"], h["depths"])):
             date = dates[d]
@@ -211,6 +243,134 @@ def descriptors(root, digests, stored_sha):
     return out
 
 
+def history_participation(hid, h, b1_rows, b0_rows, band):
+    """The five descriptor rows of one history, read by the records' own functions on the
+    history's rows: the shape record's composite, the coherence record's end series, the
+    lobe-position record's accumulator, and the joint record's daily-profile rule."""
+    x = h["lons"]; n = len(x); off = lambda lon: lon + P.OFFSET > A.LONS[-1]
+    comp = Sh.composite({(0, band): b1_rows}, {(0, band): [h]}, (band,))
+    center = int(comp["count"][list(Sh.DX).index(0.0)])
+    rows = [{"descriptor": "average_structure", "history_id": hid, "participates": center > 0, "days_used": center, "days_excluded": 0, "exclusion_reason": ""}]
+    e = C.ends(b1_rows, h)
+    rows.append({"descriptor": "coherence_departure", "history_id": hid, "participates": e is not None, "days_used": 1 + len(C.LAG_DAYS) if e else 0,
+                 "days_excluded": 0 if e else 1 + len(C.LAG_DAYS),
+                 "exclusion_reason": "" if e else f"fewer than {C.CURVE_DAYS[-1]} days of the season after the first day or before the last day"})
+    acc = P.new_acc(); P.accumulate(b0_rows, h, acc)
+    why = [f"day {k} beyond the last member" for k in P.CP_DAYS if k >= n]
+    why += [f"day {k} with a position {P.OFFSET:g} degrees east lying east of {A.LONS[-1]:g} E" for k in P.CP_DAYS if k < n and (off(x[0]) or off(x[k]))]
+    rows.append({"descriptor": "lobe_contrast", "history_id": hid, "participates": acc["samples"] > 0, "days_used": acc["samples"],
+                 "days_excluded": len(P.CP_DAYS) - acc["samples"], "exclusion_reason": ", ".join(why)})
+    used = [k for k in G.PROFILE_DAYS if k < n and not off(x[k])]
+    mask_days = [int(k in used) for k in G.PROFILE_DAYS]; mask_off = [int(k < n and off(x[k])) for k in G.PROFILE_DAYS]
+    try:                                                       # the joint record's own reader on this one history
+        pr = G.profile({(0, band): b0_rows}, {(0, band): [h]}, (band,))
+        if 0 not in used or (pr["days"], pr["off_grid"]) != (mask_days, mask_off):
+            raise SystemExit(f"REFUSED: {hid}'s daily-profile days differ from the joint reader's")
+    except SystemExit as ex:
+        if "no first day enters" not in str(ex) or 0 in used:
+            raise
+    rows.append({"descriptor": "first_day", "history_id": hid, "participates": 0 in used, "days_used": int(0 in used), "days_excluded": int(0 not in used),
+                 "exclusion_reason": "" if 0 in used else f"the position {P.OFFSET:g} degrees east of the first longitude lies east of {A.LONS[-1]:g} E"})
+    why = [f"day {k} beyond the last member" if k >= n else f"day {k} with its position {P.OFFSET:g} degrees east lying east of {A.LONS[-1]:g} E"
+           for k in G.PROFILE_DAYS if k not in used]
+    rows.append({"descriptor": "daily_profile", "history_id": hid, "participates": bool(used), "days_used": len(used),
+                 "days_excluded": len(G.PROFILE_DAYS) - len(used), "exclusion_reason": ", ".join(why)})
+    return rows, {"history_id": hid, "center": center, "coherence": e is not None, "lobe_samples": acc["samples"], "lobe_off_grid": acc["off_grid"],
+                  "profile_days": mask_days, "profile_off_grid": mask_off}
+
+
+def expected_fields(mask):
+    """The participates, days_used and days_excluded each descriptor row must carry, from a
+    history's eligibility as its readers gave it."""
+    nl, nc, npd = len(P.CP_DAYS), 1 + len(C.LAG_DAYS), len(G.PROFILE_DAYS)
+    return {"average_structure": (mask["center"] > 0, mask["center"], 0),
+            "coherence_departure": (mask["coherence"], nc if mask["coherence"] else 0, 0 if mask["coherence"] else nc),
+            "lobe_contrast": (mask["lobe_samples"] > 0, mask["lobe_samples"], nl - mask["lobe_samples"]),
+            "first_day": (bool(mask["profile_days"][0]), mask["profile_days"][0], 1 - mask["profile_days"][0]),
+            "daily_profile": (sum(mask["profile_days"]) > 0, sum(mask["profile_days"]), npd - sum(mask["profile_days"]))}
+
+
+def check_rows(rows, masks):
+    """Every exported row agrees with its history's eligibility, a reason is given exactly when
+    days were skipped, and each history has one row per descriptor, or the build is refused."""
+    by = {}
+    for r in rows:
+        key = (r["descriptor"], r["history_id"])
+        if key in by:
+            raise SystemExit(f"REFUSED: two participation rows for {key}")
+        by[key] = r
+    for mask in masks:
+        for d, (part, used, skipped) in expected_fields(mask).items():
+            r = by.pop((d, mask["history_id"]), None)
+            if r is None:
+                raise SystemExit(f"REFUSED: no {d} row for {mask['history_id']}")
+            if (r["participates"], r["days_used"], r["days_excluded"]) != (part, used, skipped) or bool(r["exclusion_reason"]) != (skipped > 0):
+                raise SystemExit(f"REFUSED: the {d} row of {mask['history_id']} disagrees with its eligibility")
+    if by:
+        raise SystemExit(f"REFUSED: participation rows for histories outside the population ({sorted(by)[:3]})")
+
+
+def check_pooled(rows, extras, recomputed, records):
+    """The per-history counts sum to the pooled counts the readers give over the same histories,
+    and those pooled readings equal the stored records, or the build is refused."""
+    def total(name, field):
+        return sum(r[field] for r in rows if r["descriptor"] == name)
+    shape, coh, lobe, prof = recomputed["shape"], recomputed["coherence"], recomputed["lobe"], recomputed["profile"]
+    checks = {
+        "average_structure member-days": (total("average_structure", "days_used"), shape["members"]),
+        "coherence_departure histories": (sum(1 for r in rows if r["descriptor"] == "coherence_departure" and r["participates"]), coh["histories"]),
+        "lobe_contrast history-days": (total("lobe_contrast", "days_used"), lobe["samples"]),
+        "lobe_contrast days off the grid": (sum(e["lobe_off_grid"] for e in extras), lobe["off_grid"]),
+        "daily_profile history-days by day": ([sum(e["profile_days"][k] for e in extras) for k in range(len(G.PROFILE_DAYS))], prof["days"]),
+        "daily_profile days off the grid by day": ([sum(e["profile_off_grid"][k] for e in extras) for k in range(len(G.PROFILE_DAYS))], prof["off_grid"]),
+        "daily_profile exported history-days": (total("daily_profile", "days_used"), sum(prof["days"])),
+        "coherence_departure exported history-days": (total("coherence_departure", "days_used"), coh["histories"] * (1 + len(C.LAG_DAYS))),
+        "first_day starts": (total("first_day", "days_used"), prof["days"][0]),
+        "shape record": ({k: shape[k] for k in ("center", "east", "west", "members", "histories")},
+                         {k: records["shape"]["results"]["composite"]["primary"][k] for k in ("center", "east", "west", "members", "histories")}),
+        "coherence record": (coh["departure"], records["coherence"]["results"]["measure"]["primary"]["departure"]),
+        "lobe record": ({k: lobe[k] for k in ("carried", "pinned", "contrast", "samples", "off_grid")},
+                        {k: records["lobe"]["results"]["measure"]["primary"][k] for k in ("carried", "pinned", "contrast", "samples", "off_grid")}),
+        "joint record": ({"profile": prof["by_day"], "profile_days": prof["days"], "profile_off_grid": prof["off_grid"]},
+                         {k: records["joint"]["results"]["measure"][k] for k in ("profile", "profile_days", "profile_off_grid")}),
+    }
+    for name, (mine, theirs) in checks.items():
+        if mine != theirs:
+            raise SystemExit(f"REFUSED: {name}, {mine} against {theirs}")
+    return {name: "equal" for name in checks}
+
+
+def participation(items, hist, by_x, records):
+    """Every primary history's descriptor rows in the subset's order, the two loads of the
+    histories refused unless they agree, and the pooled checks."""
+    month_of = A.month_index()
+    b1 = {k: Sh.b1_rows(L.season_samples(by_x[k[0]], k[1]), month_of)[1] for k in hist}
+    b0 = {}
+    for b in L.BAND_LAT:
+        rows = P.b0_rows({y: P.daily_hundredths(L.season_samples(by_x[y], b)) for y in W.YEARS}, month_of)
+        for y in W.YEARS:
+            b0[(y, b)] = rows[y]
+    ids, seen = {}, {}
+    for y, b, dates, h in items:
+        k = seen[(y, b)] = seen.get((y, b), 0) + 1
+        ids.setdefault((y, b), []).append((f"{y}-{band_code(b)}-{k:02d}", h))
+    for key in set(ids) | {k for k, v in hist.items() if v}:
+        if [(h["days"], h["lons"]) for _, h in ids.get(key, [])] != [(h["days"], h["lons"]) for h in hist.get(key, [])]:
+            raise SystemExit(f"REFUSED: the two loads of the histories differ in {key}")
+    out, extras = [], []
+    for y, b, dates, h in items:
+        if b not in PRIMARY_BANDS:
+            continue
+        hid = next(i for i, hh in ids[(y, b)] if hh is h)
+        r, e = history_participation(hid, h, b1[(y, b)], b0[(y, b)], b)
+        out.extend(r); extras.append(e)
+    check_rows(out, extras)
+    recomputed = {"shape": Sh.flank_readers(Sh.composite(b1, hist, PRIMARY_BANDS)), "coherence": C.measure(b1, hist, PRIMARY_BANDS),
+                  "lobe": P.measure({b: {y: b0[(y, b)] for y in W.YEARS} for b in L.BAND_LAT}, hist, PRIMARY_BANDS),
+                  "profile": G.profile(b0, hist, PRIMARY_BANDS)}
+    return out, check_pooled(out, extras, recomputed, records)
+
+
 def failure_modes(stored, travel_source):
     """The known ways the subset misrepresents the flow, with the numbers read from the stored record."""
     rep, linker = W.HISTORIES
@@ -258,19 +418,26 @@ def implementation():
     return {os.path.relpath(os.path.abspath(m.__file__), ROOT): sha256_of(os.path.abspath(m.__file__)) for m in (HI, A, W, W.SC)}
 
 
-def check_reference(ref_dir, texts):
-    """The retained earlier version, refused unless its tables match its own manifest, and the
-    rebuilt tables equal its tables byte for byte."""
+def check_reference(ref_dir, tables):
+    """The retained earlier version, refused unless its tables match its own manifest, and every
+    table it holds, restricted to its columns, equals the rebuilt table byte for byte. A later
+    version may add columns and tables, and may change none of the reference's."""
     with open(os.path.join(ref_dir, "manifest.json"), encoding="utf-8") as fh:
         man = json.load(fh)
-    for k, name in (("histories", "histories.csv"), ("members", "members.csv")):
-        p = os.path.join(ref_dir, name)
-        if sha256_of(p) != man["tables"][k]["sha256"]:
-            raise SystemExit(f"REFUSED: the reference {name} does not match its manifest")
+    compared = {}
+    for k, spec in man["tables"].items():
+        p = os.path.join(ref_dir, f"{k}.csv")
+        if sha256_of(p) != spec["sha256"]:
+            raise SystemExit(f"REFUSED: the reference {k}.csv does not match its manifest")
+        if k not in tables or not set(spec["columns"]) <= set(tables[k][0]):
+            raise SystemExit(f"REFUSED: the rebuilt {k}.csv lacks the reference's columns")
+        mine = csv_text(spec["columns"], [{c: r[c] for c in spec["columns"]} for r in tables[k][1]])
         with open(p, encoding="utf-8", newline="") as fh:
-            if fh.read() != texts[k]:
-                raise SystemExit(f"REFUSED: the rebuilt {name} differs from the retained reference")
-    return {"path": ref_dir, "manifest_sha256": sha256_of(os.path.join(ref_dir, "manifest.json")), "performed": True, "result": "equal"}
+            if fh.read() != mine:
+                raise SystemExit(f"REFUSED: the rebuilt {k}.csv differs from the retained reference")
+        compared[k] = spec["columns"]
+    return {"path": ref_dir, "manifest_sha256": sha256_of(os.path.join(ref_dir, "manifest.json")), "performed": True, "result": "equal",
+            "compared_columns": compared}
 
 
 def write_text(path, text):
@@ -287,7 +454,8 @@ def main(argv=None):
     ap.add_argument("--build-note", default="")
     a = ap.parse_args(argv)
     out = os.path.abspath(a.out_dir)
-    paths = {k: os.path.join(out, f) for k, f in (("histories", "histories.csv"), ("members", "members.csv"), ("manifest", "manifest.json"))}
+    paths = {k: os.path.join(out, f) for k, f in (("histories", "histories.csv"), ("members", "members.csv"), ("participation", "participation.csv"),
+                                                   ("manifest", "manifest.json"))}
     refuse_existing(paths.values())
     if not os.path.isfile(os.path.join(a.root, a.travel_source)):
         raise SystemExit(f"REFUSED: the travel-status source {a.travel_source} does not exist")
@@ -299,22 +467,28 @@ def main(argv=None):
     check_inputs(digests, stored)
     items = recompute(by)
     check_identity(items, stored)
-    rows, members = history_rows(items)
+    rows, members = history_rows(items, available_days(by))
     desc = descriptors(a.root, digests, stored_sha)
-    texts = {"histories": csv_text(HIST_COLUMNS, rows), "members": csv_text(MEMBER_COLUMNS, members)}
-    ref = (check_reference(os.path.abspath(a.reference), texts) if a.reference
+    ns = argparse.Namespace(shape=os.path.join(a.root, SOURCES["shape"]), inject=os.path.join(a.root, INJECT), records=os.path.join(a.root, RECORDS),
+                            histories=os.path.join(a.root, STORED), xband=os.path.join(a.root, XBAND))
+    hist, _, by_x, _, _ = C.load_inputs(ns)
+    records = {k: _source(k, a.root, digests, stored_sha)[0] for k in ("shape", "coherence", "lobe", "joint")}
+    part, part_checks = participation(items, hist, by_x, records)
+    tables = {"histories": (HIST_COLUMNS, rows), "members": (MEMBER_COLUMNS, members), "participation": (PARTICIPATION_COLUMNS, part)}
+    texts = {k: csv_text(cols, rs) for k, (cols, rs) in tables.items()}
+    ref = (check_reference(os.path.abspath(a.reference), tables) if a.reference
            else {"path": None, "performed": False, "result": "not performed, no retained version was given"})
     if ref["path"]:
         ref["path"] = os.path.relpath(ref["path"], a.root)
     os.makedirs(out, exist_ok=True)
-    write_text(paths["histories"], texts["histories"])
-    write_text(paths["members"], texts["members"])
+    for k in tables:
+        write_text(paths[k], texts[k])
     rel = lambda p: os.path.relpath(p, a.root)
     by_band = {b: sum(1 for r in rows if r["band"] == b) for b in sorted({r["band"] for r in rows})}
     rep, linker = W.HISTORIES
     manifest = {
-        "product": "eastern westward-history subset, version 1", "part_of": "EASTERN_DESCRIPTIVE_PRODUCT_2026-10-19.md, layer L2",
-        "declared": "EASTERN_WESTWARD_HISTORIES_SUBSET_2026-10-22.md", "built": "2026-10-22",
+        "product": f"eastern westward-history subset, version {VERSION}", "part_of": "EASTERN_DESCRIPTIVE_PRODUCT_2026-10-19.md, layer L2",
+        "declared": "EASTERN_WESTWARD_HISTORIES_SUBSET_2026-10-22.md", "built": VERSION_BUILT[VERSION], "first_version_built": VERSION_BUILT[1],
         "builder": {"path": "scripts/build_eastern_westward_histories.py", "sha256": sha256_of(os.path.abspath(__file__))},
         "label": "linked minima and their positions, depths and dates, with rule-defined classes; no identity, no tracked disturbance, no physical classification",
         "definition": {"representation": rep, "linker": linker, "max_link_deg": HI.S_MAX, "floor_ms": HI.REP_SPEC[rep][1], "prominence_ms": A.PROMINENCE,
@@ -330,9 +504,12 @@ def main(argv=None):
                            "history record. The summaries do not bind interior longitudes or depths, which the member digest and the "
                            "reference check carry"),
         "member_digest": member_digest(members), "implementation": implementation(), "reference_check": ref,
-        "counts": {"histories": len(rows), "by_band": by_band, "primary": sum(1 for r in rows if r["primary"]), "members": len(members)},
-        "tables": {k: {"path": rel(paths[k]), "sha256": sha256_of(paths[k]), "rows": n, "columns": cols}
-                   for k, n, cols in (("histories", len(rows), HIST_COLUMNS), ("members", len(members), MEMBER_COLUMNS))},
+        "counts": {"histories": len(rows), "by_band": by_band, "primary": sum(1 for r in rows if r["primary"]), "members": len(members),
+                   "starts_on_first_available_day": sum(1 for r in rows if r["starts_on_first_available_day"]),
+                   "ends_on_last_available_day": sum(1 for r in rows if r["ends_on_last_available_day"]),
+                   "participation_rows": len(part)},
+        "tables": {k: {"path": rel(paths[k]), "sha256": sha256_of(paths[k]), "rows": len(rs), "columns": cols} for k, (cols, rs) in tables.items()},
+        "participation_check": part_checks,
         "column_definitions": COLUMN_DEFINITIONS,
         "travel_status": {"vocabulary": [TRAVEL_STATUS], "value": TRAVEL_STATUS,
                           "meaning": "the records do not separate troughs traveling with their southerly lobe from minima moving past southerly anomaly standing near where they begin",
