@@ -44,8 +44,8 @@ P, C, Sh, L = G.P, G.C, G.H, G.L
 EXT = "docs/aewc_v2/evidence/validation/eastern_pilot_2026-10-05/reports/extent"
 RECORDS = f"{EXT}/climatology"
 STORED = f"{EXT}/eval60_hist_archive_r1.json"
-SOURCES = {"shape": f"{EXT}/eval60_shape_archive_r2.json", "coherence": f"{EXT}/eval60_coherence_archive.json",
-           "lobe": f"{EXT}/eval60_lobe_archive.json", "joint": f"{EXT}/eval60_joint_archive.json",
+SOURCES = {"shape": f"{EXT}/eval60_shape_archive_r2.json", "coherence": f"{EXT}/eval60_coherence_archive_r1.json",
+           "lobe": f"{EXT}/eval60_lobe_archive_r1.json", "joint": f"{EXT}/eval60_joint_archive.json",
            "prestart": f"{EXT}/eval60_prestart_constructions.json", "matched_profile": f"{EXT}/eval60_matched_profile_r1.json"}
 XBAND = f"{EXT}/xband"
 INJECT = f"{EXT}/eval60_inject_archive_r1.json"

@@ -36,7 +36,7 @@ def test_groups_digests_and_refusals(tmp_path):
         assert "no file matches x/missing_*" in str(ex)
     (d / "sub").mkdir()
     assert [f["path"] for f in M.inventory(str(tmp_path), (("L9", "g", "R.md", ("x/*",)),))[0]["contents"]] == ["x/a.json", "x/a_r1.json", "x/b.md"], "directories are not files"
-    assert len(M.GROUPS) == 22 and {g[0] for g in M.GROUPS} == {"L1", "L2", "L3", "L4"}
+    assert len(M.GROUPS) == 23 and {g[0] for g in M.GROUPS} == {"L1", "L2", "L3", "L4"}
 
 
 def test_the_real_groups_resolve_in_the_repository(tmp_path):
@@ -52,10 +52,13 @@ def test_the_real_groups_resolve_in_the_repository(tmp_path):
     assert by["QTrack look-back"]["files"] == 7 and by["minima histories"]["files"] == 7 and by["two-sided look-back"]["files"] == 5
     assert by["westward-history subset, version 3"]["files"] == 4 and by["westward histories, lobe position"]["files"] == 4
     assert by["westward histories, daily profile over a fixed cohort"]["files"] == 2
-    assert not any("eastern_westward_histories_v1" in n or "eastern_westward_histories_v2" in n or "eastern_westward_histories_v3/" in n for n in names), \
+    assert by["westward histories, fixed-cohort profile against matched noise"]["files"] == 2 and by["westward histories, coherence"]["files"] == 4
+    assert not any("eastern_westward_histories_v1" in n or "eastern_westward_histories_v2" in n or "eastern_westward_histories_v3/" in n or "eastern_westward_histories_v3_r1/" in n
+               for n in names), \
         "the current build is listed, not the earlier builds"
     assert not any("lobe_feasibility" in n or n.endswith(("eval60_lagreg_archive_r1.json", "eval60_shape_archive_r1.json", "eval60_inject_archive.json",
-                                                          "eval60_matched_profile.json")) for n in names), "only current builds"
+                                                          "eval60_matched_profile.json", "eval60_matched_noise.json", "eval60_matched_noise_r1.json",
+                                                          "eval60_coherence_archive.json", "eval60_lobe_archive.json")) for n in names), "only current builds"
     assert json.loads(json.dumps(rows)) == rows
     oj, om = tmp_path / "i.json", tmp_path / "i.md"
     assert M.main(["--root", ROOT, "--out-json", str(oj), "--out-md", str(om)]) == 0
