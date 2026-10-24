@@ -5,8 +5,9 @@ pre-start test's matched noise alone and on its constant traveler of the measure
 the same noise, in its two independent blocks of ten placements, with each placement's histories
 detected as on the archive and its cohort formed by the same rule. Every placement's curve over
 all its histories must equal the pre-start record. The archive's rise from day 0 to days 3 and 4
-is compared with each block's range under a rule fixed before the run, and the traveler says
-whether the comparison can tell a rise of that kind from this noise. The measure is stated for
+is compared with each block's range under a rule fixed before the run, with the number of noise
+placements each rise exceeds. The traveler's result bears on the comparison's sensitivity only
+when its own pooled rise reaches the archive's. The measure is stated for
 this noise model and this traveler, identifies no feature, and does not say whether the
 histories travel.
 
@@ -106,35 +107,57 @@ def summary(res):
     return out
 
 
-def verdict(archive_rise, s):
+def pooled_rise(by_day, k):
+    return by_day[int(k)] - by_day[0]
+
+
+def verdict(archive_rise, s, res):
     """Section 2.4. The archive's rises against noise alone: 'above' when each lies above the
     noise's largest in both blocks, 'not separated' when none does in either block, and
     'mixed' otherwise. The traveler 'separates' when its smallest rise lies above the noise's
-    largest for each rise in both blocks."""
+    largest for each rise in both blocks. Added by section 7 as description: how many of the
+    20 noise placements each archive rise exceeds, and whether the traveler's pooled rises
+    reach the archive's in both blocks, without which its not separating says nothing about
+    the comparison's sensitivity to a rise of the archive's size."""
     above = {(k, b): archive_rise[k] > s["noise"][b]["rise"][k][1] for k in map(str, RISES) for b in BLOCKS}
     archive = "above" if all(above.values()) else "not separated" if not any(above.values()) else "mixed"
     sep = {(k, b): s["travel"][b]["rise"][k][0] > s["noise"][b]["rise"][k][1] for k in map(str, RISES) for b in BLOCKS}
+    reach = {(k, b): pooled_rise(s["travel"][b]["pooled"]["by_day"], k) >= archive_rise[k] for k in map(str, RISES) for b in BLOCKS}
     return {"archive": archive, "archive_above": {f"day {k}, block {b}": v for (k, b), v in above.items()},
+            "archive_checks_above": sum(above.values()), "archive_checks": len(above),
+            "archive_exceeds": {k: sum(e["rise"][k] < archive_rise[k] for e in res["noise"]) for k in map(str, RISES)},
+            "noise_placements": len(res["noise"]),
             "traveler": "separates" if all(sep.values()) else "does not separate",
-            "traveler_above": {f"day {k}, block {b}": v for (k, b), v in sep.items()}}
+            "traveler_above": {f"day {k}, block {b}": v for (k, b), v in sep.items()},
+            "traveler_rise": "reaches the archive's" if all(reach.values()) else "below the archive's"}
 
 
 def readings(v):
-    """Section 2.4's readings, chosen by the verdict alone."""
-    trav = ("the traveler of the measured shape on the same noise rises above every noise placement in both blocks, so the comparison "
-            "can tell a rise of that kind from this noise" if v["traveler"] == "separates" else
-            "the traveler of the measured shape on the same noise does not rise above every noise placement in both blocks, so the "
-            "comparison cannot tell a rise of that kind from this noise")
+    """Section 2.4's readings as amended in section 7, chosen by the verdict alone. A traveler
+    that does not separate is read as showing the comparison insensitive only when its pooled
+    rise reaches the archive's, and the comparison is said to decide nothing only then."""
+    n, ex = v["noise_placements"], v["archive_exceeds"]
+    counts = f"its rise to day 3 exceeds {ex['3']} of the {n} noise placements and its rise to day 4 exceeds {ex['4']}"
     if v["archive"] == "above":
-        arch = "the archive's fixed-cohort rise lies above every placement of this noise model in both blocks"
+        arch = f"the declared rule gives ABOVE, since the archive's fixed-cohort rises lie above every placement of this noise model in both blocks, and {counts}"
     elif v["archive"] == "not separated":
-        arch = "neither of the archive's fixed-cohort rises lies above this noise model's largest in either block"
+        arch = f"the declared rule gives NOT SEPARATED, since neither of the archive's fixed-cohort rises lies above this noise model's largest in either block, and {counts}"
     else:
-        arch = "the archive's fixed-cohort rise lies above this noise model in some blocks or days and not others, so the comparison is placement-dependent and unresolved"
+        arch = (f"the declared rule gives MIXED, since the archive passes {v['archive_checks_above']} of its {v['archive_checks']} block-and-day "
+                f"exceedance checks, and {counts}")
+    if v["traveler"] == "separates":
+        trav = "the constant traveler of the measured shape separates from this noise in both blocks, so the comparison can tell its rise from this noise"
+    elif v["traveler_rise"] == "below the archive's":
+        trav = ("the constant traveler of the measured shape does not establish sensitivity to a known rise of the archive's size, because its "
+                "pooled rise does not reach the archive's, so that sensitivity is untested")
+    else:
+        trav = ("the constant traveler's pooled rise reaches the archive's but does not separate from this noise, so the comparison cannot tell "
+                "a rise of that size from this noise")
     out = [arch, trav]
-    if v["archive"] != "above" and v["traveler"] != "separates":
-        out.append("neither the archive's rise nor the traveler's separates from this noise, so the comparison decides nothing about the archive")
-    out.append("the readings hold for this noise model, this traveler and these 20 placements, count no histories one by one, and leave travel unresolved")
+    if v["archive"] != "above" and v["traveler"] != "separates" and v["traveler_rise"] == "reaches the archive's":
+        out.append("neither the archive's rise nor a traveler's rise of its size separates from this noise, so the comparison decides nothing about the archive")
+    out.append("the counts are not calibrated confidence levels, and the readings hold for this noise model, this traveler and these 20 placements, "
+               "count no histories one by one, and leave travel unresolved")
     return out
 
 
@@ -161,7 +184,7 @@ def text(res, s, v, archive):
             out.append(f"| {name} | {b} | {x['cohort_histories'][0]} to {x['cohort_histories'][1]} | {fmt(x['rise']['3'][0])}, {fmt(x['rise']['3'][1])} | "
                        f"{fmt(x['rise']['4'][0])}, {fmt(x['rise']['4'][1])} | " + ", ".join(fmt(y) for y in x["pooled"]["by_day"])
                        + f" over {x['pooled']['histories']} |")
-    out += ["", f"Archive: {v['archive']}. Traveler: {v['traveler']}.", ""] + [f"- {x}" for x in readings(v)]
+    out += ["", f"Archive: {v['archive']}. Traveler: {v['traveler']}, pooled rise {v['traveler_rise']}.", ""] + [f"- {x}" for x in readings(v)]
     return "\n".join(out) + "\n"
 
 
@@ -195,7 +218,7 @@ def main(argv=None):
     res = run(tracks, by, matched_std, P.measured_parts())
     check_reproduced(res, prestart_rec)
     archive = archive_values(matched_rec)
-    s = summary(res); v = verdict(archive["rise"], s)
+    s = summary(res); v = verdict(archive["rise"], s, res)
     gen.update({"script": "scripts/eastern_matched_noise.py", "sha256": SCRIPT_SHA256_AT_LOAD, "declared": "EASTERN_MATCHED_NOISE_2026-10-23.md",
                 "prestart_script_sha256": PS.SCRIPT_SHA256_AT_LOAD, "matched_script_sha256": M.SCRIPT_SHA256_AT_LOAD,
                 "prestart_constructions": {"path": a.prestart_constructions, "sha256": sha256_of(a.prestart_constructions)},
