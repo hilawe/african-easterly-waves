@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""The position of the westward histories' southerly lobe (`EASTERN_LOBE_POSITION_2026-10-22.md`):
-whether the southerly anomaly east of a history's minimum moves with the minimum or stays where
-it was when the history began. On days 2 and 3 of each history the anomaly 6 degrees east of the
-minimum (where a carried lobe sits) is compared with the anomaly 6 degrees east of the history's
-first longitude (where a pinned lobe stays), pooled over the histories and scaled by the
-minimum's depth, read against constructions of carried and pinned lobes on the histories' tracks
-detected by the same pipeline, on the archive and on matched noise. The anomaly is taken against
-the same month of the other 23 seasons, so a standing structure is not cancelled by its own
-month's mean. The measure says where the lobe sits on average. It identifies no feature and does
-not say what any one history is.
+"""The westward histories' anomaly at two prescribed positions east of them
+(`EASTERN_LOBE_POSITION_2026-10-22.md`): on days 2 and 3 of each history the anomaly 6 degrees
+east of the minimum (carried) and 6 degrees east of the history's first longitude (pinned),
+pooled over the histories and scaled by the minimum's depth, and their difference, the
+contrast, read against constructions of carried and pinned lobes on the histories' tracks
+detected by the same pipeline, on the archive and on matched noise. The anomaly is taken
+against the same month of the other 23 seasons, so a standing structure is not canceled by its
+own month's mean. The measure samples two fixed positions and neither locates nor follows a
+lobe, so it says neither where the lobe sits nor whether it moves. A lobe fixed at the first
+longitude itself gives a carried-like contrast, because by days 2 and 3 the minima lie about 6
+degrees west of where they began. It identifies no feature and does not say what any one
+history is.
 
     python3 scripts/eastern_lobe_position.py constructions --shape PATH --inject PATH --records DIR --histories PATH --xband DIR --out-dir DIR
     python3 scripts/eastern_lobe_position.py archive --shape PATH --inject PATH --records DIR --histories PATH --xband DIR \\

@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""The coherence of the westward histories (`EASTERN_HISTORY_COHERENCE_2026-10-22.md`): whether
-the own-month anomaly at a history's first longitude persists after its minimum has moved on,
-which a minimum migrating within a standing structure leaves behind and a traveling trough
-does not, read against constructions of traveling troughs of the measured average shape on
-the histories' tracks with a standing trough beneath them of increasing relative depth,
-detected by the same pipeline, on the archive and on matched noise. The measure says whether
-a persistent structure is left behind. It does not separate coherent travel from minima that
-noise produces, it identifies no feature, and it does not say what any one history is.
+"""The coherence of the westward histories (`EASTERN_HISTORY_COHERENCE_2026-10-22.md`): the
+pooled evolution of the own-month anomaly at the histories' first longitude over the days after
+their first day, read against constructions of traveling troughs of the measured average shape
+on the histories' tracks over a standing plateau of constant depth, 0, 0.5, 1 and 2 times
+theirs, detected by the same pipeline, on the archive and on matched noise. The measure says
+whether the pooled curve is consistent with those constant-depth plateau constructions. It
+does not exclude standing structure in general, because against the month's mean a standing
+trough that was deeper earlier in the month reads like a traveler and a fixed trough that
+weakens turns the anomaly southerly with no translation. It does not separate coherent travel
+from minima that noise produces, it identifies no feature, and it does not say what any one
+history is.
 
     python3 scripts/eastern_history_coherence.py constructions --shape PATH --inject PATH --records DIR --histories PATH --xband DIR --out-dir DIR
     python3 scripts/eastern_history_coherence.py archive --shape PATH --inject PATH --records DIR --histories PATH --xband DIR \\
