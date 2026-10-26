@@ -117,6 +117,20 @@ def test_the_verdict_follows_the_declared_rule():
         assert N.verdict({"3": 0.4, "4": 0.4}, ranges_fixture(trav_lo=lo), res)["traveler"] == "does not separate"
 
 
+def test_the_shared_rule_and_maxima(monkeypatch):
+    s = ranges_fixture(noise_hi=(0.3, 0.1, 0.2, 0.4))
+    mx = N.noise_maxima(s)
+    assert mx == {("3", "A"): 0.3, ("3", "B"): 0.1, ("4", "A"): 0.2, ("4", "B"): 0.4}
+    assert N.exceedance({"3": 0.5, "4": 0.5}, mx)[0] == "above" and N.exceedance({"3": 0.0, "4": 0.0}, mx)[0] == "not separated"
+    o, checks = N.exceedance({"3": 0.3, "4": 0.41}, mx)                                    # equal to a largest is not above
+    assert o == "mixed" and checks == {("3", "A"): False, ("3", "B"): True, ("4", "A"): True, ("4", "B"): True}
+    seen = []
+    real = N.exceedance
+    monkeypatch.setattr(N, "exceedance", lambda rise, maxima: seen.append(rise) or real(rise, maxima))
+    N.verdict({"3": 0.4, "4": 0.4}, s, rises_fixture())
+    assert seen == [{"3": 0.4, "4": 0.4}]                                                  # the verdict applies the shared rule
+
+
 def test_the_archive_exceedance_counts_cover_all_twenty_noise_placements():
     res = rises_fixture(r3=[0.05 * i for i in range(20)], r4=[0.4] + [0.0] * 19)
     v = N.verdict({"3": 0.5, "4": 0.4}, ranges_fixture(), res)

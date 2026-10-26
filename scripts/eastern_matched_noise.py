@@ -111,6 +111,19 @@ def pooled_rise(by_day, k):
     return by_day[int(k)] - by_day[0]
 
 
+def noise_maxima(s):
+    """Noise alone's largest rise to each day in each block of a summary."""
+    return {(k, b): s["noise"][b]["rise"][k][1] for k in map(str, RISES) for b in BLOCKS}
+
+
+def exceedance(rise, maxima):
+    """Section 2.4's rule for one pair of rises: each rise to each day against noise's largest in
+    each block, 'above' when every check passes strictly, 'not separated' when none does, and
+    'mixed' otherwise, with the checks."""
+    above = {(k, b): rise[k] > maxima[(k, b)] for k in map(str, RISES) for b in BLOCKS}
+    return ("above" if all(above.values()) else "not separated" if not any(above.values()) else "mixed"), above
+
+
 def verdict(archive_rise, s, res):
     """Section 2.4. The archive's rises against noise alone: 'above' when each lies above the
     noise's largest in both blocks, 'not separated' when none does in either block, and
@@ -119,8 +132,7 @@ def verdict(archive_rise, s, res):
     20 noise placements each archive rise exceeds, and whether the traveler's pooled rises
     reach the archive's in both blocks, without which its not separating says nothing about
     the comparison's sensitivity to a rise of the archive's size."""
-    above = {(k, b): archive_rise[k] > s["noise"][b]["rise"][k][1] for k in map(str, RISES) for b in BLOCKS}
-    archive = "above" if all(above.values()) else "not separated" if not any(above.values()) else "mixed"
+    archive, above = exceedance(archive_rise, noise_maxima(s))
     sep = {(k, b): s["travel"][b]["rise"][k][0] > s["noise"][b]["rise"][k][1] for k in map(str, RISES) for b in BLOCKS}
     reach = {(k, b): pooled_rise(s["travel"][b]["pooled"]["by_day"], k) >= archive_rise[k] for k in map(str, RISES) for b in BLOCKS}
     return {"archive": archive, "archive_above": {f"day {k}, block {b}": v for (k, b), v in above.items()},
