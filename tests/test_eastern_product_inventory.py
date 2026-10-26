@@ -59,7 +59,9 @@ def test_the_real_groups_resolve_in_the_repository(tmp_path):
         "the current build is listed, not the earlier builds"
     assert not any("lobe_feasibility" in n or n.endswith(("eval60_lagreg_archive_r1.json", "eval60_shape_archive_r1.json", "eval60_inject_archive.json",
                                                           "eval60_matched_profile.json", "eval60_matched_noise.json", "eval60_matched_noise_r1.json", "eval60_matched_noise_r2.json",
-                                                          "eval60_known_rise_noise.json", "eval60_known_rise_map.json",
+                                                          "eval60_matched_noise_r3.json", "eval60_known_rise_noise.json", "eval60_known_rise_map.json",
+                                                          "eval60_known_rise_noise_r1.json", "eval60_known_rise_map_r1.json", "eval60_known_rise_diagnostics.json",
+                                                          "eval60_known_rise_clean_g2_m1.3.json",
                                                           "eval60_coherence_archive.json", "eval60_lobe_archive.json")) for n in names), "only current builds"
     assert json.loads(json.dumps(rows)) == rows
     oj, om = tmp_path / "i.json", tmp_path / "i.md"

@@ -84,7 +84,10 @@ def outcomes(entries, maxima):
 
 
 def check_follow(entries_fields, stored):
-    """The following histories' readings equal the known-rise record's placements exactly."""
+    """The following histories' readings and the known-rise record's placements both hold every
+    declared placement in order, and their readings are equal exactly."""
+    if [e["placement"] for e in entries_fields] != list(K.PLACEMENTS) or [s["placement"] for s in stored] != list(K.PLACEMENTS):
+        raise SystemExit("REFUSED: the readings or the record do not hold every declared placement in order")
     for e, s in zip(entries_fields, stored):
         if (e["rise"], e["cohort_histories"], e["matched"]["by_day"]) != (s["rise"], s["cohort_histories"], s["matched"]["by_day"]):
             raise SystemExit(f"REFUSED: placement {e['placement']} does not reproduce the known-rise record")

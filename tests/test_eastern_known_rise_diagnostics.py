@@ -31,8 +31,12 @@ def test_fields_keep_every_detected_history_and_count_the_troughs_each_follows(m
 
 
 def test_the_following_readings_must_reproduce_the_known_rise_record():
-    stored = [{"placement": p, "rise": {"3": 0.1, "4": 0.2}, "cohort_histories": 30, "matched": {"by_day": [0.1] * 5}} for p in range(3)]
+    stored = [{"placement": p, "rise": {"3": 0.1, "4": 0.2}, "cohort_histories": 30, "matched": {"by_day": [0.1] * 5}} for p in range(20)]
     D.check_follow(json.loads(json.dumps(stored)), stored)
+    relabeled = json.loads(json.dumps(stored)); relabeled[0]["placement"] = 999
+    for mine, theirs in (([], stored), (stored, stored[:1]), (stored[:19], stored[:19]), (relabeled, stored), (stored, relabeled), (stored[::-1], stored[::-1])):
+        with pytest.raises(SystemExit, match="do not hold every declared placement in order"):
+            D.check_follow(json.loads(json.dumps(mine)), theirs)
     for field, value in (("rise", {"3": 0.1, "4": 0.3}), ("cohort_histories", 31)):
         bad = json.loads(json.dumps(stored)); bad[1][field] = value
         with pytest.raises(SystemExit, match="placement 1 does not reproduce"):
