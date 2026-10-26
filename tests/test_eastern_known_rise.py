@@ -139,14 +139,23 @@ def test_the_noise_reading_uses_the_stored_noise_and_this_traveler():
 def test_the_readings_for_the_growing_traveler():
     v = TN.verdict_fixture(archive="mixed", traveler="separates", traveler_rise="reaches the archive's")
     r = K.readings(v, "ARCHIVE")
-    assert r[0] == "ARCHIVE" and "separates from this noise in all 4 block-and-day checks" in r[1] and "pass 3 of those checks" in r[1] and len(r) == 3
+    assert r[0] == "ARCHIVE" and "separates completely from this noise" in r[1] and "in all 4 block-and-day checks" in r[1] and "pass 3 of those checks" in r[1] and len(r) == 3
     r = K.readings(dict(v, traveler="does not separate"), "ARCHIVE")
-    assert "cannot tell a constructed rise of that size and form" in r[1] and "decides nothing" in r[2] and len(r) == 4
+    assert "fails complete separation" in r[1] and "does not calibrate the archive's physical interpretation" in r[2] and len(r) == 4
     r = K.readings(dict(v, traveler="does not separate", traveler_rise="below the archive's"), "ARCHIVE")
-    assert "does not establish insensitivity" in r[1] and "attenuates" in r[1] and not any("decides nothing" in x for x in r)
+    assert "does not establish insensitivity" in r[1] and "attenuates" in r[1] and not any("does not calibrate" in x for x in r)
     r = K.readings(dict(v, archive="above", traveler="does not separate"), "ARCHIVE")
-    assert not any("decides nothing" in x for x in r) and "constructed traveler" in r[-1] and "leave travel unresolved" in r[-1]
+    assert not any("does not calibrate" in x for x in r) and "constructed traveler" in r[-1] and "leave travel unresolved" in r[-1]
     assert not any("constant" in x for x in K.readings(v, "ARCHIVE"))
+
+
+def test_no_reading_says_the_comparison_distinguishes_nothing():
+    for archive in ("above", "mixed", "not separated"):
+        for trav in ("separates", "does not separate"):
+            for rise in ("reaches the archive's", "below the archive's"):
+                v = TN.verdict_fixture(archive=archive, traveler=trav, traveler_rise=rise)
+                for r in (K.readings(v, N.readings(v)[0]), N.readings(v)):
+                    assert not any(w in x for x in r for w in ("cannot tell", "decides nothing", "can tell"))
 
 
 def test_main_clean_and_noise(tmp_path, monkeypatch):

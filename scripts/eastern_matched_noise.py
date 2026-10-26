@@ -145,9 +145,10 @@ def verdict(archive_rise, s, res):
 
 
 def readings(v):
-    """Section 2.4's readings as amended in section 7, chosen by the verdict alone. A traveler
-    that does not separate is read as showing the comparison insensitive only when its pooled
-    rise reaches the archive's, and the comparison is said to decide nothing only then."""
+    """Section 2.4's readings as amended in sections 7 and 8, chosen by the verdict alone. Not
+    separating is failure of complete separation under the strict rule, never a statement that
+    the comparison distinguishes nothing, and a traveler whose pooled rise falls short of the
+    archive's says nothing about sensitivity to a rise of the archive's size."""
     n, ex = v["noise_placements"], v["archive_exceeds"]
     counts = f"its rise to day 3 exceeds {ex['3']} of the {n} noise placements and its rise to day 4 exceeds {ex['4']}"
     if v["archive"] == "above":
@@ -158,16 +159,17 @@ def readings(v):
         arch = (f"the declared rule gives MIXED, since the archive passes {v['archive_checks_above']} of its {v['archive_checks']} block-and-day "
                 f"exceedance checks, and {counts}")
     if v["traveler"] == "separates":
-        trav = "the constant traveler of the measured shape separates from this noise in both blocks, so the comparison can tell its rise from this noise"
+        trav = "the constant traveler of the measured shape separates completely from this noise, its smallest rises above noise's largest in every block-and-day check"
     elif v["traveler_rise"] == "below the archive's":
         trav = ("the constant traveler of the measured shape does not establish sensitivity to a known rise of the archive's size, because its "
                 "pooled rise does not reach the archive's, so that sensitivity is untested")
     else:
-        trav = ("the constant traveler's pooled rise reaches the archive's but does not separate from this noise, so the comparison cannot tell "
-                "a rise of that size from this noise")
+        trav = ("the constant traveler's pooled rise reaches the archive's, but it fails complete separation from this noise, its smallest "
+                "rise not lying above noise's largest in every block-and-day check")
     out = [arch, trav]
     if v["archive"] != "above" and v["traveler"] != "separates" and v["traveler_rise"] == "reaches the archive's":
-        out.append("neither the archive's rise nor a traveler's rise of its size separates from this noise, so the comparison decides nothing about the archive")
+        out.append("neither the archive's rise nor a traveler's rise of its size separates completely from this noise, and this exploratory "
+                   "comparison does not calibrate the archive's physical interpretation")
     out.append("the counts are not calibrated confidence levels, and the readings hold for this noise model, this traveler and these 20 placements, "
                "count no histories one by one, and leave travel unresolved")
     return out

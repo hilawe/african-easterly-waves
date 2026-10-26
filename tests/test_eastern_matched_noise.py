@@ -154,10 +154,11 @@ def verdict_fixture(**kw):
 
 def test_the_readings_are_chosen_by_the_verdict():
     r = N.readings(verdict_fixture(archive="above", traveler="separates", traveler_rise="below the archive's"))
-    assert r[0].startswith("the declared rule gives ABOVE") and "can tell its rise" in r[1] and len(r) == 3
+    assert r[0].startswith("the declared rule gives ABOVE") and "separates completely from this noise" in r[1] and len(r) == 3
     assert "its rise to day 3 exceeds 19 of the 20 noise placements and its rise to day 4 exceeds 20" in r[0]
     r = N.readings(verdict_fixture(archive="not separated", traveler="does not separate", traveler_rise="reaches the archive's"))
-    assert "neither of the archive's fixed-cohort rises lies above" in r[0] and "cannot tell a rise of that size" in r[1] and "decides nothing" in r[2] and len(r) == 4
+    assert "neither of the archive's fixed-cohort rises lies above" in r[0] and "fails complete separation" in r[1] and len(r) == 4
+    assert "does not calibrate the archive's physical interpretation" in r[2]
     below = N.verdict({"3": -0.2, "4": -0.2}, ranges_fixture(), rises_fixture())             # below every noise placement, not within them
     assert below["archive"] == "not separated" and not any("within" in x for x in N.readings(below))
     r = N.readings(verdict_fixture(archive="mixed", traveler="separates", traveler_rise="below the archive's"))
@@ -165,13 +166,21 @@ def test_the_readings_are_chosen_by_the_verdict():
     assert "not calibrated confidence levels" in r[-1] and "leave travel unresolved" in r[-1]
 
 
+def test_no_reading_says_the_comparison_distinguishes_nothing():
+    for archive in ("above", "mixed", "not separated"):
+        for trav in ("separates", "does not separate"):
+            for rise in ("reaches the archive's", "below the archive's"):
+                r = N.readings(verdict_fixture(archive=archive, traveler=trav, traveler_rise=rise))
+                assert not any(w in x for x in r for w in ("cannot tell", "decides nothing", "can tell"))
+
+
 def test_a_control_without_a_known_rise_is_never_read_as_showing_insensitivity():
     for archive in ("above", "mixed", "not separated"):
         r = N.readings(verdict_fixture(archive=archive, traveler="does not separate", traveler_rise="below the archive's"))
         assert "does not establish sensitivity to a known rise of the archive's size" in r[1] and "untested" in r[1]
-        assert not any("cannot tell" in x or "decides nothing" in x for x in r) and len(r) == 3
+        assert not any("fails complete separation" in x or "does not calibrate" in x for x in r) and len(r) == 3
     r = N.readings(verdict_fixture(archive="above", traveler="does not separate", traveler_rise="reaches the archive's"))
-    assert "cannot tell a rise of that size" in r[1] and not any("decides nothing" in x for x in r)       # the archive above noise is never 'nothing'
+    assert "fails complete separation" in r[1] and not any("does not calibrate" in x for x in r)       # nothing added when the archive is above noise
 
 
 def test_the_archive_values_come_from_the_matched_profile_record():

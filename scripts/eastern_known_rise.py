@@ -152,21 +152,24 @@ def noise_reading(archive_rise, noise_rec, entries):
 
 
 def readings(v, archive_line):
-    """Section 2.4's readings for the growing traveler, chosen by the verdict alone, beside the
-    noise comparison's own reading of the archive."""
+    """Section 3.3's readings for the growing traveler as amended in section 10, chosen by the
+    verdict alone, beside the noise comparison's own reading of the archive. Not separating is
+    failure of complete separation under the strict rule, never a statement that the comparison
+    distinguishes nothing."""
     if v["traveler"] == "separates":
-        trav = (f"the growing traveler separates from this noise in all {v['archive_checks']} block-and-day checks, so the comparison can tell "
-                f"this constructed rise from this noise, and the archive's rises pass {v['archive_checks_above']} of those checks")
+        trav = (f"the growing traveler separates completely from this noise, its smallest rise above noise's largest in all {v['archive_checks']} "
+                f"block-and-day checks, while the archive's rises pass {v['archive_checks_above']} of those checks")
     elif v["traveler_rise"] == "reaches the archive's":
-        trav = ("the growing traveler's pooled rise on this noise reaches the archive's but does not separate from it, so the comparison "
-                "cannot tell a constructed rise of that size and form from this noise")
+        trav = ("the growing traveler's pooled rise on this noise reaches the archive's, but it fails complete separation from this noise, "
+                "its smallest rise not lying above noise's largest in every block-and-day check")
     else:
         trav = ("on this noise the growing traveler's pooled rise does not reach the archive's, although on the clean background it does, so "
                 "its not separating does not establish insensitivity to a rise of the archive's size, and the noise attenuates the "
                 "observable this construction carries")
     out = [archive_line, trav]
     if v["archive"] != "above" and v["traveler"] != "separates" and v["traveler_rise"] == "reaches the archive's":
-        out.append("neither the archive's rise nor a constructed rise of its size separates from this noise, so the comparison decides nothing about the archive")
+        out.append("neither the archive's rise nor a constructed rise of its size separates completely from this noise, and this exploratory "
+                   "comparison does not calibrate the archive's physical interpretation")
     out.append("the readings hold for this noise model, this constructed traveler and these 20 placements, count no histories one by one, "
                "and leave travel unresolved")
     return out
