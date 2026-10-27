@@ -40,6 +40,7 @@ GROUPS = (
     ("L2", "westward histories, a known rise against matched noise", "EASTERN_KNOWN_RISE_2026-10-24.md",
      (f"{EXTENT}/eval60_known_rise_clean_g2_m*_r1.*", f"{EXTENT}/eval60_known_rise_noise*_r2.*", f"{EXTENT}/eval60_known_rise_map_r2.*",
       f"{EXTENT}/eval60_known_rise_diagnostics_r1.*")),
+    ("L2", "phase progression and envelope evolution", "EASTERN_PHASE_ENVELOPE_2026-10-26.md", (f"{EXTENT}/eval60_phase_env_*_r1.*",)),
     ("L3", "descriptive layer, version 1", "EASTERN_DESCRIPTIVE_LAYER_2026-10-17.md", ("docs/aewc_v2/eastern_descriptive_layer_v1/*",)),
     ("L4", "band means extended to 10 W", "EASTERN_CROSSING_TEST_2026-10-19.md", (f"{EXTENT}/xband/eval60_xband_????_??.json.gz",)),
     ("L4", "crossing test", "EASTERN_CROSSING_TEST_2026-10-19.md", (f"{EXTENT}/eval60_cross_constructions.*", f"{EXTENT}/eval60_cross_*_r1.*")),

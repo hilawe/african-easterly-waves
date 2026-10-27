@@ -36,7 +36,7 @@ def test_groups_digests_and_refusals(tmp_path):
         assert "no file matches x/missing_*" in str(ex)
     (d / "sub").mkdir()
     assert [f["path"] for f in M.inventory(str(tmp_path), (("L9", "g", "R.md", ("x/*",)),))[0]["contents"]] == ["x/a.json", "x/a_r1.json", "x/b.md"], "directories are not files"
-    assert len(M.GROUPS) == 24 and {g[0] for g in M.GROUPS} == {"L1", "L2", "L3", "L4"}
+    assert len(M.GROUPS) == 25 and {g[0] for g in M.GROUPS} == {"L1", "L2", "L3", "L4"}
 
 
 def test_the_real_groups_resolve_in_the_repository(tmp_path):
@@ -54,6 +54,7 @@ def test_the_real_groups_resolve_in_the_repository(tmp_path):
     assert by["westward histories, daily profile over a fixed cohort"]["files"] == 2
     assert by["westward histories, fixed-cohort profile against matched noise"]["files"] == 2 and by["westward histories, coherence"]["files"] == 4
     assert by["westward histories, a known rise against matched noise"]["files"] == 36
+    assert by["phase progression and envelope evolution"]["files"] == 8
     assert not any("eastern_westward_histories_v1" in n or "eastern_westward_histories_v2" in n or "eastern_westward_histories_v3/" in n or "eastern_westward_histories_v3_r1/" in n
                for n in names), \
         "the current build is listed, not the earlier builds"
@@ -62,7 +63,8 @@ def test_the_real_groups_resolve_in_the_repository(tmp_path):
                                                           "eval60_matched_noise_r3.json", "eval60_known_rise_noise.json", "eval60_known_rise_map.json",
                                                           "eval60_known_rise_noise_r1.json", "eval60_known_rise_map_r1.json", "eval60_known_rise_diagnostics.json",
                                                           "eval60_known_rise_clean_g2_m1.3.json",
-                                                          "eval60_coherence_archive.json", "eval60_lobe_archive.json")) for n in names), "only current builds"
+                                                          "eval60_coherence_archive.json", "eval60_lobe_archive.json",
+                                                          "eval60_phase_env_constructions.json", "eval60_phase_env_700_archive.json", "eval60_phase_env_600_archive.json")) for n in names), "only current builds"
     assert json.loads(json.dumps(rows)) == rows
     oj, om = tmp_path / "i.json", tmp_path / "i.md"
     assert M.main(["--root", ROOT, "--out-json", str(oj), "--out-md", str(om)]) == 0
