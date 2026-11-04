@@ -36,7 +36,7 @@ def test_groups_digests_and_refusals(tmp_path):
         assert "no file matches x/missing_*" in str(ex)
     (d / "sub").mkdir()
     assert [f["path"] for f in M.inventory(str(tmp_path), (("L9", "g", "R.md", ("x/*",)),))[0]["contents"]] == ["x/a.json", "x/a_r1.json", "x/b.md"], "directories are not files"
-    assert len(M.GROUPS) == 25 and {g[0] for g in M.GROUPS} == {"L1", "L2", "L3", "L4"}
+    assert len(M.GROUPS) == 27 and {g[0] for g in M.GROUPS} == {"L1", "L2", "L3", "L4"}
 
 
 def test_the_real_groups_resolve_in_the_repository(tmp_path):
@@ -55,6 +55,11 @@ def test_the_real_groups_resolve_in_the_repository(tmp_path):
     assert by["westward histories, fixed-cohort profile against matched noise"]["files"] == 2 and by["westward histories, coherence"]["files"] == 4
     assert by["westward histories, a known rise against matched noise"]["files"] == 36
     assert by["phase progression and envelope evolution"]["files"] == 8
+    assert by["phase and envelope at the published bases"]["files"] == 9
+    assert [os.path.basename(f["path"]) for f in by["regressed wind maxima at the published bases"]["contents"]] == \
+        ["eval60_phase_env_maxima_constructions_r3.json", "eval60_phase_env_maxima_constructions_r3.md", "eval60_phase_env_maxima_maps_r1.png",
+         "eval60_phase_env_maxima_r1.json", "eval60_phase_env_maxima_tables_r1.md"], "the current constructions record and the reading under the amendment"
+    assert not any("maxima" in f["path"] for f in by["phase progression and envelope evolution"]["contents"])
     assert not any("eastern_westward_histories_v1" in n or "eastern_westward_histories_v2" in n or "eastern_westward_histories_v3/" in n or "eastern_westward_histories_v3_r1/" in n
                for n in names), \
         "the current build is listed, not the earlier builds"
