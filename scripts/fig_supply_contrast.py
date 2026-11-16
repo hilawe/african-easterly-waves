@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-"""Compose figure F6, the Lagrangian supply contrast, from the deposit tables.
+"""Compose figure F6, the contrast along the inflow, from the deposit tables.
 
 Panel (a): parcel origins 72 h before trough passage in trough-relative coordinates,
 MCS-active and MCS-quiet, with the -24 h sampling box and the group-mean inflow paths.
 Panel (b): the hero curve, the MCS-active minus MCS-quiet relative humidity along the
 tracked inflow against passage-relative time, with the wave-cluster bootstrap band and
-mean parcel separations annotated, and the fixed-box Eulerian estimates overplotted in
-grey on the same axes (meridian and displaced boxes at -24 h, the longer-lead box at
+the mean inflow paths drawn in panel (a), and the fixed-box Eulerian estimates overplotted in
+gray on the same axes (meridian and displaced boxes at -24 h, the longer-lead box at
 -36 h, the source-offset controls at -72 h). All values come from the deposit driver's
 tables (canonical_numbers.csv, parcels_*.csv, cases_*.csv, paths_*.csv); this script
 draws and annotates only.
@@ -54,6 +54,7 @@ def main():
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.patches import Rectangle
+    from matplotlib.lines import Line2D
 
     plt.rcParams.update({
         "axes.unicode_minus": False,
@@ -121,18 +122,23 @@ def main():
     ax1.annotate("sampling box (-24 h)", (-5, 15.3), fontsize=14.5, color="k")
     ax1.annotate("origins at -72 h", (0.03, 0.03), xycoords="axes fraction",
                  fontsize=14.5, color="#333333")
-    leg = ax1.legend(fontsize=14.5, loc="upper right")
+    # the contours get a key of their own: thick encloses half of a class's origins and
+    # thin four fifths, in the class's color
+    handles, labels = ax1.get_legend_handles_labels()
+    handles += [Line2D([], [], color="#555555", lw=2.4), Line2D([], [], color="#555555", lw=1.6)]
+    labels += ["50% of a class's origins", "80% of a class's origins"]
+    leg = ax1.legend(handles, labels, fontsize=13, loc="upper right")
     for lh in leg.get_lines():
         lh.set_alpha(1)
     ax1.set_xlim(-14, 26)
-    ax1.set_ylim(-3, 29)
+    ax1.set_ylim(-3, 36)                 # headroom, so the key sits above the contours
     ax1.set_xlabel("longitude relative to the trough (deg)")
     ax1.set_ylabel("latitude (deg N)")
     ax1.set_title("Parcel origins and mean inflow paths")
     panel_label(ax1, "a", 15)
     ax1.grid(alpha=0.25)
 
-    # ---- panel b: the supply contrast against the fixed frame ----
+    # ---- panel b: the contrast along the inflow against the fixed frame ----
     lag = df[(df.tier == a.tier) & (df.level == a.level)
              & (df.statistic == "lagrangian_rh")].sort_values("time_rel_h")
     t = lag.time_rel_h.values
@@ -167,11 +173,8 @@ def main():
     e72 = 0.5 * (get(df, a.tier, a.level, "eulerian_control_L+8", -72)["diff"]
                  + get(df, a.tier, a.level, "eulerian_control_L+12", -72)["diff"])
 
-    ax2.annotate("", xy=(-23.0, ebox["diff"]), xytext=(-23.0, r72["diff"]),
-                 arrowprops=dict(arrowstyle="->", color="#333333", lw=1.6))
-    ax2.annotate(f"{att:.1f}x vs\nseed box", (-27.5, 0.5 * (ebox["diff"]
-                 + r72["diff"])), fontsize=14.5, color="#333333", va="center",
-                 ha="right")
+    # the ratio against the box at the seed, a comparison across both frame and lead, is
+    # stated in the text and is no longer drawn
     ax2.annotate("", xy=(-69.5, e72), xytext=(-69.5, r72["diff"]),
                  arrowprops=dict(arrowstyle="->", color="#333333", lw=1.6))
     ax2.annotate(f"{matched:.1f}x at -72 h",
@@ -184,8 +187,8 @@ def main():
     ax2.axhline(0, color="k", lw=1.2)
     ax2.set_xlim(-76, -20)
     ax2.set_xlabel("time relative to trough passage (h)")
-    ax2.set_ylabel(f"MCS-active minus MCS-quiet {a.level} hPa RH (%)")
-    ax2.set_title("The supply contrast in two frames")
+    ax2.set_ylabel(f"MCS-active minus MCS-quiet {a.level} hPa RH\n(percentage points)")
+    ax2.set_title("The contrast along the inflow and in fixed boxes")
     panel_label(ax2, "b", 15)
     handles, labels = ax2.get_legend_handles_labels()
     short = {

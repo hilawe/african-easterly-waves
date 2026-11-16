@@ -83,7 +83,7 @@ def main():
              get(df, a.tier, 700, "lagrangian_rh_wave_level", -72)]
     panel(ax2, moist, ["meridian\nbox (-24 h)", "inflow\nat -48 h", "inflow\nat -72 h",
                        "wave\nlevel"],
-          C_MOIST, "%", "700 hPa moisture contrast")
+          C_MOIST, "percentage points", "700 hPa moisture contrast")
     panel_label(ax2, "b", 14)
     fig.tight_layout()
     fig.savefig(a.out, dpi=300)

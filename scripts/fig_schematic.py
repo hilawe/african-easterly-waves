@@ -2,12 +2,13 @@
 """Compose figure F9, the two-layer signature schematic (rebuild of the approved design).
 
 Design grammar, per the design rulings. transport differences are drawn ONLY in the
-700 hPa arrows (widths and routes), state differences ONLY in the 850 hPa fill; the
+700 hPa arrows (the width of the Saharan-side arrow, the one route difference that is
+resolved), state differences ONLY in the 850 hPa fill; the
 850 hPa inflow arrows are identical southwest monsoon arrows in both panels (the
 measured ground-relative origin distribution, west and south dominated); all flow
 arrows are ground-relative, stated in the legend line, with the caption noting the
-850 hPa arrows reverse in the wave-relative frame; the wake-recovery link is labeled
-interpretation; the theta-e glyph reads "vapor outweighs cooling"; in-panel labels are
+850 hPa arrows reverse in the wave-relative frame; the link from prior-day convection
+to the moist layer is labeled interpretation; the theta-e glyph reads "vapor outweighs cooling"; in-panel labels are
 print-safe charcoal, colored labels use the darkest stops of their ramps, and only the
 W/E axis ticks stay muted.
 
@@ -78,16 +79,14 @@ def panel(ax, active):
     arrow(ax, (9.4, 7.4), (7.1, 7.4), AEJ, 2.2, "AEJ inflow", (9.35, 7.85),
           label_color=CHAR, ha="right")
     if active:
-        # reduced Saharan-side import (thin), enhanced monsoon-side origins (thicker)
+        # reduced Saharan-side influence (thin), an interpretation of the less northerly
+        # paths and not a measured import. The monsoon-side share of the origins does
+        # not differ between the classes, so no arrow is drawn for it in either panel.
         arrow(ax, (8.6, 9.0), (7.2, 7.9), SAHARA, 1.1,
-              "reduced Saharan-side import", (8.15, 9.25), fs=8.7, ha="center")
-        arrow(ax, (8.6, 5.9), (7.2, 6.9), MONSOON, 2.6,
-              "more monsoon-side origins", (8.2, 5.75), fs=8.7, ha="center")
+              "reduced Saharan-side influence", (8.15, 9.25), fs=8.0, ha="center")   # the longer label at the old width
     else:
         arrow(ax, (8.6, 9.0), (7.2, 7.9), SAHARA, 3.0,
               "drier, warmer inflow", (8.15, 9.25), fs=8.7, ha="center")
-        arrow(ax, (8.6, 5.9), (7.2, 6.9), MONSOON, 1.1,
-              "fewer monsoon-side origins", (8.2, 5.75), fs=8.7, ha="center")
 
     # pre-trough convective response region, west of and at the axis
     if active:
@@ -111,20 +110,20 @@ def panel(ax, active):
         # design grammar (identical in both panels), so the label moves, not the arrow.
         # Rightward is unavailable, the block already reaches x = 6.55 against the
         # trough axis at 6.6.
-        ax.text(5.35, 3.4, "moister (state contrast;\ntemperature and\ntheta-e not resolved)",
+        ax.text(5.2, 3.4, "moister in the fixed box\n(vapor, temperature and\ntheta-e not resolved)",
                 fontsize=9.2, color="#00441b", ha="center", va="center", zorder=7)
-        # wake recovery, labeled interpretation
+        # prior-day convection, its link to the moist layer labeled interpretation
         for dx in (-0.3, 0.15, 0.6):
             ax.add_patch(plt.Circle((8.35 + dx, 2.95), 0.3, fc="white", ec=CHAR,
                                     lw=0.9, zorder=6))
         for dx in (-0.25, 0.15, 0.55):
             ax.plot([8.4 + dx, 8.25 + dx], [2.6, 2.15], color=MONSOON, lw=0.9,
                     zorder=6)
-        ax.text(8.35, 1.55, "prior-day convection;\nwake recovery (interpretation)",
+        ax.text(8.35, 1.55, "prior-day convection\n(link is interpretation)",
                 fontsize=8.1, color=CHAR, ha="center", va="top", style="italic",
                 zorder=7)
     else:
-        # same centre as the active-panel label so the two panels stay aligned
+        # same center as the active-panel label so the two panels stay aligned
         ax.text(5.35, 3.4, "drier\nmonsoon layer", fontsize=9.2,
                 color="#7f4909", ha="center", va="center", zorder=7)
 

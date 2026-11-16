@@ -31,7 +31,9 @@ import xarray as xr
 
 from aew.filtering import lanczos_bandpass
 from aew.leadlag import band_mean_series, box_count_series, lag_cross_correlation, peak_lag
+from aew.observed import exposure_series, fill_short_gaps, load_observed_slots
 from aew.waves import curvature_vorticity
+import cloud_inputs
 
 OBS_PER_DAY = 4          # 6-hourly
 STEP_HOURS = 6.0
@@ -41,6 +43,12 @@ DLON = 5.0               # convection box half-width in longitude
 MAX_LAG = 8              # +/- 8 samples = +/- 48 h (the R6 frozen lag grid)
 PEAK_WIN = 48.0          # the R6 frozen estimator searches the FULL +/-48 h grid
 JAS = (7, 8, 9)
+FULL_EXPOSURE = 2.0      # the weight of a 6-hourly grid time whose three slots were all observed
+# An unobserved run on the 6-hourly grid is filled linearly when it is no longer than half
+# of the shortest period of the band (2 days), which is 24 h or four grid times. A season
+# with a longer run is left out, since a filled gap of that length would be invented signal
+# inside the band.
+MAX_GAP_STEPS = int(PERIOD_LOW * 24 / 2 / STEP_HOURS)
 # Year-block bootstrap replicates. This was 500 while the manuscript stated 20,000
 # for its cluster bootstraps, so the two disagreed. The lead-lag
 # resamples YEARS rather than waves, which is a different unit, so the manuscript
@@ -97,8 +105,16 @@ def _lag1(x):
     return float((x[:-1] * x[1:]).sum() / d) if d > 0 else 0.0
 
 
-def seasonal_lag_correlation(w_raw, c_raw, times, max_lag, months=JAS, buffer_days=15):
+def seasonal_lag_correlation(w_raw, c_raw, times, max_lag, months=JAS, buffer_days=15,
+                             exposure=None, left_out=None):
     """Per-year season lead-lag with the band-pass applied INSIDE each season block.
+
+    With ``exposure`` (the observed weight of every grid time, from
+    ``aew.observed.exposure_series``) the convection series of each season is scaled to
+    full exposure, unobserved runs of up to MAX_GAP_STEPS grid times are filled linearly,
+    and a season with a longer run is left out and its year appended to ``left_out``.
+    Without it an unobserved grid time counts as zero convection, which is how the series
+    was built before the calendar of observed slots existed.
 
     The convection record (csct) exists only for the July-September season, so a full-record
     band-pass would filter the JAS edges against artificial off-season zeros. Instead each
@@ -115,8 +131,15 @@ def seasonal_lag_correlation(w_raw, c_raw, times, max_lag, months=JAS, buffer_da
         m = np.asarray((times.year == y) & np.isin(times.month, months))
         if m.sum() < 2 * buffer_days * OBS_PER_DAY + 4 * max_lag:
             continue
+        c_block = c_raw[m]
+        if exposure is not None:
+            c_block, _ = fill_short_gaps(c_block, exposure[m], FULL_EXPOSURE, MAX_GAP_STEPS)
+            if not np.isfinite(c_block).all():
+                if left_out is not None and int(y) not in left_out:
+                    left_out.append(int(y))
+                continue
         wf = lanczos_bandpass(w_raw[m], PERIOD_LOW, PERIOD_HIGH, OBS_PER_DAY, buffer_days)
-        cf = lanczos_bandpass(c_raw[m], PERIOD_LOW, PERIOD_HIGH, OBS_PER_DAY, buffer_days)
+        cf = lanczos_bandpass(c_block, PERIOD_LOW, PERIOD_HIGH, OBS_PER_DAY, buffer_days)
         _, R = lag_cross_correlation(wf, cf, max_lag)
         if np.isfinite(R).sum() < max_lag:
             continue
@@ -165,7 +188,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--u-glob", default="data/era5/global6h/era5_u700_*_6h_global.nc")
     ap.add_argument("--v-glob", default="data/era5/global6h/era5_v700_*_6h_global.nc")
-    ap.add_argument("--csct", default="data/original/csct/csct_africa_cs245.nc")
+    ap.add_argument("--csct", default=cloud_inputs.CLASS_CATALOG)
+    ap.add_argument("--observed-slots", default=cloud_inputs.OBSERVED_SLOTS)
     ap.add_argument("--lon-lo", type=float, default=-15.0)
     ap.add_argument("--lon-hi", type=float, default=15.0)
     ap.add_argument("--lon-step", type=float, default=1.0)
@@ -176,7 +200,8 @@ def main():
     print(f"ERA5 wave field: {times.size} steps {times.min().date()}..{times.max().date()}, "
           f"{era_lon.size} lons")
 
-    cs = xr.open_dataset(a.csct)
+    seen = load_observed_slots(cloud_inputs.checked(a.observed_slots))
+    cs = xr.open_dataset(cloud_inputs.checked(a.csct))
     # csct carries two datetime coordinates: `time` (the per-observation time, ~70k/yr over
     # 1983-2007) and a corrupt `num_hits` coordinate (datetimes on the lat/lon dimension, 0
     # systems in 2000). `time` is the physical observation time and is row-parallel to
@@ -193,6 +218,10 @@ def main():
           f"(band-pass is applied within each season block)")
 
     grid = times.values  # uniform 6-hourly grid for the convection series
+    # the observed weight of every grid time, so that a grid time the position did not
+    # observe is filled or its season left out, and never read as zero convection
+    exposure = exposure_series(grid, seen)
+    left_out = []
 
     meridians = np.arange(a.lon_lo, a.lon_hi + 0.1, a.lon_step)
     peak_h, peak_sd, r_at_peak, p_at_peak = [], [], [], []
@@ -207,7 +236,8 @@ def main():
         j = int(np.argmin(np.abs(era_lon - lam)))
         w_raw = w_all[:, j]                                           # unfiltered wave
         c_raw = box_count_series(cst.values, csx, csy, grid, lam, DLON, LAT_LO, LAT_HI)
-        lags, R_years, w_core, c_core = seasonal_lag_correlation(w_raw, c_raw, times, MAX_LAG)
+        lags, R_years, w_core, c_core = seasonal_lag_correlation(
+            w_raw, c_raw, times, MAX_LAG, exposure=exposure, left_out=left_out)
         Rbar = np.nanmean(R_years, axis=0)
         # locate the peak within the near-zero-lag lobe (+/- PEAK_WIN h): with a 2-6 day
         # band the correlation has side lobes near +/- one wave period, which are the wave's
@@ -224,6 +254,8 @@ def main():
             if abs(lam - target) < a.lon_step / 2:
                 rep_curves[name] = (lags * STEP_HOURS, Rbar, lam)
 
+    print(f"seasons left out for an unobserved run of more than {MAX_GAP_STEPS} grid times: "
+          f"{sorted(left_out) if left_out else 'none'}", flush=True)
     peak_h = np.array(peak_h); peak_sd = np.array(peak_sd)
     r_at_peak = np.array(r_at_peak); p_at_peak = np.array(p_at_peak)
 
@@ -295,6 +327,10 @@ def main():
                        dict(statistic="leadlag_n_distinct_lags",
                             value=float(_pd.Series(peak_h).nunique()), ci_lo=np.nan,
                             ci_hi=np.nan),
+                       dict(statistic="leadlag_n_seasons", value=float(nyr),
+                            ci_lo=np.nan, ci_hi=np.nan),
+                       dict(statistic="leadlag_n_seasons_left_out",
+                            value=float(len(left_out)), ci_lo=np.nan, ci_hi=np.nan),
                        dict(statistic="leadlag_n_boot", value=float(N_BOOT),
                             ci_lo=np.nan, ci_hi=np.nan)]).to_csv(
             "deposit/leadlag_stats.csv", index=False, float_format="%.6f")

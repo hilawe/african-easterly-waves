@@ -3,7 +3,7 @@
 
 Panel (a): the along-inflow moisture effect (incidence-rate ratio per standard
 deviation) as environmental controls are added, showing it fall toward one once
-antecedent convection and column water vapour enter. Panel (b): the full standardized
+antecedent convection and column water vapor enter. Panel (b): the full standardized
 panel, showing antecedent convection as the dominant term and the moisture term
 indistinguishable from one. All values from control_model_ladder.csv and
 control_model_panel.csv (run scripts/control_model.py first). Draws only.
@@ -20,7 +20,7 @@ import pandas as pd
 from aew.plotting import panel_label
 
 LABELS = {"inflow_rh": "inflow moisture", "antecedent": "antecedent convection",
-          "amplitude": "wave amplitude", "shear": "shear", "tcwv": "column vapour"}
+          "amplitude": "wave amplitude", "shear": "shear", "tcwv": "column vapor"}
 
 
 def main():
@@ -59,8 +59,10 @@ def main():
                  solid_capstyle="round")
         ax1.plot(r.irr, yi, "o", color=col, ms=7)
     ax1.set_yticks(y)
-    ax1.set_yticklabels(lad.step, fontsize=13.5)
-    ax1.set_title("Moisture effect by adjustment", fontsize=13.5)
+    # the deposit's step names keep the spelling they were written with, and the figure
+    # prints the house spelling
+    ax1.set_yticklabels([s.replace("vapour", "vapor") for s in lad.step], fontsize=13.5)
+    ax1.set_title("Moisture term by adjustment", fontsize=13.5)
     ax1.text(0.97, 0.96, "(a)", transform=ax1.transAxes, fontsize=15,
              fontweight="bold", va="top", ha="right",
              bbox=dict(boxstyle="round,pad=0.15", facecolor="white",
@@ -83,23 +85,24 @@ def main():
         ax2.plot(r.irr, yi, "o", color=col, ms=7)
     ax2.set_yticks(yb)
     ax2.set_yticklabels([LABELS[p] for p in pan.predictor], fontsize=13.5)
-    ax2.set_title("Pooled predictor effects", fontsize=13.5)
+    ax2.set_title("Pooled predictor terms", fontsize=13.5)
     ax2.text(0.97, 0.96, "(b)", transform=ax2.transAxes, fontsize=15,
              fontweight="bold", va="top", ha="right",
              bbox=dict(boxstyle="round,pad=0.15", facecolor="white",
                        alpha=0.75, edgecolor="none"))
     ax2.set_xlabel("incidence-rate ratio\nper standard deviation", fontsize=13.5)
     ax2.set_ylim(-0.6, len(pan) - 1 + 0.85)
+    ax2.margins(x=0.08)                  # room for the last tick label inside the figure edge
     ax2.grid(alpha=0.25, axis="x")
 
-    # Every colour the figure uses is named. Panel (a) marks a resolved moisture
-    # effect in purple and panel (b) a resolved predictor in green, so a two-entry
-    # "coloured vs gray" key left the green unexplained.
+    # Every color the figure uses is named. Panel (a) marks a resolved moisture
+    # term in purple and panel (b) a resolved predictor in green, so a two-entry
+    # "colored vs gray" key left the green unexplained.
     key = [
         Line2D([0], [0], color="#5e3c99", marker="o", lw=2.2,
-               label="(a) moisture effect, p < 0.05"),
+               label="(a) moisture term, p < 0.05"),
         Line2D([0], [0], color="#1b7837", marker="o", lw=2.2,
-               label="(b) predictor effect, p < 0.05"),
+               label="(b) predictor term, p < 0.05"),
         Line2D([0], [0], color="#999999", marker="o", lw=2.2,
                label="p >= 0.05 (either panel)"),
     ]

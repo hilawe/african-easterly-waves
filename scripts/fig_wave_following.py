@@ -2,9 +2,18 @@
 """Wave-following (trough-relative) composite of MCS about the moving AEW trough.
 
 Uses AEWC (NCEI C00784) ERA-Interim curvature-vorticity trough trajectories over West
-Africa and the original ISCCP MCS (csct_africa_cs245.nc). For every trough observation,
-MCS within +/- 3 h are binned by longitude RELATIVE to the trough (east positive) and
-latitude, accumulated over all troughs.
+Africa and the ISCCP cloud systems of one satellite position (scripts/cloud_inputs.json).
+For every trough observation, MCS within +/- 3 h are binned by longitude RELATIVE to the
+trough (east positive) and latitude, accumulated over all troughs.
+
+Support. The catalog of one position is regional, so the composite is confined to what it
+supports under the null below. Troughs are taken between REGION_HALF degrees west and
+east, the composite spans REL_HALF degrees either side of the trough, and a trough
+observation takes part only when both slots of its +/- 3 h window were observed. Every
+bin edge of every observed and every placed trough must then lie inside the catalog's
+longitude reach, with no allowance (aew.observed.support_check), or the run stops. The
+two numbers are the widest that pass on every draw with the search interval inside the
+window.
 
 Null and inference per REPAIR_SPEC.md R1: the whole-wave anchor-permutation null
 (each wave keeps its track shape and takes another same-year-month wave's anchor, so
@@ -30,12 +39,16 @@ import pandas as pd
 import xarray as xr
 
 from aew.composites import (_digest, amplitude_difference_test, assignment_artifact,
-                            catalog_support_check, randomization_test,
-                            wave_relative_counts)
+                            randomization_test, wave_relative_counts)
 from aew.data.aewc import load_aewc_troughs
+from aew.observed import load_observed_slots, slots_observed, support_check
 from aew.plotting import panel_label
+import cloud_inputs
 
 SEARCH = (-10.0, 10.0)
+REGION_HALF = 20.0       # troughs between 20 W and 20 E
+REL_HALF = 12.0          # bin centers to 12 degrees either side of the trough
+REL_STEP = 2.0
 
 
 def band_profiles_for_draws(tr, masks, apply_draw, n_null, cs_time, cs_lon, cs_lat,
@@ -44,10 +57,10 @@ def band_profiles_for_draws(tr, masks, apply_draw, n_null, cs_time, cs_lon, cs_l
     full set (the first mask), under one shared assignment matrix."""
     profs = {name: np.empty((n_null, rel_c.size)) for name in masks}
     sum2d = None
-    pad = float(rel_c.max())
+    cat_min, cat_max = float(np.min(cs_lon)), float(np.max(cs_lon))
     for b in range(n_null):
         lon_b = apply_draw(b)
-        catalog_support_check(lon_b, pad, cs_lon)
+        support_check(lon_b, rel_c, cat_min, cat_max)
         for j, (name, m) in enumerate(masks.items()):
             c, _ = wave_relative_counts(tr.time[m], lon_b[m], cs_time, cs_lon, cs_lat,
                                         rel_c, lat_c, time_tol_hours=3.0)
@@ -62,7 +75,8 @@ def band_profiles_for_draws(tr, masks, apply_draw, n_null, cs_time, cs_lon, cs_l
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--aewc-glob", default="data/aewc/ERA-Int_ew_700hPa_*_AFR.nc")
-    ap.add_argument("--csct", default="data/original/csct/csct_africa_cs245.nc")
+    ap.add_argument("--csct", default=cloud_inputs.CLASS_CATALOG)
+    ap.add_argument("--observed-slots", default=cloud_inputs.OBSERVED_SLOTS)
     ap.add_argument("--out", default="fig_wave_following.png")
     ap.add_argument("--n-null", type=int, default=1000)
     ap.add_argument("--seed", type=int, default=0)
@@ -70,19 +84,27 @@ def main():
     a = ap.parse_args()
 
     # AEWC troughs: West African AEW region, JAS (the anatomy cohort, full season by
-    # design; the R3 eligibility gate is for response-conditioned estimands only)
+    # design; the R3 eligibility gate is for response-conditioned estimands only). A
+    # trough observation takes part only when both slots of its +/- 3 h window were
+    # observed, so that a slot with no image is not read as a slot with no storm.
+    seen = load_observed_slots(cloud_inputs.checked(a.observed_slots))
     tr = (load_aewc_troughs(a.aewc_glob)
-          .filter_region(min_lat=5, max_lat=20, min_lon=-40, max_lon=40)
+          .filter_region(min_lat=5, max_lat=20, min_lon=-REGION_HALF, max_lon=REGION_HALF)
           .filter_months([7, 8, 9]))
-    print(f"AEWC trough observations (West Africa, JAS): {len(tr)}")
+    n_region = len(tr)
+    tr = tr.filter(slots_observed(tr.time, seen, [-3.0, 0.0]))
+    print(f"AEWC trough observations ({REGION_HALF:g} W to {REGION_HALF:g} E, JAS): "
+          f"{n_region}, with both slots observed {len(tr)}")
 
-    cs = xr.open_dataset(a.csct)
+    cs = xr.open_dataset(cloud_inputs.checked(a.csct))
     cs_time = pd.DatetimeIndex(cs["time"].values).values
     cs_lon = np.asarray(cs["lon"].values, dtype=float)
     cs_lat = np.asarray(cs["lat"].values, dtype=float)
     cs.close()
 
-    rel_c = np.arange(-30.0, 30.1, 2.0)
+    rel_c = np.arange(-REL_HALF, REL_HALF + 0.1, REL_STEP)
+    # the observed configuration must be supported like every placed one
+    support_check(tr.lon, rel_c, float(cs_lon.min()), float(cs_lon.max()))
     lat_c = np.arange(0.0, 25.1, 2.0)
     band = (lat_c >= 5) & (lat_c <= 15)
 
@@ -150,7 +172,9 @@ def main():
                        peak_rel_lon=r["peak_rel_lon"], peak_ratio=r["peak_ratio"],
                        p_value=r["p_value"], n_draws=r["n_draws"],
                        simult_half_width=r["simult_half_width"],
-                       n_troughs=len(tr), n_matched=n, n_binned=int(counts.sum()))
+                       n_troughs=len(tr), n_matched=n, n_binned=int(counts.sum()),
+                       n_troughs_region=n_region, region_half_deg=REGION_HALF,
+                       window_half_deg=REL_HALF)
                   for name, r in tests.items()]
     # selection-aware test that the strong tercile's peak exceeds the weak tercile's
     # (the amplitude-scaling claim; shared null draws give an exact paired difference)
@@ -166,6 +190,16 @@ def main():
           f"({amp['n_draws']} draws)")
     pd.DataFrame(stats_rows).to_csv("deposit/null_r1_fig2_stats.csv", index=False,
                                     float_format="%.6f")
+    # the curves of panels (b) and (c) with their envelopes, so a statement about which
+    # bins lie outside the simultaneous bound can be checked against a table
+    prof = pd.DataFrame(dict(rel_lon=rel_c))
+    for name, r in tests.items():
+        prof[f"excess_{name}"] = r["excess"]
+        prof[f"point_lo_{name}"] = r["point_lo"]
+        prof[f"point_hi_{name}"] = r["point_hi"]
+        prof[f"simult_half_width_{name}"] = r["simult_half_width"]
+        prof[f"outside_simultaneous_{name}"] = np.abs(r["excess"]) > r["simult_half_width"]
+    prof.to_csv("deposit/null_r1_fig2_profile.csv", index=False, float_format="%.6f")
     for name, r in tests.items():
         print(f"R1 {name:6s}: peak {r['peak_excess']:.0f} at "
               f"{r['peak_rel_lon']:+.0f} deg, ratio {r['peak_ratio']:.3f}, "
@@ -224,9 +258,9 @@ def main():
     ax2.set_ylabel("MCS excess, 5-15N mean")
     ax2.set_title(f"All troughs  (peak {r['peak_excess']:.0f} at "
                   f"{r['peak_rel_lon']:+.0f} deg, ratio {r['peak_ratio']:.2f}, "
-                  f"p = {r['p_value']:.3g})", fontsize=10)
+                  f"p = {r['p_value']:.3f})", fontsize=10)
     panel_label(ax2, "b", 12)
-    # Same treatment as panel (c): the excess peak sits just left of centre and reached
+    # Same treatment as panel (c): the excess peak sits just left of center and reached
     # into a "best"-placed legend. Headroom plus a fixed upper-right corner, with the
     # upper left reserved for the panel label.
     _lo2, _hi2 = ax2.get_ylim()
@@ -240,11 +274,12 @@ def main():
     # envelope is drawn (the strong tercile's is comparable)
     rw, rs = tests["weak"], tests["strong"]
     ax3.fill_between(rel_c, rw["point_lo"], rw["point_hi"], color="tab:blue",
-                     alpha=0.12, label="null pointwise envelopes (per tercile)")
+                     alpha=0.12, label="Pointwise 95% envelope, weak")
     ax3.fill_between(rel_c, rs["point_lo"], rs["point_hi"], color="tab:red",
-                     alpha=0.12)
-    for rr, col in ((rw, "tab:blue"), (rs, "tab:red")):
-        ax3.axhline(rr["simult_half_width"], color=col, lw=1.2, ls="--", alpha=0.7)
+                     alpha=0.12, label="Pointwise 95% envelope, strong")
+    for rr, col, name in ((rw, "tab:blue", "weak"), (rs, "tab:red", "strong")):
+        ax3.axhline(rr["simult_half_width"], color=col, lw=1.2, ls="--", alpha=0.7,
+                    label=f"Simultaneous 95% bound, {name}")
         ax3.axhline(-rr["simult_half_width"], color=col, lw=1.2, ls="--", alpha=0.7)
     ax3.plot(rel_c, rw["excess"], color="tab:blue", lw=1.8, zorder=3,
              label=f"Weak amplitude (n={int(masks['weak'].sum()):,})")
@@ -262,10 +297,9 @@ def main():
     # headroom rather than shrinking the legend keeps the curves at full size, and the
     # upper RIGHT corner is used because the panel label owns the upper left.
     _lo3, _hi3 = ax3.get_ylim()
-    ax3.set_ylim(_lo3, _hi3 + 0.45 * (_hi3 - _lo3))
+    ax3.set_ylim(_lo3, _hi3 + 0.85 * (_hi3 - _lo3))
     handles, labels = ax3.get_legend_handles_labels()
-    labels[0] = "Pointwise 95% envelopes"
-    ax3.legend(handles, labels, fontsize=10.5, loc="upper right", framealpha=0.9)
+    ax3.legend(handles, labels, fontsize=9.5, loc="upper right", framealpha=0.9, ncol=2)
     ax3.grid(alpha=0.3)
 
     fig.tight_layout()
