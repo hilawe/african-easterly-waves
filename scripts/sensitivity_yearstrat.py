@@ -14,6 +14,13 @@ A pure consumer of deposit/eligible_troughs.csv (written by control_model.py on 
 repaired pipeline), so it integrates nothing. The within-year split holds fewer
 observations per cell, so the 30-observation cell minimum drops more cells; the retained
 counts are reported alongside. Writes deposit/yearstrat_sensitivity.csv.
+
+A third row, added for the revision, gives the same-sample comparison: the canonical
+longitude-month classes on the troughs of the year-month-longitude cells that the
+year-matched split keeps. That row and the year-matched row then differ in their matching
+alone. It is computed after the first two from the same random stream, so the first two
+rows are what they were. Every row also states its cells: how many hold a trough, how many
+reach the minimum, the troughs in those, and the median and the smallest cell.
 """
 
 import argparse
@@ -48,6 +55,16 @@ def stratified_terciles_cells(df, cols):
     return lo, hi
 
 
+def cell_facts(df, cols):
+    """The cells of one stratification: how many hold a trough, how many reach the minimum,
+    the troughs in those, and the median and the smallest cell. A trough with a missing
+    key lies in no cell."""
+    sizes = df.groupby(cols, sort=False).size()
+    kept = sizes[sizes >= MIN_BIN]
+    return dict(n_cells=int(sizes.size), n_cells_kept=int(kept.size), n_in_kept_cells=int(kept.sum()),
+                median_cell=float(sizes.median()), smallest_cell=int(sizes.min()))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--eligible", default="deposit/eligible_troughs.csv")
@@ -75,9 +92,25 @@ def main():
                          n_quiet=int(lo.sum()), n_active=int(hi.sum()),
                          clusters_quiet=nq, clusters_active=na,
                          year_gap=gap, n_boot=N_BOOT,
-                         significant=bool(not (ci_lo <= 0 <= ci_hi))))
+                         significant=bool(not (ci_lo <= 0 <= ci_hi)), **cell_facts(d, cols)))
         print(f"{label:14s} diff {diff:+.3f} [{ci_lo:+.3f}, {ci_hi:+.3f}] "
               f"n {int(lo.sum())}/{int(hi.sum())} year-gap {gap:+.2f}", flush=True)
+
+    # the canonical classes on the troughs of the cells the year-matched split keeps
+    fine = ["year", "month", "lonbin"]
+    size = d.groupby(fine, sort=False).response.transform("size")
+    kept = (size >= MIN_BIN).fillna(False).values
+    lo, hi = stratified_terciles_cells(d, ["month", "lonbin"])
+    lo, hi = lo & kept, hi & kept
+    diff, ci_lo, ci_hi, nq, na = cluster_bootstrap_diff(
+        d.traj_id[lo], d.H[lo], d.traj_id[hi], d.H[hi], rng, n_boot=N_BOOT)
+    gap = d.year[hi].mean() - d.year[lo].mean()
+    rows.append(dict(split="monthlon_kept_cells", diff=diff, ci_lo=ci_lo, ci_hi=ci_hi,
+                     n_quiet=int(lo.sum()), n_active=int(hi.sum()),
+                     clusters_quiet=nq, clusters_active=na, year_gap=gap, n_boot=N_BOOT,
+                     significant=bool(not (ci_lo <= 0 <= ci_hi)), **cell_facts(d, fine)))
+    print(f"{'monthlon_kept_cells':14s} diff {diff:+.3f} [{ci_lo:+.3f}, {ci_hi:+.3f}] "
+          f"n {int(lo.sum())}/{int(hi.sum())} year-gap {gap:+.2f}", flush=True)
 
     out = os.path.join(a.outdir, "yearstrat_sensitivity.csv")
     pd.DataFrame(rows).to_csv(out, index=False, float_format="%.6f")

@@ -10,8 +10,10 @@ a systematic displacement would bias every ERA5 box mean sampled at AEWC centers
 
 Inputs: AEWC trajectories (data/aewc), ERA5 u/v 700 6-hourly global (data/era5/global6h).
 Prints the offset profile, the peak offset, and the profile centroid near the peak, and
-writes the supplement figure (the alignment profile with the centroid annotated). The
-default globs take every year on disk, which is the pooled record.
+writes a figure of the profile on this grid. The default globs take every year on disk,
+which is the pooled record. The supplement figure shows this grid and the 0.5 degree
+regional fields together and is drawn by scripts/fig_track_alignment.py from the profiles
+that scripts/check_track_alignment_region.py saves.
 """
 
 import argparse
@@ -104,10 +106,8 @@ def main():
     print(f"\ncomposite peak at {off_deg[ipk]:+.1f} deg; positive-lobe centroid "
           f"{centroid:+.2f} deg; median per-trough argmax offset {med_argmax:+.1f} deg "
           f"(grid step {dlon:.1f} deg)")
-    print("A composite peak and centroid within one grid step of zero means the "
-          "ERA-Interim-based AEWC centers coincide with the ERA5 curvature-vorticity trough, "
-          "so ERA5 box means sampled at AEWC centers carry no systematic cross-reanalysis "
-          "displacement at this resolution.")
+    print("These offsets are descriptive. A centroid inside one grid step is not a test of zero "
+          "displacement, and no positional correction is applied to fields sampled at AEWC centers.")
 
     import matplotlib
     matplotlib.use("Agg")

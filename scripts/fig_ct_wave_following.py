@@ -15,6 +15,14 @@ mean 2.4 percent (max 3.2) of placements to the domain edge while the observed
 configuration loses none, which biases observed-minus-null upward. Per the R5
 precedent the claim is dropped rather than approximated; Fig. 2 (global storm catalog,
 full support everywhere) carries the collocation inference.
+
+One interval is given, added for the revision at a reviewer's request: the difference
+between the centroids of the two curves, with whole seasons resampled. The profiles are
+sums over seasons, so a replicate is a sum of the seasons it drew, the same seasons for
+both curves. The interval describes how far the difference moves from one draw of
+seasons to another. It is not a test against a null of the catalog's geometry, which
+the paragraph above explains cannot be built. Written to
+deposit/fig3_centroid_interval.csv.
 """
 
 import argparse
@@ -24,12 +32,41 @@ import pandas as pd
 
 from aew.composites import wave_relative_counts
 from aew.data.aewc import load_aewc_troughs
-from aew.data.ct import from_ct_genesis
+from aew.data.ct import from_ct_genesis, repeated_rows
+import cloud_inputs
 
 REL_C = np.arange(-30.0, 30.1, 2.0)
 LAT_C = np.arange(0.0, 25.1, 2.0)
 BAND = (LAT_C >= 5) & (LAT_C <= 15)
 SEARCH = (-10.0, 10.0)
+N_BOOT = 20_000
+
+
+def centroid(prof):
+    """The centroid in relative longitude of a profile, each bin weighted by its share."""
+    prof = np.asarray(prof, float)
+    return float((REL_C * prof).sum() / prof.sum())
+
+
+def centroid_difference_interval(prof_all, prof_deep, n_boot=N_BOOT, seed=0):
+    """The deep-at-detection centroid less the all-detection centroid, with seasons resampled.
+
+    ``prof_all`` and ``prof_deep`` hold one profile for each season, in the same order. A
+    replicate draws seasons with replacement and sums the profiles of both curves over
+    the same draw, so the two centroids of a replicate come from one set of seasons.
+    """
+    a, d = np.asarray(prof_all, float), np.asarray(prof_deep, float)
+    if a.shape != d.shape or a.ndim != 2 or a.shape[1] != REL_C.size or a.shape[0] < 2:
+        raise SystemExit("REFUSED: the season profiles of the two curves do not share one shape")
+    n = a.shape[0]
+    point_all, point_deep = centroid(a.sum(axis=0)), centroid(d.sum(axis=0))
+    rng = np.random.default_rng([int(seed), 3, 5])
+    w = rng.multinomial(n, np.full(n, 1.0 / n), size=int(n_boot)).astype(float)
+    ra, rd = w @ a, w @ d
+    reps = (rd * REL_C).sum(axis=1) / rd.sum(axis=1) - (ra * REL_C).sum(axis=1) / ra.sum(axis=1)
+    lo, hi = np.percentile(reps, [2.5, 97.5])
+    return dict(centroid_all=point_all, centroid_deep=point_deep, diff=point_deep - point_all, ci_lo=float(lo),
+                ci_hi=float(hi), n_seasons=int(n), n_boot=int(n_boot), significant=bool(not (lo <= 0.0 <= hi)))
 
 
 def band_prof(tr_time, tr_lon, ev):
@@ -48,9 +85,12 @@ def band_prof(tr_time, tr_lon, ev):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--aewc-glob", default="data/aewc/ERA-Int_ew_700hPa_*_AFR.nc")
-    ap.add_argument("--ct", default="data/original/CT/ct_genesis_time.nc")
+    ap.add_argument("--ct", default=cloud_inputs.TRACKING_FILE)
     ap.add_argument("--out", default="fig_ct_wave_following.png")
     a = ap.parse_args()
+    cloud_inputs.checked(a.ct)
+    # families the file lists more than once are counted once (aew.data.ct.repeated_rows)
+    n_repeats = int(repeated_rows(a.ct).sum())
 
     tr = (load_aewc_troughs(a.aewc_glob)
           .filter_region(min_lat=5, max_lat=20, min_lon=-40, max_lon=40)
@@ -67,7 +107,8 @@ def main():
     allg, deep = win(allg), win(deep)
     events = {"all": allg, "deep_at_detection": deep}
     print(f"AEWC troughs {len(tr)}; CT first detections all {len(allg)}, "
-          f"already deep at first detection {len(deep)}")
+          f"already deep at first detection {len(deep)}; repeated family rows dropped "
+          f"{n_repeats}")
 
     prof_tot = {k: band_prof(tr.time, tr.lon, ev) for k, ev in events.items()}
     obs = {k: v[0] for k, v in prof_tot.items()}
@@ -95,7 +136,7 @@ def main():
         frac = prof / prof.sum()
         centroid = float((REL_C * frac).sum())
         rows.append(dict(figure="F3", subset=k, n_events=len(events[k]),
-                         n_matches=tot[k],
+                         n_repeats_dropped=n_repeats, n_matches=tot[k],
                          bandmean_profile_total=float(prof.sum()),
                          peak_count=prof[i], peak_rel_lon=REL_C[i],
                          peak_frac_pct=100.0 * float(frac[i]),
@@ -108,6 +149,28 @@ def main():
               f"west {100 * frac[west].sum():.2f}%, centroid {centroid:+.2f} deg")
     pd.DataFrame(rows).to_csv("deposit/fig3_descriptive_stats.csv",
                               index=False, float_format="%.6f")
+
+    # the centroid difference with whole seasons resampled. The season profiles must add
+    # to the profiles above, which holds because no trough of one season lies within the
+    # matching tolerance of a detection of another.
+    tr_year = pd.DatetimeIndex(tr.time).year
+    by_season = {k: [] for k in events}
+    for y in range(ylo, yhi + 1):
+        keep = tr_year == y
+        for k, ev in events.items():
+            one = ev.filter(pd.DatetimeIndex(ev.time).year == y)
+            by_season[k].append(band_prof(tr.time[keep], tr.lon[keep], one)[0])
+    for k in events:
+        if not np.allclose(np.sum(by_season[k], axis=0), obs[k], rtol=0.0, atol=1e-9):
+            raise SystemExit(f"REFUSED: the season profiles of {k} do not add to its profile")
+    ci = centroid_difference_interval(by_season["all"], by_season["deep_at_detection"])
+    for k, name in (("all", "centroid_all"), ("deep_at_detection", "centroid_deep")):
+        stated = next(r["centroid_rel_lon"] for r in rows if r["subset"] == k)
+        if abs(ci[name] - stated) > 1e-9:
+            raise SystemExit(f"REFUSED: the centroid of {k} differs from the one stated above")
+    pd.DataFrame([ci]).to_csv("deposit/fig3_centroid_interval.csv", index=False, float_format="%.6f")
+    print(f"F3 centroid difference {ci['diff']:+.2f} deg ({ci['ci_lo']:+.2f} to {ci['ci_hi']:+.2f}), "
+          f"{ci['n_seasons']} seasons resampled, {ci['n_boot']} replicates")
 
     import matplotlib
     matplotlib.use("Agg")
