@@ -21,8 +21,40 @@ import numpy as np
 from ..tracks import Tracks
 
 
-def from_ct_genesis(path, deep_core_K=None, min_lifetime=None):
+REPEAT_FIELDS = ("fam", "ctime", "cslat", "cslon", "csize", "cslife", "tmincl", "cspos")
+
+
+def repeated_rows(path):
+    """True for every row of a genesis slice that repeats an earlier row in every field.
+
+    The family file this project holds lists some families twice or three times, each copy
+    identical to the first in family number and in every step of the family's life (checked
+    in the file the slice was cut from, 1,293 later rows of 81,858). A row is a repeat
+    here when it equals an earlier row in family number, first time, first position, size,
+    lifetime, minimum temperature and step. A slice without a family number or a first
+    time cannot be tested this way, and the function then stops and does not guess.
+    """
+    import pandas as pd
+    import xarray as xr
+
+    ds = xr.open_dataset(path)
+    cols = {}
+    for k in REPEAT_FIELDS:
+        if k in ds.variables:
+            a = np.asarray(ds[k].values)
+            cols[k] = a[:, 0] if a.ndim >= 2 else a.ravel()
+    ds.close()
+    if "fam" not in cols or "ctime" not in cols:
+        raise ValueError("the slice holds no family number or no first time, so repeated "
+                         "families cannot be told from distinct ones")
+    return pd.DataFrame(cols).duplicated(keep="first").values
+
+
+def from_ct_genesis(path, deep_core_K=None, min_lifetime=None, drop_repeats=True):
     """Load CT family genesis points into a Tracks (time left as NaT).
+
+    Rows that repeat an earlier family in every field are dropped unless ``drop_repeats``
+    is False (see ``repeated_rows``).
 
     Parameters
     ----------
@@ -76,6 +108,8 @@ def from_ct_genesis(path, deep_core_K=None, min_lifetime=None):
     good = np.isfinite(lat) & np.isfinite(lon)
     if gtime is not None:
         good &= ~np.isnat(gtime)
+    if drop_repeats:
+        good &= ~repeated_rows(path)
     n = int(good.sum())
     tr = Tracks(
         time=(gtime[good] if gtime is not None

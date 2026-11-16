@@ -21,7 +21,7 @@ are comparable:
   antecedent  the prior-day CS-245 count near the box (t-48 h .. t-24 h)
   amplitude   the trough-mean curvature vorticity (wave-amplitude proxy)
   shear       the 600-925 hPa box shear 24 h before passage
-  tcwv        the total column water vapour box 24 h before passage
+  tcwv        the total column water vapor box 24 h before passage
 
 with longitude-bin-by-month and calendar-year fixed effects. The model is a Poisson GLM
 with cluster-robust standard errors on the wave (traj_id). Clustering protects the
@@ -47,6 +47,8 @@ import xarray as xr
 from aew.data.aewc import load_aewc_trajectories
 from aew.data.era5 import load_region_6h
 from aew.environment import complete_window_mask, forward_response, lead_field_box
+from aew.observed import load_observed_slots, window_observed_mask
+import cloud_inputs
 from aew.terrain import DELTA_HPA, mask_level_inplace
 from aew.trajectory import Gridded, aggregate_parcels, back_trajectories
 from validate_heldout import parse_years
@@ -133,7 +135,7 @@ PREDICTORS = ["inflow_rh", "box_rh", "antecedent", "amplitude", "shear", "tcwv"]
 
 
 def complete_case(df):
-    """The modelled cohort, every eligible trough whose six predictors are all finite.
+    """The modeled cohort, every eligible trough whose six predictors are all finite.
 
     Applied identically on the cached and the freshly built path, which is what lets the
     cache hold the ELIGIBLE cohort rather than this one. Storing the eligible cohort is
@@ -145,15 +147,22 @@ def complete_case(df):
     return df[np.isfinite(df[PREDICTORS]).all(axis=1)].reset_index(drop=True)
 
 
-def build_design(years, csct_path):
-    """Per-trough design matrix over all corridor troughs in ``years``."""
+def build_design(years, csct_path, seen):
+    """Per-trough design matrix over all corridor troughs in ``years``.
+
+    ``seen`` is the calendar of slots the counting position observed. Eligibility is that
+    of the deposit driver: both counting windows inside the season, and every slot of both
+    among the observed ones.
+    """
     aewc_paths = [f"data/aewc/ERA-Int_ew_700hPa_{y}_AFR.nc" for y in years]
     tr = (load_aewc_trajectories(aewc_paths)
           .filter_region(min_lat=5, max_lat=20, min_lon=-30, max_lon=40)
           .filter_months([7, 8, 9]))
     n_all = len(tr)
-    tr = tr.filter(complete_window_mask(tr.time))  # R3 complete-window eligibility
-    print(f"eligible troughs {len(tr)} of {n_all} (complete windows)", flush=True)
+    # R3 complete-window eligibility, with every slot of both windows observed
+    tr = tr.filter(complete_window_mask(tr.time) & window_observed_mask(tr.time, seen))
+    print(f"eligible troughs {len(tr)} of {n_all} (complete and observed windows)",
+          flush=True)
     cs = xr.open_dataset(csct_path)
     cst_all = pd.DatetimeIndex(cs["time"].values)
     csx = np.asarray(cs["lon"].values, float)
@@ -282,7 +291,7 @@ def ladder(df, scaler_mean, scaler_std):
         ("+ shear", "z_inflow_rh + z_amplitude + z_shear" + fe),
         ("+ antecedent convection (PRIMARY)",
          "z_inflow_rh + z_amplitude + z_shear + z_antecedent" + fe),
-        ("+ total column water vapour (full panel)",
+        ("+ total column water vapor (full panel)",
          "z_inflow_rh + z_amplitude + z_shear + z_antecedent + z_tcwv" + fe),
     ]
     out = ["\nCONTROL LADDER, inflow_rh coefficient as controls are added (pooled):"]
@@ -678,7 +687,8 @@ def plan_cache_reuse(cache_path, outdir):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--csct", default="data/original/csct/csct_africa_cs245.nc")
+    ap.add_argument("--csct", default=cloud_inputs.CLASS_CATALOG)
+    ap.add_argument("--observed-slots", default=cloud_inputs.OBSERVED_SLOTS)
     ap.add_argument("--cache", default=None,
                     help="CSV cache of the design matrix; built and written if absent")
     ap.add_argument("--outdir", default="deposit")
@@ -693,7 +703,8 @@ def main():
     # eligible_troughs.csv was missing. That branch is gone rather than repaired.
     df = plan_cache_reuse(a.cache, a.outdir)
     if df is None:
-        df = build_design(pooled_years, a.csct)
+        df = build_design(pooled_years, cloud_inputs.checked(a.csct),
+                          load_observed_slots(cloud_inputs.checked(a.observed_slots)))
         if a.cache:
             df.to_csv(a.cache, index=False)
             write_freshness_record(a.cache, a.outdir)

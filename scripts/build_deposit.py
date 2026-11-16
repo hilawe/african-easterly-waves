@@ -18,7 +18,7 @@ level through 0.5-degree ERA5 winds, and the wave-cluster bootstrap. Class label
 the manuscript terminology: MCS-active (upper tercile) and MCS-quiet (lower tercile).
 
 Split convention: the tercile split is computed over ALL corridor troughs, and finite
-field values are filtered per statistic afterwards, matching the frozen harness
+field values are filtered per statistic afterward, matching the frozen harness
 (validate_heldout.py) and the budget script (fig_moisture_budget.py), which the numbers
 policy designates canonical. fig_developing.py restricts to environment-analyzable
 troughs BEFORE splitting; the two conventions coincide only when field coverage is
@@ -64,10 +64,12 @@ from aew.environment import (
     lead_field_box,
     stratified_terciles,
 )
+from aew.observed import load_observed_slots, window_observed_mask
 from aew.terrain import DELTA_HPA, mask_level_inplace
 from aew.thermo import saturation_vapor_pressure, theta_e
 from aew.trajectory import (Gridded, aggregate_parcels, back_trajectories,
                             classify_origin)
+import cloud_inputs
 from validate_heldout import parse_years
 
 # the frozen baseline constants (identical to validate_heldout.py)
@@ -586,7 +588,7 @@ def run_level(dep, tier, level, years, tr, cst, csx, csy, sel_idx, sp, low_s,
 
 
 def run_extras(dep, tier, years, tr, sel_idx, low_s, high_s, sp, seed):
-    """Column water vapour and the 600-925 hPa shear control (Eulerian box family)."""
+    """Column water vapor and the 600-925 hPa shear control (Eulerian box family)."""
     tier_idx = TIER_ORDER.index(tier)
     rng = np.random.default_rng([seed, tier_idx, 1])
     gids = tr.variables["traj_id"][sel_idx]
@@ -656,7 +658,13 @@ def main():
                     help="comma-separated subset of dev,heldout,pooled")
     ap.add_argument("--levels", default="700,850",
                     help="comma-separated subset of 700,850")
-    ap.add_argument("--csct", default="data/original/csct/csct_africa_cs245.nc")
+    ap.add_argument("--csct", default=cloud_inputs.CLASS_CATALOG,
+                    help="the cloud-system catalog the response and the antecedent count "
+                         "are taken from (default: the detections of the MET position)")
+    ap.add_argument("--observed-slots", default=cloud_inputs.OBSERVED_SLOTS,
+                    help="the calendar of slots the counting position observed. A trough "
+                         "is eligible only when every slot of both of its counting "
+                         "windows is in it.")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--outdir", default="deposit")
     ap.add_argument("--delta-hpa", type=float, default=DELTA_HPA,
@@ -675,6 +683,8 @@ def main():
         if t not in TIERS:
             raise SystemExit(f"unknown tier {t!r} (choose from {TIER_ORDER})")
     os.makedirs(a.outdir, exist_ok=True)
+    cloud_inputs.checked(a.csct)
+    seen = load_observed_slots(cloud_inputs.checked(a.observed_slots))
     dep = Deposit()
     t_start = _time.time()
 
@@ -687,15 +697,23 @@ def main():
         tr, cst, csx, csy = load_troughs_and_systems(years, a.csct,
                                                     tie=a.tie_rule)
         # R3 (REPAIR_SPEC.md): complete-window eligibility BEFORE the response and the
-        # split, so classes and everything conditioned on them inherit it
+        # split, so classes and everything conditioned on them inherit it. The calendar
+        # gate keeps both windows inside the season, and the observation gate keeps
+        # every slot of both windows among the slots the counting position observed,
+        # so that a slot with no image is never read as a count of zero.
         n_all = len(tr)
-        elig = complete_window_mask(tr.time)
-        tr = tr.filter(elig)
+        in_season = complete_window_mask(tr.time)
+        observed = window_observed_mask(tr.time, seen)
+        tr = tr.filter(in_season & observed)
         dep.point(tier, None, "n_corridor_troughs_all_season", None, "count", n_all,
                   note="before R3 complete-window eligibility")
         dep.point(tier, None, "n_window_ineligible", None, "count",
-                  int(n_all - len(tr)),
+                  int((~in_season).sum()),
                   note="passage outside [Jul 3 00, Sep 30 00] UTC")
+        dep.point(tier, None, "n_window_unobserved", None, "count",
+                  int((in_season & ~observed).sum()),
+                  note="inside the season, with a slot of the response or the "
+                       "antecedent window that the counting position did not observe")
         # surface pressure for the R2 terrain masks, shared by both levels and extras
         spt, splat, splon, spf = load_region_6h("sp", years=years)
         if a.footprint == "static":
@@ -745,6 +763,7 @@ def main():
                       low_s, high_s, a.seed, a.outdir)
         run_extras(dep, tier, years, tr, sel_idx, low_s, high_s, sp, a.seed)
         att_stats = ("n_corridor_troughs_all_season", "n_window_ineligible",
+                     "n_window_unobserved",
                      "n_corridor_troughs", "n_waves", "n_selected", "n_quiet",
                      "n_active", "terrain_invalid_fraction",
                      "terrain_masked_box_fraction", "env_cases_under5_valid",

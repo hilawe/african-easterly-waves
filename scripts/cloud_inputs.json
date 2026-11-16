@@ -1,0 +1,26 @@
+{
+ "class_catalog": {
+  "path": "data/derived/csct/csct_africa_cs245_met_position.nc",
+  "what": "cloud systems colder than 245 K of at least 101 km in radius, July to September 1983 to 2007, 35 S to 35 N, detections of the MET satellite position alone",
+  "detections": 258849,
+  "sha256": "5175429c548c3c90c6a31e2dda02df0f286d3161729a6db9b393570baa2b5857"
+ },
+ "pooled_catalog": {
+  "path": "data/original/csct/csct_africa_cs245.nc",
+  "what": "the same selection with the detections of every satellite position pooled, the catalog of the submitted paper",
+  "detections": 1469557,
+  "sha256": "cceccf2fd75bec3ddfd42c4d3a07f9e0b5e7e662173ee1724dcbba2cf6447eb9"
+ },
+ "observed_slots": {
+  "path": "scripts/met_observed_slots.csv",
+  "what": "the 3-hourly July to September slots of 1983 to 2007 that the MET position observed",
+  "slots": 17751,
+  "sha256": "8d5de61bf12bca5ff3584f9223f97fcbe6f55444ae9d712d70c6cbb41980f4fb"
+ },
+ "tracking_file": {
+  "path": "data/original/CT/ct_genesis_time.nc",
+  "what": "first steps of the convective-tracking families of the MET position, July to September 1984 to 2007",
+  "families": 81858,
+  "sha256": "6c6ae1c9a04c79ce3241aa9b9ce80ba9baf5d8f7535af18cea2868f23b279acf"
+ }
+}

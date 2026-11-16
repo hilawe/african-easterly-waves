@@ -17,6 +17,16 @@ asserted. Reading the two directories is all this does; it fits no model and dra
 random numbers, so it cannot perturb any canonical value.
 
 Writes deposit/tierule_sensitivity.csv.
+
+The same comparison serves any variant rebuild of the pooled tier. With --alt and --out it
+sets the canonical deposit against the rebuild from the catalog that pools every satellite
+position,
+
+    scripts/build_deposit.py --tiers pooled --outdir deposit/sens_pooled --csct POOLED
+    scripts/sensitivity_tierule.py --alt deposit/sens_pooled/canonical_numbers.csv \
+        --out catalog_sensitivity.csv --label "catalog of every position pooled"
+
+on the same eligible troughs, since the observation gate reads the same calendar.
 """
 
 import argparse
@@ -33,11 +43,13 @@ def main():
     ap.add_argument("--base", default="deposit/canonical_numbers.csv")
     ap.add_argument("--alt", default="deposit/sens_tierule/canonical_numbers.csv")
     ap.add_argument("--outdir", default="deposit")
+    ap.add_argument("--out", default="tierule_sensitivity.csv")
+    ap.add_argument("--label", default="tie-rule")
     a = ap.parse_args()
 
     if not os.path.exists(a.alt):
         raise SystemExit(
-            f"{a.alt} absent. Run:\n"
+            f"{a.alt} absent. Build the variant deposit first, for the tie rule with:\n"
             f"  .venv/bin/python scripts/build_deposit.py --tiers pooled "
             f"--outdir deposit/sens_tierule --tie-rule largest")
 
@@ -56,12 +68,12 @@ def main():
     out = c[KEY + ["diff", "ci_lo", "ci_hi", "significant",
                    "diff_alt", "ci_lo_alt", "ci_hi_alt", "significant_alt",
                    "delta", "verdict_flips"]].sort_values(KEY)
-    path = os.path.join(a.outdir, "tierule_sensitivity.csv")
+    path = os.path.join(a.outdir, a.out)
     out.to_csv(path, index=False, float_format="%.6f")
 
     d = out["delta"].abs()
     flips = out[out["verdict_flips"]]
-    print(f"tie-rule sensitivity over {len(out)} pooled contrasts")
+    print(f"{a.label} sensitivity over {len(out)} pooled contrasts")
     print(f"  max |change| {d.max():.4f} on "
           f"{out.loc[d.idxmax(), 'statistic']}")
     print(f"  median |change| {d.median():.4f}")

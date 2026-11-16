@@ -36,6 +36,9 @@ N_BOOT = 20_000
 
 from aew.environment import (cluster_bootstrap_diff, complete_window_mask,
                              forward_response)
+from aew.observed import (load_observed_slots, slots_observed, window_observed_mask,
+                          window_offsets)
+import cloud_inputs
 from aew.terrain import DELTA_HPA, mask_level_inplace
 from aew.trajectory import Gridded, aggregate_parcels, back_trajectories
 from validate_heldout import parse_years
@@ -94,17 +97,21 @@ def stratified_quantile_split(x, lon, month, q_lo, q_hi):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--aewc-glob", default="data/aewc/ERA-Int_ew_700hPa_*_AFR.nc")
-    ap.add_argument("--csct", default="data/original/csct/csct_africa_cs245.nc")
+    ap.add_argument("--csct", default=cloud_inputs.CLASS_CATALOG)
+    ap.add_argument("--observed-slots", default=cloud_inputs.OBSERVED_SLOTS)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--outdir", default="deposit")
     a = ap.parse_args()
+    cloud_inputs.checked(a.csct)
+    seen = load_observed_slots(cloud_inputs.checked(a.observed_slots))
 
     years = parse_years("1983-2007")
     tr = (load_aewc_trajectories(a.aewc_glob)
           .filter_region(min_lat=5, max_lat=20, min_lon=-30, max_lon=40)
           .filter_months([7, 8, 9]))
-    # R3: complete-window eligibility BEFORE the response and the split
-    tr = tr.filter(complete_window_mask(tr.time))
+    # R3: complete-window eligibility BEFORE the response and the split, with every
+    # slot of both canonical windows observed, as in the deposit driver
+    tr = tr.filter(complete_window_mask(tr.time) & window_observed_mask(tr.time, seen))
     n_all = len(tr)
 
     import xarray as xr
@@ -159,6 +166,11 @@ def main():
     for label, dlon, win, (q_lo, q_hi) in VARIANTS:
         resp = forward_response(tr.time, tr.lon, cst, csx, csy, win, dlon,
                                 LAT_LO, LAT_HI)
+        # a forward window other than the canonical one has its own slots, and a trough
+        # with one of them unobserved, or past the end of the season's record, has no
+        # count under this variant and takes no part in its split
+        seen_v = slots_observed(tr.time, seen, window_offsets(win, antecedent=False))
+        resp[~seen_v] = np.nan
         low, high = stratified_quantile_split(resp, tr.lon, month, q_lo, q_hi)
         d, lo_ci, hi_ci, na, nb = cluster_bootstrap_diff(
             gids[low & ok], rh72[low & ok], gids[high & ok], rh72[high & ok], rng,
@@ -167,6 +179,7 @@ def main():
         split = ("terciles" if (q_lo, q_hi) == (1 / 3, 2 / 3)
                  else "median" if q_lo == q_hi else "quartiles")
         rows.append(dict(n_boot=N_BOOT, variant=label, dlon=dlon, win_h=win, split=split,
+                         n_window_unobserved=int((~seen_v).sum()),
                          n_quiet=int((low & ok).sum()), n_active=int((high & ok).sum()),
                          diff=d, ci_lo=lo_ci, ci_hi=hi_ci, significant=bool(sig)))
         print(f"{label:17s} {dlon:5.0f} {win:4.0f} {split:>10s} "
