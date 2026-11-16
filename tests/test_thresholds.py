@@ -10,7 +10,7 @@ tests/mutations_v1port_thresholds.py.
     H5  the absolute value is dropped from the between-seed range denominator
     H6  the gate accepts equality, <= 0.01 instead of < 0.01
     H7  ladder exhaustion returns the last level as if it were a result
-    H8  the first passing level is not honoured
+    H8  the first passing level is not honored
     H9  the generator is default_rng instead of pinned PCG64
     H10 the exact-draw branch consumes the generator, shifting later timesteps' draws
     H11 the finite count's upper-bound refusal is dropped
@@ -235,7 +235,7 @@ def test_the_generator_is_pinned_to_pcg64():
     """H9. The stream is named by CONSTRUCTION, not inherited from a movable default.
 
     Today `default_rng(seed)` and `Generator(PCG64(seed))` produce identical streams, so
-    no behavioural test can tell them apart, and the mutation swapping them survived a
+    no behavioral test can tell them apart, and the mutation swapping them survived a
     type check on its output. The contract's whole point is what happens when NumPy
     changes its default, which only the construction determines, so the construction is
     what this asserts: the source names PCG64 and does not reach for default_rng. A

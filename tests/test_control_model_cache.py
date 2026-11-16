@@ -16,7 +16,7 @@ the test fails. Each test also asserts the SPECIFIC rejection reason, because a 
 asserting only that ``ok`` is false is satisfied by a validator that refuses everything.
 
 The mutation list in the specification was written before these tests existed, so the
-assertions could not be reasoned backwards from.
+assertions could not be reasoned backward from.
 """
 
 import json
@@ -42,7 +42,7 @@ from control_model import (  # noqa: E402
 # PER-FIELD COVERAGE IS DERIVED FROM THE CODE'S OWN CONSTANTS, not hand-listed.
 # Screen 3 found several rules tested for one member of a set while the others went
 # unchecked (one-sided NaN for antecedent only, the dtype gate for four fields of six,
-# the infinity rule for one compared column of three). Parametrising from COMPARED and
+# the infinity rule for one compared column of three). Parametrizing from COMPARED and
 # PREDICTORS means adding a column to the guard automatically adds its test cases, so
 # the gap cannot reopen the way it opened.
 CACHE_COMPARED = [c for c, _ in COMPARED]                  # inflow_rh, box_rh, antecedent
@@ -186,7 +186,7 @@ def test_non_finite_predictor_is_accepted(deposit):
 
 def test_extra_column_is_accepted(deposit):
     # binds: [R-PRED-04]
-    """Predicate row 4. The guard governs the modelled columns, not the file's shape."""
+    """Predicate row 4. The guard governs the modeled columns, not the file's shape."""
     tmp, cache, design = deposit
     wide = design.copy()
     wide["scratch_note"] = "ignored"
@@ -614,7 +614,7 @@ def test_non_numeric_value_is_rejected(deposit, where, col):
     response reported as identical and non-numeric predictors accepted and then raising
     a TypeError downstream.
 
-    EVERY modelled numeric field. Screen 3 showed the gate could be dropped for a single
+    EVERY modeled numeric field. Screen 3 showed the gate could be dropped for a single
     column, box_rh, and still pass the whole suite, because only four of the six
     predictors were exercised.
     """
@@ -872,7 +872,7 @@ def test_cache_read_round_trips_exactly(tmp_path):
 # which of them a test actually references. That reported 49 rules declared, 41 claimed
 # and 8 unbound. Each test below closes one of those eight. They are the rules NO test
 # mentioned. The per-field gaps inside rules that WERE mentioned are the mutation
-# catalogue's job, and closing these does not make the suite sound on its own.
+# catalog's job, and closing these does not make the suite sound on its own.
 
 def test_absent_cache_rebuilds_without_error(tmp_path):
     # binds: [R-CACHE-01]
@@ -947,7 +947,7 @@ def test_nan_on_both_sides_is_accepted_and_reported(deposit, capsys, col):
 
 def test_null_digest_for_either_anchor_is_rejected(deposit):
     # binds: [R-FRESH-04]
-    """Parametrised over BOTH anchors in one test because the loop refuses the troughs
+    """Parametrized over BOTH anchors in one test because the loop refuses the troughs
     digest first: a record with both digests null exercises only the troughs branch, and
     a validator that skipped the cases digest entirely passed the whole suite."""
     tmp, cache, design = deposit

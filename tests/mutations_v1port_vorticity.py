@@ -5,7 +5,7 @@ tests/test_v1port_vorticity.py. Run with the repository's mutation checker:
 
     python3 <mutation-check tool> --repo . \
         --target src/aew/v1port/vorticity.py \
-        --catalogue tests/mutations_v1port_vorticity.py \
+        --catalog tests/mutations_v1port_vorticity.py \
         --test-cmd ".venv/bin/python -m pytest -q tests/test_v1port_vorticity.py"
 """
 
@@ -43,7 +43,7 @@ MUTATIONS = {
     "single_spacing_difference": _sub(
         "    span = 2.0 * STENCIL",
         "    span = 1.0 * STENCIL"),
-    # V8 the zonal neighbour does not wrap
+    # V8 the zonal neighbor does not wrap
     "zonal_neighbour_does_not_wrap": _sub(
         "    east = (cols + STENCIL) % nlon\n    west = (cols - STENCIL) % nlon",
         "    east = np.clip(cols + STENCIL, 0, nlon - 1)\n"

@@ -233,7 +233,7 @@ def test_a_truncated_year_is_refused_unless_explicitly_allowed(tree, tmp_path, c
 
 def test_a_forged_matrix_case_is_refused_before_any_computation(tree, tmp_path, capsys):
     """The review's demonstration, as a regression: a ladder run over the wrong periods
-    labelled P1-T0 must be refused with the differences listed, and no artifact written.
+    labeled P1-T0 must be refused with the differences listed, and no artifact written.
     Every violated setting must be named, so the refusal is a diff, not a shrug."""
     out = str(tmp_path / "forged.json")
     status = run(tree, out, "--case-id", "P1-T0", "--transformation", "T5",

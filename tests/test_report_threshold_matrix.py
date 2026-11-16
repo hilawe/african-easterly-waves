@@ -34,7 +34,7 @@ CURRENT_HASHES = rep._cli_module().source_hashes()
 def synthetic(cid, coarse=5.0e-7, fine=2.5e-6, version=None):
     """A producible artifact: the transformation object is the frozen table's entry,
     the coarse threshold is the unscaled value scaled in that direction, and the
-    expected block is the CLI's own judgement of the thresholds."""
+    expected block is the CLI's own judgment of the thresholds."""
     case = rep.T.matrix_case(cid)
     passes, scale = rep.T.TRANSFORMATIONS[case["transformation"]]
     hashes = dict(CURRENT_HASHES) if version is None else {

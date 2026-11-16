@@ -5,11 +5,11 @@ tests/mutations_percentile.py.
 
     E1  infinities are not excluded, so the population differs from np.isfinite's
     E2  an empty finite population returns a number instead of refusing
-    E3  the rank arithmetic is off by one, selecting a neighbouring order statistic
+    E3  the rank arithmetic is off by one, selecting a neighboring order statistic
     E4  the interpolation is reimplemented instead of delegated, drifting by rounding
     E5  the counting pass and the collecting pass disagree about bin membership and the
         mismatch is not refused
-    E6  refinement mislocalises the rank, so a near-constant field selects the wrong value
+    E6  refinement mislocalizes the rank, so a near-constant field selects the wrong value
     E7  the small-population path and the streaming path give different answers for the
         same data
 
@@ -97,7 +97,7 @@ def test_duplicates_including_a_near_constant_field():
 
     90 percent of the values are identical, so with 8 bins the wanted rank's bin holds far
     more than max_candidates=16 and the selection must descend. A refinement that
-    mislocalises the rank returns a value from the wrong side of the pile.
+    mislocalizes the rank returns a value from the wrong side of the pile.
     """
     rng = np.random.default_rng(14)
     x = np.concatenate([np.full(9000, 5.0), rng.uniform(0, 10, 1000)])

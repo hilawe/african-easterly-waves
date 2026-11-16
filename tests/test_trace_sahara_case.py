@@ -50,7 +50,7 @@ elsewhere does not:
 Added after a review defeated the first version of the fourth case, building a second
 masked field on which Octave draws the same vertices while the port's tracer draws a
 line, passing a control step outside the window and watching an injection that never
-happened be reported as one with no effect, and finding two mutations the catalogue had
+happened be reported as one with no effect, and finding two mutations the catalog had
 not named:
   T25 the same-field verdict is made without comparing the two fields (the vertices are
       taken as the evidence again);
@@ -1334,7 +1334,7 @@ def test_every_module_that_decides_the_artifact_is_fingerprinted():
     import os as _os
     assert "scripts/residue_membership.py" in M.REPLAY_SOURCES
     assert "scripts/compare_tracker_oracle.py" in M.REPLAY_SOURCES
-    # the port modules whose behaviour the replay exercises
+    # the port modules whose behavior the replay exercises
     for module in ("detection", "contours", "association", "pipeline", "climatology"):
         assert f"src/aew/v1port/{module}.py" in M.REPLAY_SOURCES
     # and every one of them is a file that exists, so a fingerprint can be taken

@@ -107,7 +107,7 @@ def geometric_match(axis, other_axes):
 
 def unmatched_axes(v1_axes, port_axes):
     """CENTROID-UNMATCHED candidates: axes with no centroid on the other side within the
-    selection box. A selection heuristic, labelled as such in every record."""
+    selection box. A selection heuristic, labeled as such in every record."""
     def cen(a):
         return (float(np.mean(a[0])), float(np.mean(a[1])))
     port = [cen(a) for a in port_axes]

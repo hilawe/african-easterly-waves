@@ -1,4 +1,4 @@
-"""Mutations for the eight newly-bound rules. Each removes exactly one behaviour."""
+"""Mutations for the eight newly-bound rules. Each removes exactly one behavior."""
 
 
 def _sub(old, new):
@@ -69,9 +69,9 @@ MUTATIONS = {
 #
 # rule_binding.py cannot see these: it reports a rule as CLAIMED as soon as one test
 # references it, and screen 3 found several rules tested for one member of a set while
-# the other members went unchecked. Each mutation below removes a behaviour for exactly
+# the other members went unchecked. Each mutation below removes a behavior for exactly
 # ONE column, which is the shape that survived the suite before the tests were
-# parametrised over the guard's own COMPARED and PREDICTORS constants.
+# parametrized over the guard's own COMPARED and PREDICTORS constants.
 # ---------------------------------------------------------------------------
 
 def _skip_compared(col):
@@ -110,7 +110,7 @@ def _skip_dtype_for(col):
 
 
 def _drop_required_column(col):
-    """Omit one field from the required modelled-column list."""
+    """Omit one field from the required modeled-column list."""
     return _sub(
         '        missing = [c for c in ["response", *PREDICTORS, "year", "lonmonth"]\n'
         "                   if c not in df.columns]",

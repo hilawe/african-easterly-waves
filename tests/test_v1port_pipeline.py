@@ -112,8 +112,8 @@ def test_separated_waves_become_separate_tracks():
 
 def test_the_tracks_move_west_at_the_speed_of_the_flow():
     """The whole chain is wired correctly only if the tracks come out at the speed the wind
-    put in. Eight metres per second westward over the run, within a tolerance that the
-    2.5 degree grid's own quantisation sets."""
+    put in. Eight meters per second westward over the run, within a tolerance that the
+    2.5 degree grid's own quantization sets."""
     from aew.v1port import validate as V
 
     latgrid, longrid = grid()
@@ -160,7 +160,7 @@ def converging_waves(latgrid, longrid, nt=20):
 def test_the_exclusivity_repair_never_increases_duplication():
     """P10, and the claim the whole port exists to support.
 
-    Version 1's behaviour is the default and the repair is one flag. Whatever the synthetic
+    Version 1's behavior is the default and the repair is one flag. Whatever the synthetic
     case produces, the repaired run must not hold MORE duplicated observations than the
     faithful one, and it must still produce tracks: a repair that fixed duplication by
     finding nothing would be worse than the defect.
@@ -265,7 +265,7 @@ def test_a_run_shorter_than_the_minimum_lifetime_is_not_filtered():
 
 
 def test_the_prunes_recency_window_is_what_makes_the_order_moot():
-    """Why the catalogue has no mutation for pruning before association instead of after.
+    """Why the catalog has no mutation for pruning before association instead of after.
 
     A track the association can extend was matched at most two steps ago, because that is
     as far ahead as a prediction is ever set. Two six-hourly steps is half a day, and the
@@ -474,7 +474,7 @@ def test_curvature_gives_the_same_answer_in_either_row_order():
     """P13, the advection defect's sibling, found by working one timestep against
     version 1's published positions.
 
-    `calculate_compvort_multi_f` indexes its meridional neighbours as `g+1` and `g-1`
+    `calculate_compvort_multi_f` indexes its meridional neighbors as `g+1` and `g-1`
     and divides by a spacing that is always positive, so it assumes latitude ascends
     with row index, and version 1's driver flips the fields both ways around the call
     (p1_data_eraint.m line 81) exactly as it does for the advection. An earlier
@@ -636,7 +636,7 @@ def test_orientation_does_not_depend_on_how_many_timesteps_are_batched(orient, l
 def test_orientation_holds_at_the_batch_sizes_this_code_actually_runs(batch):
     """P6 and P13, and the honest end of the batching argument.
 
-    The neighbouring test samples two batch sizes, and a review pointed out that this
+    The neighboring test samples two batch sizes, and a review pointed out that this
     cannot bind the universal claim its docstring first made: a condition like
     `u.shape[0] < 100` leaves both of those calls on the same branch, so they agree with
     each other while a real year does not. Moving the curvature's orientation into a

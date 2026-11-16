@@ -16,7 +16,7 @@ Added after a review found the port's extras dropped whenever version 1 also had
      distinguished from one with none.
 Added after a review built the case that separates "eligible" from "nearest":
   D8 the eligibility flag is read from the NEAREST counterpart rather than from the
-     matching graph's edges, so a leftover whose nearest neighbour is ineligible on
+     matching graph's edges, so a leftover whose nearest neighbor is ineligible on
      overlap is reported as having no eligible counterpart at all.
 """
 import importlib.util
@@ -57,7 +57,7 @@ def test_classifier_reports_both_sides_extras_worst_step_and_eligibility(tmp_pat
     d.mkdir()
     savemat(str(d / "tracker_case.mat"), {"case_id": "c1"})
     # A: identical. B: version 1 has one extra step AFTER the port's span, shared steps
-    #    equal. C: version 1 has an INTERIOR extra step and the port's neighbours are
+    #    equal. C: version 1 has an INTERIOR extra step and the port's neighbors are
     #    displaced by 0.3 degrees. G: extras on BOTH sides, the 94/89 shape: version 1
     #    alone holds the two steps after 6, the port alone holds an interior one at
     #    6.5, and one shared step is displaced by 2.0 degrees (the worst single step).

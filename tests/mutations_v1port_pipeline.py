@@ -93,7 +93,7 @@ MUTATIONS = {
     # test. Predicting from the RAW fine winds instead of the smoothed ones produced
     # identical tracks on a fixture built to separate them: a wind field whose raw median
     # over a trough is zero and whose smoothed median is about -9 m/s. The tracks were the
-    # same length and travelled the same 21 degrees either way.
+    # same length and traveled the same 21 degrees either way.
     #
     # The reason is the search polygon. It is inflated to a minimum of 75 square degrees,
     # about ten degrees across, while the speed ceiling lets a wave move at most 4.9 degrees

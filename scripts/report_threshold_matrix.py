@@ -22,7 +22,7 @@ WHAT IT REFUSES, because a partial or mixed report reads as a complete one:
   - an artifact whose transformation object (passes and coarse scale, not only the id)
     differs from the frozen table, whose coarse threshold is not the recorded unscaled
     value scaled in the declared direction, or whose expected block (both relative
-    differences, the criterion and the verdict) is not what the CLI's own judgement
+    differences, the criterion and the verdict) is not what the CLI's own judgment
     recomputes from the recorded thresholds. A review forged P1-T0's thresholds to zero
     and its metadata to 99 passes while keeping the hashes and id, and the first version
     tabled it. What this still cannot catch is a forgery that rewrites every field

@@ -11,7 +11,7 @@ needs care about aliasing. It documents no filtering.
 
 WHAT THE DOCUMENTATION MAKES LIKELY, AND WHY THAT IS NOT ENOUGH. Bilinear interpolation is
 local and pointwise, so a target coordinate present in both requests draws on the same
-native neighbours either way, and the two routes should agree to rounding. That is a
+native neighbors either way, and the two routes should agree to rounding. That is a
 reasoned expectation from a documented method, and that grade of evidence has failed twice
 here already. The decimation window and the convex-hull starting vertex were both obviously
 fine from the documentation and both wrong in practice. So this runs the comparison instead
@@ -22,7 +22,7 @@ aliased onto whole degrees. Version 1's ERA-Interim came from a T255 model at ro
 so ERA5 on the same nominal grid holds variance at scales ERA-Interim never resolved. If the
 two routes agree perfectly, that difference is untouched, and it stays a live candidate for
 why the two reanalyses give different thresholds. Agreement here is a narrow result about
-retrieval bookkeeping, not a licence to treat ERA5 at one degree as ERA-Interim at one
+retrieval bookkeeping, not a license to treat ERA5 at one degree as ERA-Interim at one
 degree.
 
 WHAT IT NEEDS, STATED PRECISELY. A DIRECT one-degree ERA5 retrieval, meaning one the

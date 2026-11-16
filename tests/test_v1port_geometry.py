@@ -8,14 +8,14 @@ tests/mutations_v1port_geometry.py.
          vorticity it differentiates is itself undefined
     G3   advection symmetrizes the right-hand mask on a global grid
     G4   advection swaps the zonal and meridional derivative terms
-    G5   metres to degrees uses sine where the original uses cosine
-    G6   metres to degrees applies the latitude factor to the latitude spacing
+    G5   meters to degrees uses sine where the original uses cosine
+    G6   meters to degrees applies the latitude factor to the latitude spacing
     G7   great-circle distance uses a wrong unit factor
     G8   great-circle distance drops the cos(lat1)cos(lat2) term, so it is right on the
          equator and wrong everywhere else
     G9   wavelength omits the factor of four that converts a quarter to a whole
     G10  wavelength does not round the heading, so no grid point matches exactly
-    G11  wavelength returns a value when the centre is below the trough threshold
+    G11  wavelength returns a value when the center is below the trough threshold
     G12  wavelength interpolates the crossing from the wrong pair of points
 """
 
@@ -36,7 +36,7 @@ def mesh(lat0=-10.0, lat1=10.0, lon0=-10.0, lon1=10.0, step=1.0):
     return latgrid, longrid
 
 
-# --- metres and degrees are inverses -------------------------------------------------
+# --- meters and degrees are inverses -------------------------------------------------
 
 @pytest.mark.parametrize("lat", [0.0, 15.0, 30.0, 45.0])
 def test_degrees_and_metres_round_trip(lat):
@@ -48,7 +48,7 @@ def test_degrees_and_metres_round_trip(lat):
 
 
 def test_longitude_degrees_grow_toward_the_pole():
-    """G5. A fixed distance in metres spans more degrees of longitude at high latitude."""
+    """G5. A fixed distance in meters spans more degrees of longitude at high latitude."""
     _, dlon_equator = meters_to_degrees(111_000.0, 111_000.0, 0.0)
     _, dlon_sixty = meters_to_degrees(111_000.0, 111_000.0, 60.0)
     assert dlon_sixty == pytest.approx(2.0 * dlon_equator, rel=1e-9)
@@ -191,7 +191,7 @@ def ray_case(profile_values, resolution=1.0):
     """A due-west-moving wave on a one-row mesh, with a chosen profile along the ray.
 
     The wave sits at longitude 0 and moves west, so the ray runs along negative
-    longitudes and the profile is read outward from the centre.
+    longitudes and the profile is read outward from the center.
     """
     n = len(profile_values)
     lon = np.arange(0, -n, -1, dtype=float) * resolution
@@ -206,7 +206,7 @@ def test_wavelength_is_four_times_the_quarter_it_measures():
     latgrid, longrid, crv = ray_case([4e-6, 2e-6, -2e-6, -4e-6])
     got = wavelength_along_ray(0.0, 5.0, 0.0, 0.0, latgrid, longrid, crv,
                                threshold=1e-6, resolution=1.0, max_threshold=1e9)
-    # the crossing is midway between the points at 1 and 2 degrees from the centre
+    # the crossing is midway between the points at 1 and 2 degrees from the center
     midpoint_km = great_circle_distance(0.0, 0.0, 0.0, -1.5, "km")
     assert got == pytest.approx(4.0 * midpoint_km, rel=1e-6)
 
@@ -214,10 +214,10 @@ def test_wavelength_is_four_times_the_quarter_it_measures():
 def test_wavelength_refuses_when_the_first_ray_point_is_below_threshold():
     """G11. If the ray does not start inside a trough it is not measuring a wave.
 
-    Note which point that is. The wave centre is NOT on its own ray, because the
+    Note which point that is. The wave center is NOT on its own ray, because the
     direction from a point to itself is zero rather than the wave's heading, so the
     check falls on the first grid point one step out along the ray. An earlier draft of
-    this test put the low value at the centre and the port correctly ignored it.
+    this test put the low value at the center and the port correctly ignored it.
     """
     latgrid, longrid, crv = ray_case([4e-6, 1e-9, -2e-6, -4e-6])
     got = wavelength_along_ray(0.0, 5.0, 0.0, 0.0, latgrid, longrid, crv,
@@ -307,7 +307,7 @@ def _point_at_a_time(poly_x, poly_y, lons, lats, tol=1e-9):
 def test_the_vectorized_form_agrees_with_a_point_at_a_time_loop():
     """The polygon test was 84 percent of the tracker's runtime because it looped over
     points in Python, and vectorizing it made a year of tracking take three minutes instead
-    of fifty-seven. An optimisation on a hot path is only worth having if it changed nothing
+    of fifty-seven. An optimization on a hot path is only worth having if it changed nothing
     else, so this compares the two forms over random polygons rather than asserting it.
 
     A FIFTH OF THE CASES ARE SNAPPED TO A GRID, because that is where the two could

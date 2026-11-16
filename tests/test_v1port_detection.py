@@ -19,7 +19,7 @@ tests/mutations_v1port_detection.py.
     D12  contours are parsed by searching for the level in the x-coordinate, the original's
          ambiguous scheme, which on this domain also matches vertices at longitude zero
     D13  the absorption flag reaches the coarse merge and not the fine one, so the two
-         halves of the same merge disagree about which behaviour they reproduce (added
+         halves of the same merge disagree about which behavior they reproduce (added
          2026-08-30 with the flag; the list was written before the assertion)
 """
 
@@ -121,7 +121,7 @@ def test_a_westerly_regime_is_masked_out():
 
 
 def test_a_strong_easterly_is_kept_not_masked():
-    """D2 specifically. A magnitude test would discard this, which is backwards: strong
+    """D2 specifically. A magnitude test would discard this, which is backward: strong
     easterly flow is the regime African easterly waves live in."""
     latgrid, longrid = mesh()
     u, curvature, advection = detection_inputs(latgrid, longrid, u_value=-20.0)
@@ -238,11 +238,11 @@ def test_the_absorption_flag_reaches_BOTH_merge_passes():
 
     WHAT THIS BINDS AND WHAT IT DOES NOT. It checks that the flag is FORWARDED to both
     calls, not that absorption changes any particular field, because version 1 runs the
-    same merge twice and honouring the flag in one pass and not the other would be
+    same merge twice and honoring the flag in one pass and not the other would be
     neither version 1 nor the repair. A physical fixture would have to arrange for the
     fine pass specifically to absorb, which binds the geometry rather than the wiring
     that the mutation attacks. Recorded plainly so a reader does not take this for a
-    behavioural test.
+    behavioral test.
     """
     from unittest.mock import patch
 

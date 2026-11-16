@@ -27,7 +27,7 @@ MUTATIONS = {
     "advection_terms_swapped": _sub(
         "    out[:, rr, cc] = -(u[:, rr, cc] * ddx) - (v[:, rr, cc] * ddy)",
         "    out[:, rr, cc] = -(u[:, rr, cc] * ddy) - (v[:, rr, cc] * ddx)"),
-    # G5 metres to degrees using sine
+    # G5 meters to degrees using sine
     "degrees_use_sine": _sub(
         "            * (180.0 / (np.pi * EARTH_RADIUS_M * np.cos(np.deg2rad(lat)))))",
         "            * (180.0 / (np.pi * EARTH_RADIUS_M * np.sin(np.deg2rad(lat)))))"),

@@ -12,7 +12,7 @@ tests/mutations_v1port_vorticity.py.
     V5   the edge mask is not applied, so the border returns numbers instead of fill
     V6   curvature is computed as shear minus relative, with the sign flipped
     V7   the centered difference divides by one spacing instead of two
-    V8   the zonal neighbour does not wrap, so a global grid indexes out of range or
+    V8   the zonal neighbor does not wrap, so a global grid indexes out of range or
          reflects
     V9   the two derivative terms of relative vorticity are swapped
     V10  a zero wind projects to NaN instead of the zero the original defines
@@ -167,12 +167,12 @@ def test_solid_body_rotation_splits_equally_between_curvature_and_shear():
     port.
     """
     latgrid, longrid = mesh(lat0=-4, lat1=4, lon0=-4, lon1=4, step=0.25)
-    u = -latgrid                      # metres per second per degree
+    u = -latgrid                      # meters per second per degree
     v = longrid
     rv, sv, cv = component_vorticity(latgrid, longrid, u, v)
     inner = np.isfinite(rv)
 
-    # one degree of latitude in metres, so omega has the units the code works in
+    # one degree of latitude in meters, so omega has the units the code works in
     omega = 1.0 / (np.deg2rad(1.0) * EARTH_RADIUS_M)
     assert np.allclose(cv[inner], omega, rtol=2e-3)
     assert np.allclose(sv[inner], omega, rtol=2e-3)
@@ -195,7 +195,7 @@ def test_a_constant_speed_vortex_is_almost_entirely_curvature():
     v[radius == 0] = 0.0
 
     rv, sv, cv = component_vorticity(latgrid, longrid, u, v)
-    # the centre is a genuine singularity of the streamline geometry, so exclude it
+    # the center is a genuine singularity of the streamline geometry, so exclude it
     away = np.isfinite(rv) & (radius > 2.0)
     assert np.max(np.abs(sv[away])) < 0.1 * np.max(np.abs(cv[away]))
     assert np.all(cv[away] > 0)

@@ -7,7 +7,7 @@
 # 1.5 to 2 GB at peak beside the 225 MB climatology, so four runs fit with room and six
 # would risk swapping. Runs land outside git, under data/protocol_runs/campaign, because
 # each retained case is 387 MB; the small files (tracks, records, logs) are collected
-# into the evidence directory afterwards by scripts/collect_protocol_campaign.py.
+# into the evidence directory afterward by scripts/collect_protocol_campaign.py.
 #
 #     nohup scripts/run_protocol_campaign.sh > data/protocol_runs/campaign/campaign.log 2>&1 &
 #

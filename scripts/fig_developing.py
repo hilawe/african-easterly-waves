@@ -56,7 +56,7 @@ LAT_LO, LAT_HI = 5.0, 15.0
 ENV_LABEL = {
     "tpw": ("SSM/I trough-mean TCWV", "mm"),
     "r700": ("ERA5 700 hPa relative humidity", "%"),
-    "tcwv": ("ERA5 total column water vapour", "mm"),
+    "tcwv": ("ERA5 total column water vapor", "mm"),
     "shear": ("ERA5 600-925 hPa shear", "m/s"),
 }
 
@@ -271,7 +271,7 @@ def main():
                   f"cluster-bootstrap 95% CI [{lo_ci:+.1f}, {hi_ci:+.1f}] ({sig})")
     ax1.grid(alpha=0.3, axis="y")
 
-    # Panel B: per-bin means; reliable bins solid, under-sampled bins greyed/open
+    # Panel B: per-bin means; reliable bins solid, under-sampled bins grayed/open
     for arr, col, lab in ((nd_lon, "tab:blue", "MCS-quiet"),
                           (dv_lon, "tab:red", "MCS-active")):
         ax2.plot(centers[reliable], arr[reliable], "o-", color=col, label=lab)

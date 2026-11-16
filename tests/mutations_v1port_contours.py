@@ -20,7 +20,7 @@ MUTATIONS = {
         "    return labels == labels[row, col]",
         "    return mask.copy()"),
     # K3 a seed on an empty cell still returns something
-    # K3 IS SUPERSEDED BY K15. It asserted the opposite behaviour, that a seed on an
+    # K3 IS SUPERSEDED BY K15. It asserted the opposite behavior, that a seed on an
     # empty cell gives an empty region, and its anchor is gone.
     # K15 the below-threshold seed goes back to returning nothing, which is what the
     # port did before 2026-08-30 and is not what isolate_region_f.m does
@@ -28,7 +28,7 @@ MUTATIONS = {
         "    if mask[row, col]:\n        return labels == labels[row, col]",
         "    if not mask[row, col]:\n        return np.zeros_like(mask)\n"
         "    if mask[row, col]:\n        return labels == labels[row, col]"),
-    # K16 the seed cell is left out, so only the neighbouring components come back
+    # K16 the seed cell is left out, so only the neighboring components come back
     "seed_cell_not_marked": _sub(
         "    region[row, col] = True",
         "    region[row, col] = False"),
@@ -36,7 +36,7 @@ MUTATIONS = {
     "only_one_adjacent_component": _sub(
         "    for label in touching:",
         "    for label in sorted(touching)[:1]:"),
-    # K18 the neighbour search is 4-connected, so a diagonally adjacent component is
+    # K18 the neighbor search is 4-connected, so a diagonally adjacent component is
     # missed even though the original tests all eight
     "adjacent_search_is_four_connected": _sub(
         "            if delta_row == 0 and delta_col == 0:\n                continue",
@@ -47,7 +47,7 @@ MUTATIONS = {
     "out_of_bounds_seed_not_refused": _sub(
         "    if not (0 <= row < mask.shape[0] and 0 <= col < mask.shape[1]):",
         "    if False:"),
-    # K21 the neighbour scan is skipped for a seed on a grid edge, so a boundary seed
+    # K21 the neighbor scan is skipped for a seed on a grid edge, so a boundary seed
     # comes back alone. An independent check built exactly this and it passed the first
     # version of these tests, every one of which seeded the interior.
     "edge_seed_skips_its_neighbours": _sub(
@@ -55,7 +55,7 @@ MUTATIONS = {
         "    if row in (0, mask.shape[0] - 1) or col in (0, mask.shape[1] - 1):\n"
         "        return region\n"
         "    touching = set()"),
-    # K22 absorption happens by default, which is the behaviour version 1's broken
+    # K22 absorption happens by default, which is the behavior version 1's broken
     # inpolygon call prevents and which the port performed until 2026-08-30
     "absorption_on_by_default": _sub(
         "def merge_contours(candidates, latgrid, longrid, curvature, threshold, absorb=False):",
@@ -80,7 +80,7 @@ MUTATIONS = {
     # unioning the adjacent components adds nothing. Checked over 4,000 random masks
     # with a randomly chosen above-threshold seed, and exhaustively over every 3-by-3
     # mask and above-threshold seed, 2,304 cases: the paths agreed everywhere. The
-    # branch is an optimisation, not a behavioural distinction. The reproducer is
+    # branch is an optimization, not a behavioral distinction. The reproducer is
     # tests/reproducers/k19_paths_agree.py, so the withdrawal can be rechecked.
     # K4 the ladder is never climbed
     "ladder_never_climbs": _sub(
@@ -121,7 +121,7 @@ MUTATIONS = {
     "extent_measured_zonally": _sub(
         "        top = lats == np.max(lats)\n        bottom = lats == np.min(lats)",
         "        top = lons == np.max(lons)\n        bottom = lons == np.min(lons)"),
-    # K12 the refined centre replaces rather than averages
+    # K12 the refined center replaces rather than averages
     "refined_centre_replaces_the_median": _sub(
         '            wave["lat_mean"] = (float(np.mean(lats[peak])) + wave["lat_mean"]) / 2.0\n'
         '            wave["lon_mean"] = (float(np.mean(lons[peak])) + wave["lon_mean"]) / 2.0',

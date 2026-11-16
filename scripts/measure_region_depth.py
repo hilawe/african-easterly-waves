@@ -27,9 +27,9 @@ THE SIMULATION IS OF THE MATLAB, not of the port. The port's `connected_region` 
 deliberately does not truncate, so it cannot answer this. The walk below reproduces
 `isolate_region_f`'s own order, including the two details that change the depth:
 
-  - neighbours are TESTED against the caller's `Z` but MARKED in `Zn`, and the child is
+  - neighbors are TESTED against the caller's `Z` but MARKED in `Zn`, and the child is
     handed `Zn`, so a cell already marked by a sibling is not revisited by a later child
-  - all eight neighbours are appended before any recursion happens, in the source's own
+  - all eight neighbors are appended before any recursion happens, in the source's own
     order, and the recursion then runs over them in that order
 """
 import argparse
@@ -46,7 +46,7 @@ from aew.v1port import pipeline as P  # noqa: E402
 from aew.v1port.climo_cache import load_or_build  # noqa: E402
 from aew.v1port.detection import MAX_ZONAL_WIND, _prepare, trough_axes  # noqa: E402
 
-# the source's own neighbour order, (drow, dcol)
+# the source's own neighbor order, (drow, dcol)
 NEIGHBOURS = ((-1, 0), (0, -1), (-1, -1), (1, 0), (0, 1), (1, 1), (-1, 1), (1, -1))
 
 
@@ -64,7 +64,7 @@ def walk_depth(mask, seed):
     marked = np.zeros(mask.shape, dtype=bool)
 
     def children(r, c):
-        """Neighbours this call would append, marking them as it goes."""
+        """Neighbors this call would append, marking them as it goes."""
         found = []
         for dr, dc in NEIGHBOURS:
             rr, cc = r + dr, c + dc

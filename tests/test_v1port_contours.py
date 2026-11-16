@@ -4,7 +4,7 @@ THE MUTATION LIST, WRITTEN BEFORE THE ASSERTIONS EXISTED, executable as
 tests/mutations_v1port_contours.py.
 
     K1   the region search is 4-connected rather than 8-connected, so a diagonal
-         neighbour breaks a trough in two
+         neighbor breaks a trough in two
     K2   the region search returns the whole mask rather than the component containing
          the seed, merging unrelated troughs
     K3   SUPERSEDED BY K15 on 2026-08-30. It asserted that a seed on an empty cell
@@ -13,11 +13,11 @@ tests/mutations_v1port_contours.py.
     K5   the ladder escalates on every region rather than only oversized ones
     K6   the convex hull absorbs candidates outside it
     K7   a degenerate region (two points or fewer) still absorbs
-    K8   the near-duplicate pass keeps centres closer than the merge distance
+    K8   the near-duplicate pass keeps centers closer than the merge distance
     K9   the near-duplicate distance is compared in the wrong units
     K10  the minimum-extent pass keeps waves shorter than the threshold
     K11  the minimum-extent pass measures east to west instead of north to south
-    K12  the refined centre replaces the median rather than averaging with it
+    K12  the refined center replaces the median rather than averaging with it
     K13  NaN curvature is treated as above threshold
     K14  the early return for a lone wave is removed, so it gains checks version 1 never
          applied to it
@@ -35,7 +35,7 @@ tests/mutations_v1port_contours.py.
          two paths agreed everywhere. The reproducer is
          tests/reproducers/k19_paths_agree.py.
     K20  an out-of-bounds seed returns the seed cell instead of nothing
-    K21  the neighbour scan is skipped for a seed on a grid edge, so a boundary seed
+    K21  the neighbor scan is skipped for a seed on a grid edge, so a boundary seed
          comes back as the seed alone (found by an independent check of the first
          version of these tests, which seeded only the interior)
 
@@ -94,7 +94,7 @@ def two_blob_field(latgrid, longrid, extra_lat=32.0, extra_lon=32.0):
 # --- the connected region ------------------------------------------------------------
 
 def test_region_is_eight_connected():
-    """K1. The original tests all eight neighbours explicitly, so a diagonal link holds
+    """K1. The original tests all eight neighbors explicitly, so a diagonal link holds
     a region together. Four-connectivity would split this blob in two."""
     mask = np.zeros((5, 5), dtype=bool)
     mask[1, 1] = True
@@ -136,9 +136,9 @@ def test_seed_below_threshold_still_returns_the_seed_cell():
 
 
 def test_seed_below_threshold_also_takes_every_adjacent_component():
-    """K16, K17, K18. The seed is marked, THEN the neighbours are flood-filled.
+    """K16, K17, K18. The seed is marked, THEN the neighbors are flood-filled.
 
-    After marking the seed the original tests all eight neighbours against the ORIGINAL
+    After marking the seed the original tests all eight neighbors against the ORIGINAL
     field and recurses into each one that is above threshold, so the region is the seed
     plus every above-threshold component touching it, not the seed alone. Two separate
     components touch the seed here, one orthogonally and one only diagonally, and the
@@ -170,14 +170,14 @@ def test_a_below_threshold_seed_on_the_grid_EDGE_still_takes_its_neighbours():
     """K21, and the gap an independent check found in the first version of these tests.
 
     Every fixture above seeds the interior, so an implementation that marked the seed
-    and then skipped the neighbour scan for any seed on an edge passed all of them. The
-    original's eight neighbour tests are individually guarded against running off the
-    grid, which is exactly a boundary behaviour, so the boundary needs its own case.
+    and then skipped the neighbor scan for any seed on an edge passed all of them. The
+    original's eight neighbor tests are individually guarded against running off the
+    grid, which is exactly a boundary behavior, so the boundary needs its own case.
     Top edge, left edge and a corner, each with a component adjacent to the seed.
     """
-    for seed, neighbour in (((0, 3), (1, 3)),       # top edge, neighbour below
-                            ((3, 0), (3, 1)),       # left edge, neighbour right
-                            ((0, 0), (1, 1)),       # corner, neighbour diagonally in
+    for seed, neighbour in (((0, 3), (1, 3)),       # top edge, neighbor below
+                            ((3, 0), (3, 1)),       # left edge, neighbor right
+                            ((0, 0), (1, 1)),       # corner, neighbor diagonally in
                             ((6, 6), (5, 5))):      # far corner, diagonally in
         mask = np.zeros((7, 7), dtype=bool)
         mask[neighbour] = True
@@ -278,7 +278,7 @@ def test_the_ladder_is_the_one_the_source_names():
 def test_a_candidate_inside_the_region_hull_is_absorbed():
     """K6, and it now needs `absorb=True` because absorption is no longer the default.
 
-    Version 1 never reaches this code, so what it binds is the REPAIRED behaviour rather
+    Version 1 never reaches this code, so what it binds is the REPAIRED behavior rather
     than version 1's. Left in place because the flag has to work when it is set, and the
     catalog caught these three tests going vacuous the moment the default changed.
     """
@@ -304,18 +304,18 @@ def test_a_candidate_outside_the_hull_survives_separately():
 
 
 def _absorption_fixture():
-    """A region whose convex hull covers a SEPARATE region far from its own centre.
+    """A region whose convex hull covers a SEPARATE region far from its own center.
 
     The fixture has to be built this way and the reason is the finding itself. Two
     candidates on ONE connected trough grow the same region, so they produce identical
-    centres that the five-degree pass collapses whether or not the first pass absorbed
+    centers that the five-degree pass collapses whether or not the first pass absorbed
     them, and the two settings agree. That is why the port matched version 1 on 171 of
     173 waves over six real timesteps despite performing a pass version 1 does not.
 
     So absorption is only observable when the absorbed candidate belongs to a DIFFERENT
-    region that happens to fall inside the absorber's hull, and whose centre is further
+    region that happens to fall inside the absorber's hull, and whose center is further
     than the merge distance from the absorber's. An L of cells has a hull covering the
-    triangle between its arms while its own centre stays in the corner.
+    triangle between its arms while its own center stays in the corner.
     """
     latgrid, longrid = mesh(lat0=0, lat1=30, lon0=0, lon1=30, step=1.0)
     curvature = np.zeros(latgrid.shape)
@@ -393,11 +393,11 @@ def test_with_absorption_off_a_wave_keeps_its_own_time():
 def test_near_duplicate_centres_collapse_to_one_wave():
     """K8, and it was NOT bound before 2026-08-30.
 
-    Pass two drops any merged wave whose centre lies within five degrees of one already
+    Pass two drops any merged wave whose center lies within five degrees of one already
     kept. The mutation that removes that test survived the suite, so this pins it: two
     separate troughs four degrees apart must come out as ONE wave. They survive pass one
     because each bar is a single column and therefore collinear, so no convex hull can
-    be formed and neither can absorb the other, which is the degenerate-region behaviour
+    be formed and neither can absorb the other, which is the degenerate-region behavior
     pinned separately below.
     """
     latgrid, longrid = mesh(lat0=0, lat1=30, lon0=0, lon1=30, step=1.0)
@@ -429,7 +429,7 @@ def test_the_merge_distance_is_compared_in_degrees_not_nautical_miles():
     `great_circle_distance(..., "nm") / 60` converts to degrees, and dropping the
     division leaves a number about sixty times too large, so any separation the merge
     would otherwise collapse is left far above the five degree threshold. The expected
-    separation is written out by hand rather than read back from the merge: two centres
+    separation is written out by hand rather than read back from the merge: two centers
     four degrees apart in longitude AT TEN DEGREES NORTH are 3.94 degrees apart, and only
     the degree figure is below the threshold.
     """
@@ -462,7 +462,7 @@ def test_a_degenerate_region_absorbs_nothing():
 # --- the near-duplicate pass -----------------------------------------------------------
 
 def test_centres_within_the_merge_distance_collapse():
-    """K8 and K9. Two blobs whose centres sit inside the merge radius are one wave."""
+    """K8 and K9. Two blobs whose centers sit inside the merge radius are one wave."""
     latgrid, longrid = mesh()
     curvature = np.zeros(latgrid.shape)
     a = (np.abs(latgrid - 10) <= 1) & (np.abs(longrid - 9) <= 1)
@@ -528,7 +528,7 @@ def test_the_refined_centre_is_the_average_of_the_peak_and_the_median():
     curvature = two_blob_field(latgrid, longrid)
     region = (np.abs(latgrid - 10) <= 2) & (np.abs(longrid - 10) <= 2)
     curvature[region] = 2e-6
-    curvature[12, 12] = 9e-6                  # the peak, offset from the region centre
+    curvature[12, 12] = 9e-6                  # the peak, offset from the region center
     out = merge_contours([candidate(10, 10), candidate(32, 32)],
                          latgrid, longrid, curvature, 1e-6)
     first = [w for w in out if w["lat_mean"] < 20][0]

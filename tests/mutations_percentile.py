@@ -91,7 +91,7 @@ MUTATIONS = {
     "progress_guard_disabled": _sub(
         "        state = (lo, hi, rank)",
         "        state = (lo, hi, rank, len(filters))"),
-    # E6 refinement forgets to re-localise the rank inside the bin
+    # E6 refinement forgets to re-localize the rank inside the bin
     "refinement_keeps_global_rank": _sub(
         "        rank = rank - below\n        lo, hi = new_lo, new_hi",
         "        lo, hi = new_lo, new_hi"),

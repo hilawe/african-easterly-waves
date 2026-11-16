@@ -12,7 +12,7 @@ def _sub(old, new):
 
 MUTATIONS = {
     # K26 the absorption flag reaches the coarse merge and not the fine one, so the two
-    # halves of the same merge disagree about which behaviour they are reproducing
+    # halves of the same merge disagree about which behavior they are reproducing
     "absorb_flag_not_passed_to_the_fine_merge": _sub(
         "    return merge_contours(coarse, latgrid_fine, longrid_fine,\n"
         "                          curvature_f, fine_threshold, absorb=absorb)",
@@ -62,7 +62,7 @@ MUTATIONS = {
         "                            curvature_c, coarse_threshold, absorb=absorb)",
         "    coarse = merge_contours(candidates, latgrid_fine, longrid_fine,\n"
         "                            curvature_f, fine_threshold, absorb=absorb)"),
-    # D11 the candidate centre taken from an endpoint rather than the mean
+    # D11 the candidate center taken from an endpoint rather than the mean
     "candidate_centre_is_an_endpoint": _sub(
         '                   "lat_mean": float(np.mean(lats)),\n'
         '                   "lon_mean": float(np.mean(lons))}',

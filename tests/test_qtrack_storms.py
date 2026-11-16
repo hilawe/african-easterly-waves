@@ -3,7 +3,7 @@
 MUTATION LIST, written before the assertions:
   S1 match ignores the SEASON: INERT under any offset window shorter than a year,
      because a same-name storm from another season is always outside the window;
-     the season filter is explicit documentation rather than a bound behaviour;
+     the season filter is explicit documentation rather than a bound behavior;
   S2 match ignores the NAME;
   S3 the FARTHEST candidate event is chosen instead of the nearest;
   S4 the offset window is not enforced;

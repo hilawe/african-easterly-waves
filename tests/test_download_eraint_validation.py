@@ -148,7 +148,7 @@ def test_the_wrong_pressure_level_is_refused(tmp_path):
     write_file(path, 1981, level=850.0)
     reason = dl.validate_file(path, 1981, "u700", AREA, GRID)
     assert reason is not None and "850" in reason and "700" in reason
-    # Pascals are recognised and converted, so 70000 Pa is the RIGHT level
+    # Pascals are recognized and converted, so 70000 Pa is the RIGHT level
     write_file(path, 1981, level=70000.0, level_units="Pa")
     assert dl.validate_file(path, 1981, "u700", AREA, GRID) is None
 

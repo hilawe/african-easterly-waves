@@ -305,7 +305,7 @@ def operated(indices, operation="removal", steps=(33035.25,), **tweak):
         run["removed_index"] = 52
         run["identified_by"] = "leave-one-out over all 75 axes at this step"
         # RECEIPTS, which the checker demands since an independent review showed a baseline
-        # copy labelled negative_control was accepted. Representation is an identity edit at
+        # copy labeled negative_control was accepted. Representation is an identity edit at
         # the same step; negative removes a DIFFERENT axis at the same step.
         out["representation_control"]["receipt"] = {
             "step": steps[0], "identity": True, "population_before": 77,
@@ -2242,7 +2242,7 @@ def test_a_swapped_duplicate_representation_control_is_refused_by_the_operation_
 # exercised `experiment_problems` while `examined_explains`, `scope_problems` and the credit
 # loop still admitted only reference-extra pairs. So these go through `main(argv)`, with a
 # residual record and two finished outputs written to disk, for every category the amendment
-# admits. F3 said a baseline copy labelled negative_control was accepted, and an intervention
+# admits. F3 said a baseline copy labeled negative_control was accepted, and an intervention
 # declaring moved_from=-500 against a population of 77. Those run through the same path.
 # ---------------------------------------------------------------------------------------
 

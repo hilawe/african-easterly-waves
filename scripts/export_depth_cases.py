@@ -7,8 +7,8 @@ MATLAB. Two reviews pointed out, correctly, that the write-ups treated that as a
 MEASUREMENT of the original's recursion when it is a simulation of it. The simulation is
 only as good as three assumptions:
 
-  1. the eight neighbours are visited in the source's own order
-  2. neighbours are TESTED against the caller's `Z` but MARKED in `Zn`, and the child is
+  1. the eight neighbors are visited in the source's own order
+  2. neighbors are TESTED against the caller's `Z` but MARKED in `Zn`, and the child is
      handed `Zn`, so a cell marked by an earlier sibling is invisible to a later one
   3. all eight are appended before any recursion, and the recursion then runs over them
      in that order

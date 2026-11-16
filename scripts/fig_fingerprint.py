@@ -60,7 +60,7 @@ def main():
     C_MIX = "#1b7837"   # vapor green
     C_T = "#762a83"     # temperature purple
     C_OBS = "#2166ac"   # observed theta-e blue
-    C_PRED = "#999999"  # predicted net grey
+    C_PRED = "#999999"  # predicted net gray
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 5.4))
 

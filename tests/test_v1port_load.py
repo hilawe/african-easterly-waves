@@ -25,8 +25,8 @@ tests/mutations_v1port_load.py.
     L15  the stride is dropped on one side of the chain and the shapes happen to agree
 
 THE ONE THAT MATTERS MOST IS L7, and it is why the accumulator exists as a class rather
-than as a loop in a script. Streaming the climatology is an optimisation forced by memory,
-about eight gigabytes if thirty years are concatenated first, and an optimisation that
+than as a loop in a script. Streaming the climatology is an optimization forced by memory,
+about eight gigabytes if thirty years are concatenated first, and an optimization that
 changes the answer is a defect. The equivalence is checked against the batch function on a
 case small enough to compute both ways, including a leap year and a missing value, rather
 than argued from the code.
@@ -165,7 +165,7 @@ def test_the_pressure_level_axis_is_dropped(year_files):
 
 def test_the_grid_comes_back_in_the_files_own_row_order(year_files):
     """The tracker handles either order, but only because that was found and fixed. The
-    order is reported rather than silently normalised, so a caller can see it."""
+    order is reported rather than silently normalized, so a caller can see it."""
     directory = year_files(year=1981)
     _, latgrid, _, _, _ = L.load_year(1981, str(directory))
     assert float(latgrid[1, 0]) < float(latgrid[0, 0]), "these files come north-first"
@@ -242,7 +242,7 @@ def test_the_streaming_climatology_equals_the_batch_one():
     """L7, L8 and L9 together, and the reason the accumulator is worth its own class.
 
     Streaming is forced by memory: thirty years concatenated is about eight gigabytes. An
-    optimisation that changes the answer is a defect, so the equivalence is measured on a
+    optimization that changes the answer is a defect, so the equivalence is measured on a
     case small enough to compute both ways rather than argued from the code. The fixture
     includes a leap year and a missing value, which are the two places the batch version
     does something other than take a mean.
@@ -266,7 +266,7 @@ def test_the_streaming_climatology_equals_the_batch_one():
 def test_the_calendar_keys_come_back_sorted_whatever_order_the_years_arrive_in():
     """L7. The batch version sorts its calendar keys, so the streaming one has to as well
     or the two disagree on which mean belongs to which step, and the leap-day interpolation
-    reads its neighbours from the wrong places.
+    reads its neighbors from the wrong places.
 
     THE YEARS ARE ADDED OUT OF CALENDAR ORDER on purpose. Python preserves insertion order
     in a dict, so a fixture that adds them in order cannot tell a sorted result from an
@@ -615,7 +615,7 @@ def test_the_box_is_cropped_before_smoothing_as_the_tracker_does(varying_year, t
     WHY THAT CHANGES VALUES RATHER THAN JUST BOOKKEEPING. `smth9_f` starts its loops at 2
     and stops at size-1, so it leaves the OUTER RING of whatever it is handed untouched.
     Cropping first means the tracking domain's perimeter keeps its raw values. Smoothing a
-    buffered field and masking afterwards smooths that perimeter using halo neighbours the
+    buffered field and masking afterward smooths that perimeter using halo neighbors the
     archived smoother never sees, so every cell around the edge of the sample differs.
 
     An earlier version of `sample_anomaly_values` did exactly that, and its comment claimed

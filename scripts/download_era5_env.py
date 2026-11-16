@@ -4,7 +4,7 @@
 June-September, 6-hourly synoptic hours, 0.5 deg, on the analysis domain. These are the
 full-coverage replacements for the sparse SSM/I trough-mean TCWV in the developing vs
 non-developing composite (700 hPa relative humidity is the primary variable, total column
-water vapour the cross-check). One CDS request per year per variable; each request skips
+water vapor the cross-check). One CDS request per year per variable; each request skips
 if its output file already exists, so the script is resumable after a queue timeout.
 """
 

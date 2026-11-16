@@ -63,7 +63,7 @@ def test_tracks_that_never_coexist_share_nothing():
 
 def test_the_time_tolerance_is_tighter_than_the_record_spacing():
     """X2. The record is six-hourly, so a tolerance at or above that would let a track be
-    compared against its neighbour's next observation."""
+    compared against its neighbor's next observation."""
     a = track(4)
     b = track(4, day0=38351.0 + DAY)          # offset by exactly one step
     times, _ = C.separation_km(a, b)

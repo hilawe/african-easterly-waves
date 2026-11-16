@@ -52,7 +52,7 @@ MUTATIONS = {
     "exhaustion_returns_last_level": _sub(
         "    return None, records",
         "    return records[-1], records"),
-    # H8 the first passing level is not honoured
+    # H8 the first passing level is not honored
     "first_passing_level_ignored": _sub(
         '        if entry["coarse"]["passes"] and entry["fine"]["passes"]:\n'
         "            return entry, records",

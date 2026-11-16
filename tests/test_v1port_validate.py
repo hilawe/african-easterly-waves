@@ -72,7 +72,7 @@ def test_tracks_come_back_with_their_own_observations(tmp_path):
 
 
 def test_a_field_the_writer_filled_comes_back_as_missing(tmp_path):
-    """W2. Reading -999 as a wavelength of minus 999 kilometres would poison any statistic
+    """W2. Reading -999 as a wavelength of minus 999 kilometers would poison any statistic
     computed over it."""
     got = V.read_tracks(str(write_record(tmp_path, [track(4)])))
     assert np.all(np.isnan(got[0]["wavelength"]))

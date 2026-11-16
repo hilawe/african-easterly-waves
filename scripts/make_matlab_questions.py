@@ -16,7 +16,7 @@ THE THREE QUESTIONS, and what each decides:
       90 identical, rather than 96 of 117 with 60). If MATLAB refuses it too, the original
       oracle numbers stand.
   Q2  Where does convhull's index vector start and which way does it wind? merge_contours_f
-      feeds the hull straight into an inflation centred on the mean, and Octave's convhull
+      feeds the hull straight into an inflation centered on the mean, and Octave's convhull
       is not MATLAB's. Open in this project since the port began. Uses a REAL 200-point
       wave footprint rather than a toy set.
   Q3  Does `inpolygon` accept six arguments? The merge finding concludes it fails in MATLAB

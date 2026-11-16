@@ -53,7 +53,7 @@ p2_track_eraint_700hPa.m sets every one of these:
           the 1990 Africa file is a whole number, 66 distinct values across 8,109
           observations with a smallest distinct spacing of exactly 1.0, while `lat` in
           the same file and the same float32 type keeps 1,297 distinct values including
-          -32.8333, so a write-time rounding would have quantised both and did not.
+          -32.8333, so a write-time rounding would have quantized both and did not.
           VERSION 1 RAN ON A ONE DEGREE GRID.
           It is not a cosmetic difference. `decimate_f.m` takes the FLOOR of the
           resolution ratio, so one degree gives a filter width of two, a stride of two
@@ -78,8 +78,8 @@ roughly 75 and 130 MB per variable-year respectively, and of order 4.5 and 8 GB 
 pair across thirty years. That is a fraction of the ERA5 request because ERA-Interim is
 nine times coarser in area.
 
-BEFORE THIS RUNS, THE ERA-INTERIM LICENCE HAS TO BE ACCEPTED on the Copernicus account.
-The dataset and the request shape below are confirmed correct: a probe reached the licence
+BEFORE THIS RUNS, THE ERA-INTERIM LICENSE HAS TO BE ACCEPTED on the Copernicus account.
+The dataset and the request shape below are confirmed correct: a probe reached the license
 check, which is past request validation. The acceptance is a page visit and cannot be done
 from here:
 

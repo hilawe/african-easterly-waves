@@ -143,7 +143,7 @@ def test_the_inflation_is_asymmetric_as_the_original_writes_it():
     stretching the search region more along the direction of travel than across it.
 
     THE FACTORS, NOT JUST THEIR ORDER. A first version asserted only that the longitude
-    span came out larger than the latitude span, which any longitude-favouring stretch
+    span came out larger than the latitude span, which any longitude-favoring stretch
     passes, including a correct-looking symmetric one applied to a non-square polygon. The
     two factors are pinned here, and so is the consequence that makes them worth pinning:
     they multiply to sqrt(8/9), not to 1, so the inflated polygon lands at about 94 percent
@@ -307,7 +307,7 @@ def test_a_candidate_outside_the_polygon_is_rejected_on_the_polygon_alone():
 
 def test_a_candidate_inside_the_polygon_is_rejected_on_speed_alone():
     """A4. The mirror of the test above: this candidate is well inside the search polygon
-    and only the twenty-five-metre-per-second ceiling stands between it and the track."""
+    and only the twenty-five-meter-per-second ceiling stands between it and the track."""
     tracks, states = seed_one_track()
     west_edge = float(np.min(states[0]["poly_lon_6hr"]))
     candidate = wave(10.0, west_edge + 0.5, time=DAY_PER_STEP, half=0.2)

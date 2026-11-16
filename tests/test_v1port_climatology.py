@@ -60,7 +60,7 @@ def test_smoother_leaves_the_outer_ring_untouched():
 
 
 def test_smoother_matches_the_written_formula_at_one_point():
-    """C12. Compute the centre by hand from smth9_f.m's own expression."""
+    """C12. Compute the center by hand from smth9_f.m's own expression."""
     f = np.arange(9, dtype=float).reshape(3, 3)
     p, q = 0.5, 0.25
     c = f[1, 1]
@@ -271,21 +271,21 @@ def test_threshold_refuses_an_all_missing_field():
 
 
 def test_the_cardinal_and_diagonal_weights_are_different_numbers():
-    """C12, bound properly at last. smth9_f weights the four EDGE-ADJACENT neighbours by
+    """C12, bound properly at last. smth9_f weights the four EDGE-ADJACENT neighbors by
     p/4 and the four DIAGONAL ones by q/4, and version 1 always calls it with p = 0.5 and
-    q = 0.25, so the two are not interchangeable. A catalogue mutation setting q to p
+    q = 0.25, so the two are not interchangeable. A catalog mutation setting q to p
     survived until this test existed: nothing else in the suite could tell a smoother that
-    treats all eight neighbours alike from one that does not.
+    treats all eight neighbors alike from one that does not.
 
-    Each weight is isolated by a field that is zero everywhere except one neighbour, so the
-    centre's new value is that weight alone.
+    Each weight is isolated by a field that is zero everywhere except one neighbor, so the
+    center's new value is that weight alone.
     """
     cardinal = np.zeros((3, 3))
-    cardinal[0, 1] = 1.0                       # due north of the centre
+    cardinal[0, 1] = 1.0                       # due north of the center
     assert smooth9(cardinal)[1, 1] == pytest.approx(SMOOTH_P / 4.0)
 
     diagonal = np.zeros((3, 3))
-    diagonal[0, 0] = 1.0                       # northwest of the centre
+    diagonal[0, 0] = 1.0                       # northwest of the center
     assert smooth9(diagonal)[1, 1] == pytest.approx(SMOOTH_Q / 4.0)
 
     assert SMOOTH_P == 0.5 and SMOOTH_Q == 0.25
