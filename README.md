@@ -41,7 +41,10 @@ MCS counts peak in and just west of the moving trough, a maximum that survives a
 test in which whole waves keep their track shapes while their anchor longitudes are shuffled
 within year and month, and stronger troughs are accompanied by more convection there. A
 paper on the thermodynamic contrasts between convectively active and quiet waves (Semunegus,
-2026b) is in revision at the Journal of the Atmospheric Sciences.
+2026b) is in revision at the Journal of the Atmospheric Sciences. One driver,
+`scripts/run_canonical.py`, runs the sequence that writes its derived tables and the figures
+drawn from them. Run it with `--no-promote`, since the last step copies the figures into the
+manuscript, which is not part of this repository.
 
 ![The two-layer thermodynamic signature of MCS detection activity](docs/schematic.png)
 
@@ -122,6 +125,15 @@ not answer that. The repository will record how each is settled.
   (cold-cloud detection, equivalent-radius sizing, area-overlap linking with motion projection).
 - A wave-following (trough-relative) composite that composites convection about the moving
   wave trough using the AEWC trajectories.
+- The analysis of the thermodynamic-contrasts paper. Troughs are classed as MCS-active or
+  MCS-quiet from the detections of one satellite position, on a calendar of the 3-hourly
+  slots that pass an availability criterion inferred from those detections (`aew.observed`,
+  `scripts/met_observed_slots.csv`). The environment ahead of each trough is sampled in
+  fixed boxes and along isobaric back-trajectories (`aew.environment`, `aew.trajectory`,
+  `aew.thermo`), with pressure-level fields masked where the surface pressure does not
+  exceed the level by a set margin (`aew.terrain`). A count model with its controls
+  (`scripts/control_model.py`) and a split of the class contrast by scale
+  (`scripts/scale_split.py`) follow.
 - A Python port of the AEWC version 1 tracker (`aew.v1port`), with its region, threshold and
   validation code.
 - A restart-safe driver for the reanalysis protocol campaign and a check that binds every
@@ -159,7 +171,7 @@ tracker, the dataset readers, the version 1 port, and the comparison tools.
 
 No data is bundled. The analysis reads from public archives:
 
-- ERA5 and ERA-Interim winds: the European Centre for Medium-Range Weather Forecasts
+- ERA5 and ERA-Interim fields: the European Centre for Medium-Range Weather Forecasts
   (ECMWF), through the Copernicus Climate Data Store for ERA5 (`aew.data.era5` includes
   download helpers).
 - GridSat-B1 brightness temperature: NOAA's NCEI (Knapp et al. 2011).
@@ -175,9 +187,10 @@ for the full method and `docs/PLAIN_SUMMARY.md` for a non-technical overview.
 ## Layout
 
 ```
-src/aew/          filtering, events, composites, binning, tracks, plotting, data readers, pairing
+src/aew/          filtering, events, composites, binning, tracks, trajectories, thermodynamics,
+                  plotting, data readers, pairing
 src/aew/v1port/   the Python port of the AEWC version 1 tracker
-scripts/          end-to-end figure, campaign and comparison drivers
+scripts/          the canonical driver of the paper, and figure, campaign and comparison drivers
 tests/            synthetic-input unit tests
 docs/             methods, plain-language summary, and the version 2 reanalysis protocol
 ```
@@ -190,8 +203,8 @@ Semunegus, H. (2026a). *African easterly waves and mesoscale convective systems*
 software]. GitHub. https://github.com/hilawe/african-easterly-waves
 
 Semunegus, H. (2026b). *Between-wave thermodynamic contrasts ahead of convectively active
-African easterly waves* [Manuscript submitted for publication]. NOAA's National Centers for
-Environmental Information.
+African easterly waves* [Manuscript JAS-D-26-0160, in revision at the *Journal of the
+Atmospheric Sciences*]. NOAA's National Centers for Environmental Information.
 
 Semunegus, H., Mekonnen, A., & Schreck, C. J., III. (2017). Characterization of convective
 systems and their association with African easterly waves. *International Journal of
