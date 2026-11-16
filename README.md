@@ -39,18 +39,20 @@ National Centers for Environmental Information (NCEI) of the National Oceanic an
 Administration (NOAA).
 MCS counts peak in and just west of the moving trough, a maximum that survives a permutation
 test in which whole waves keep their track shapes while their anchor longitudes are shuffled
-within year and month, and stronger troughs organize convection more sharply. A paper on
-the thermodynamic contrasts between convectively active and quiet waves (Semunegus, 2026b)
-is under consideration at the Journal of the Atmospheric Sciences.
+within year and month, and stronger troughs are accompanied by more convection there. A
+paper on the thermodynamic contrasts between convectively active and quiet waves (Semunegus,
+2026b) is in revision at the Journal of the Atmospheric Sciences.
 
-![Two-layer thermodynamic signatures of convective development in African easterly waves](docs/schematic.png)
+![The two-layer thermodynamic signature of MCS detection activity](docs/schematic.png)
 
-Summary schematic. An MCS-active trough (left) draws less dry Saharan air at the jet level
-(700 hPa) over a moister, cooler monsoon layer (850 hPa), and deep convection develops. An
-MCS-quiet trough (right) shares the same southwesterly monsoon inflow but takes drier,
-warmer air aloft, and convection stays shallow. Transport differences are drawn in the
-700 hPa arrows and state differences in the 850 hPa fill. All flow arrows are
-ground-relative.
+Summary schematic of the two-layer description in that paper. Ahead of an MCS-active trough
+(left) the diagnosed inflow at the jet level (700 hPa) is moister and its paths are less
+northerly, which is consistent with reduced Saharan-side influence in the horizontal flow,
+over a monsoon layer (850 hPa) that is moister in a fixed box. Ahead of an MCS-quiet trough
+(right) the same southwesterly monsoon inflow lies under drier, warmer inflow aloft. The
+schematic describes an association between the environment and convective activity and
+does not show that one causes the other. Transport differences are drawn in the 700 hPa
+arrows and state differences in the 850 hPa fill, and all flow arrows are ground-relative.
 
 ### From using the wave record to rebuilding it
 

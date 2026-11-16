@@ -1,127 +1,132 @@
-# African easterly waves and the storms they carry: a plain-language summary
+# A plain-language summary of the African easterly wave study
 
 This note explains, without heavy jargon, what the analysis in the paper shows and where it
-stops short. The technical detail lives in the manuscript. This is the readable overview.
+stops. The technical detail is in the manuscript, and this is the readable overview. It
+describes the paper as revised after peer review.
 
 ## The question
 
 Every few days in summer, a ripple in the winds moves westward across West Africa. These
-ripples are African easterly waves (AEWs). Riding along with them are large clusters of
-thunderstorms, called mesoscale convective systems (MCS), which produce most of the Sahel's
-rain and sometimes seed Atlantic hurricanes. Two questions sit underneath the paper. Where
-do the storms sit relative to the wave, and why do some waves light up with storms while
-others, seemingly similar, stay quiet.
+ripples are African easterly waves (AEWs). Large clusters of thunderstorms, called mesoscale
+convective systems (MCS), travel with them, produce most of the rain of the Sahel and
+sometimes precede Atlantic hurricanes. The paper asks two things. Where do the storms sit
+relative to the wave, and how does the air ahead of waves with many storms differ from the
+air ahead of quiet ones? It describes that difference and does not test what makes one wave
+active and another quiet.
 
 ## Following the moving wave
 
 The original study answered a fixed-location version of the first question. It sat at one
 point (10 N, 0 E), waited for the wave to peak there, and averaged the storms around those
-dates. That works, but it ties the answer to one spot and to strong events at that spot.
+dates. That ties the answer to one spot and to strong events at that spot.
 
-The analysis here follows the moving wave instead. Using an independent catalogue of wave
-troughs (the low-pressure axis of each wave), it measures where the storms are relative to
-the trough wherever the trough happens to be, then averages over thousands of trough
-sightings across the 1983 to 2007 seasons. This trough-following view is closer to the
-physics, because the wave is a moving thing, not a fixed location.
+The analysis here follows the moving wave. Using a catalog of wave troughs (the low-pressure
+axis of each wave), it measures where the storms are relative to the trough wherever the
+trough is, over 6,364 trough observations between 20 W and 20 E in the summers of 1983 to
+2007. Storms concentrate about 2 degrees west of the moving trough, the direction in which
+the wave travels.
 
-Storms concentrate in and just west of the moving trough, the direction the wave is heading.
-To check that this is real and not just the fact that the Sahel is stormy anyway, the storm
-excess near the trough is compared against a scrambled control in which the trough longitudes
-are randomized. The peak sits right at the trough at about 1.27 times the scrambled
-control, and a randomization test puts the odds of that arising by chance at about one in a
-thousand. The clustering is tied to the trough, not to geography. One refinement sharpens
-the picture, because stronger waves organize storms more sharply, with the strongest third of waves
-producing a higher storm peak than the weakest third. A second thing that was once claimed
-here did not hold up. Storms that are already deep when first spotted turn out to appear in
-the same places as storms generally, so this record does not separate where storms are born
-from where they mature.
+To check that this is tied to the trough and not to the geography of a stormy region, the
+count near the trough is compared with a scrambled control in which whole waves keep their
+shape and trade places within the same year and month. The peak is 1.24 times the scrambled
+background, an excess of 131 storm systems, and it arises by chance in about one scrambled
+draw in a thousand. Stronger waves concentrate storms more. The strongest third of the waves
+shows a peak excess of 71 systems against 35 for the weakest third.
 
-## Why some waves light up and others do not
+The same offset appears in time. At a fixed place, storm activity peaks about 11 hours
+before the trough arrives, and that lead shortens toward the coast, from about 12.5 hours in
+the east of the corridor to about 8.7 hours in the west. The data are sampled every 6 hours,
+so this is a shift between a few possible values and not a finely measured delay.
 
-The harder question is the second one. Take troughs that go on to grow a lot of storms and
-troughs that stay quiet, and ask what was different about them beforehand. The paper measures
-the moisture of the air that feeds each trough, and it does so in two ways that turn out to
-matter a great deal.
+## Sorting the waves, and the record the storms come from
 
-The simple way is to sit in a fixed box near the trough and read the humidity. Done that way,
-the storm-growing troughs sit in air that is only slightly moister, about +1.1 percent
-relative humidity. The signal is there but faint.
+Each trough observation is sorted by how many storm systems appear near it in the 24 hours
+after it passes. Within each band of longitude and each calendar month, the top third are
+called MCS-active and the bottom third MCS-quiet. That gives 6,557 sorted observations on
+910 waves over 25 summers.
 
-The flow-following way is different. Instead of a fixed box, the analysis traces the actual
-ribbon of air flowing into each trough, back three days upstream, and reads the humidity of
-that inflow. Along the real inflow, the storm-growing troughs are fed by air about +3.0
-percent moister (a range of +2.0 to +4.0 covers the uncertainty), and the contrast grows the
-farther back the air is traced. A fixed box sees a smaller contrast, roughly a third of the
-flow-following value when compared against the box at the trough and about half when
-compared at the same three-day lead. Part of that gap is the sampling frame and part is
-that the two groups' air arrives by different routes, so it is not purely a matter of a
-fixed box blurring a moving ribbon. The moisture difference is real, and it shows up larger
-when the air is followed than when it is watched from a fixed point. In blunt terms, the storm-growing troughs are the ones drinking from
-a moister stream, and you only see how much moister if you follow the stream.
+The storm counts come from a satellite cloud record assembled from several satellites. The
+revised paper counts storms from one satellite position alone, Meteosat, because the views
+of two positions overlap over Africa and the overlap changes through the record. It also
+keeps a trough only when every 3-hourly image of its counting windows passes a check that
+the satellite was observing. That check is inferred from the counts themselves and not from
+the satellite's own logs, so the results describe the troughs that were kept and not every
+trough.
 
-The difference also shows up in the tails, which is what convection cares about. Air feeding
-the storm-growing troughs crosses a high-humidity threshold 35 percent of the time, against
-25 percent for the quiet troughs. A modest shift in the average becomes a larger shift in how
-often the air is moist enough to matter.
+## What differs in the air ahead
 
-## Two layers, two different reasons
+The paper reads the humidity of the air ahead of each trough in two ways. The first sits in
+a fixed box at the trough a day before it passes. There the air ahead of MCS-active troughs
+is moister by 0.8 percentage points of relative humidity (a range of 0.2 to 1.5 covers the
+uncertainty).
 
-Tracing where the moist air comes from splits the story into two levels of the atmosphere.
+The second way traces the horizontal flow into each trough back three days and reads the
+humidity along it. There the difference is 2.3 percentage points (1.2 to 3.4), about twice
+the value in fixed boxes read at the same three-day lead. The paper does not say why the two
+differ. The sampling position, the route of the air and any moist anomaly broader than the
+wave could each contribute, and the design cannot separate them. An earlier version argued
+that a fixed box blurs a moving signal, and the revised paper no longer makes that claim.
 
-At the mid-level (around 700 hPa, roughly 3 km up), the storm-growing troughs pull in less
-dry air from the north. The Sahara sits to the north, and its air is warm and dry, a known
-suppressor of convection. The inflow to storm-growing troughs is shifted away from that
-northern dry source. A thermodynamic check confirms the character of the difference. The
-moister inflow is also slightly cooler, and the two effects offset in a combined measure of
-warmth-plus-moisture, which is the fingerprint of reduced dry-warm Saharan air rather than a
-wholesale change in air mass.
+The difference is also visible in how often the inflow is very moist. Air ahead of
+MCS-active troughs is above a high-humidity mark in 33.1 percent of cases against 26.9
+percent for MCS-quiet troughs, and the same holds at five other marks. This is a difference
+between two humidity distributions. It is not a measurement of how much more rain a given
+rise in humidity would bring over the Sahel.
 
-At the low level (around 850 hPa, roughly 1.5 km up), there is no difference in where the air
-comes from. The air feeding storm-growing and quiet troughs arrives from the same direction.
-What differs is its state. The low-level air feeding storm-growing troughs is simply moister
-and cooler, consistent with the lingering cool, humid wake of earlier convection rather than a
-change in its route.
+## Where the difference lives
 
-## An honest limit on the causal reading
+A new calculation splits the 2.3 points by scale. About 0.3 lies between years, 0.8 between
+regions and months within a year, 1.2 between different waves in the same region and month,
+and 0.03 between passages of one and the same wave. The last part is not distinguishable
+from zero (a range of -0.22 to +0.28).
 
-There is an objection any reviewer will raise, and the paper meets it head-on rather than
-around it. Moisture and storms feed each other. Earlier storms leave moist air behind, so
-finding moist inflow ahead of later storms could be the earlier storms talking, not an
-independent cause.
+So the moister inflow belongs to some waves, and to some months and years, more than to
+particular passages of a wave. The paper does not show that nothing happens within a wave,
+only that this record does not resolve it.
 
-To test this, the moisture measurement is put into a statistical model alongside the obvious
-competitors, including how much convection the region had already seen, the wave's own
-strength, the wind shear, and the total moisture of the column. On its own the inflow moisture
-is a significant predictor of later storm growth. It survives controls for wave strength and
-shear. But once prior convection is included, most of the moisture signal is absorbed, and it
-no longer holds up as an independent predictor when the model is tested on data it was not
-built on. Prior convection is by far the strongest predictor.
+## Two layers
 
-So the honest reading is careful. The moisture contrast itself is measured and repeatable, and
-it is a genuine thermodynamic signature of the troughs that grow storms. What the data cannot
-settle is whether that moisture is an independent gate on convection or mostly the fingerprint
-of a convective regime that was already active, refreshing its own moist environment. Both
-readings fit the data. The paper reports the contrast plainly and constrains the causal claim
-to a signature, not a proven trigger.
+At the level of the jet (700 hPa, about 3 km up) the inflow ahead of MCS-active troughs
+carries more water vapor and is slightly cooler. Its traced paths come from less far north,
+by about 0.4 degrees of latitude. The Sahara lies to the north, so this is consistent with
+less influence of Saharan air, but the traced paths follow the horizontal wind at one level
+and are not the full history of the air, which also rises and sinks.
 
-## Independence and repeatability
+Lower down (850 hPa, about 1.5 km up) the air ahead of MCS-active troughs is moister in the
+fixed box and along the inflow for two days back, and its route does not differ between the
+two groups. MCS-active troughs also follow more storm activity in the same region the day
+before, 16.4 detections against 14.8.
 
-A separate goal was to remove any dependence on old or private data. The wind side runs on
-free public reanalysis (ERA5) through a filter that reproduces the original wave series
-closely (correlation 0.92). The storm side can run on a storm catalogue built in-house from
-free satellite infrared imagery (GridSat-B1), which matches the original storm pattern about as
-well as, and slightly better than, a published competitor (correlation 0.90). The original
-headline numbers reproduce exactly, including 272 composite dates at the published threshold.
-Everything is a tested Python package, every reported number comes from a single driver script,
-and each step was independently cross-checked against the original code.
+## What the statistical model can and cannot say
 
-## What it adds up to
+Storms leave moist air behind, so moist inflow ahead of later storms could reflect the
+earlier storms. To examine this, the paper puts the inflow humidity into a count model with
+the strength of the wave, the wind shear and the storm activity of the day before. Alone,
+a standard step in inflow humidity goes with 4.6 percent more storm systems. With all three
+of those in the model it goes with 2.5 percent more (a range of 0.3 to 4.8), and with the
+total moisture of the column added, 2.3 percent (0.04 to 4.6).
 
-The trough-following map of storms is the solid, repeatable core, together with the finding
-that stronger waves organize storms more sharply. On top of it, the paper measures a clear thermodynamic difference between the troughs
-that grow storms and those that stay quiet. The difference is modest in the average, larger in
-how often the inflow is moist enough to matter, and visible only when the air is followed along
-its path rather than read from a fixed box. It has a two-layer structure, less dry Saharan air
-aloft over a moister, cooler layer below. The one thing the paper is careful not to overclaim
-is cause. Whether that moisture drives the storms or mainly marks a convective regime already
-under way is a question the current data leave open.
+A small association therefore remains when the others are accounted for. It does not show
+that humidity causes the storms. The paper describes the environment of active waves and
+cannot isolate a switch acting on single troughs.
+
+## Limits
+
+- The satellite record may not be uniform through time. The difference is 2.6 points in 1983
+  to 1993 and 2.1 in 1994 to 2007, but split at 1998 it is 3.3 before and an unresolved 0.5
+  after. Nothing in the paper separates a change in storms from a change in satellite
+  sampling.
+- Humidity comes from one reanalysis (ERA5), and its uncertainty is not measured here. The
+  wave troughs come from an older reanalysis, and the catalog of troughs ends at 40 E.
+- The design was set on five summers and repeated on the other twenty. Later choices were
+  applied to all of them, so the twenty are a repeat and not an untouched test.
+
+## Open data and repeatability
+
+The wind side runs on a public reanalysis (ERA5) through a filter that reproduces the
+original wave series at a correlation of 0.92 over 2000 to 2004. A storm tracker built on
+public satellite infrared imagery (GridSat-B1) matches the geography of the original storm
+record at a correlation of 0.90 over twelve test months, which tests where storms are
+counted and not the sorting of troughs. The original study's basepoint composite reproduces
+with the same 272 composite dates. Every number in the paper comes from one driver script
+and is checked against one table.

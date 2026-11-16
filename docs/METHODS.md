@@ -23,6 +23,14 @@ the equivalent-circle radius R = sqrt(N A / pi), where N is the pixel count and 
 pixel area, so a family qualifies for the CT database at R >= 90 km (about 30 pixels at
 the ISCCP DX sampling of roughly 30 km).
 
+The CS file pools the detections of every geostationary satellite position of its source.
+Where the views of two positions overlap, as they do over Africa for part of the record,
+the pooled count holds the detections of both. The wave-conditioned analysis therefore
+counts convection from the Meteosat position alone, on trough observations whose counting
+windows pass an availability criterion inferred from the detection counts.
+`scripts/build_observed_slots.py` writes the calendar of the 3-hourly slots that pass,
+`scripts/met_observed_slots.csv`.
+
 Two independent products support cross-checking. The African Easterly Wave Climatology
 (AEWC, Belanger et al., NCEI dataset C00784) provides objectively tracked wave-trough
 trajectories from curvature-vorticity anomalies, 6-hourly over 1948 to 2010, from four
@@ -66,7 +74,7 @@ identifies the space-time (rather than time-only) filtering as the operative ste
 Two composite operators act on the composite dates. The longitude-lag (Hovmoller)
 operator averages a gridded field over a latitude band and, for each lag from -6 to +6
 days, averages the band-mean field over the base dates whose lagged date falls inside the
-record. The latitude-longitude operator is the map analogue at a chosen lag. Both draw the
+record. The latitude-longitude operator is the map analog at a chosen lag. Both draw the
 statistical significance from a Monte Carlo test in which the null population is the set of
 dates with the same calendar day and hour in other years (Frank and Roundy null), so the
 resampling preserves the seasonal cycle while breaking the wave phase relationship. A
@@ -118,21 +126,29 @@ midway between two consecutive 6-hourly trough observations is counted once.
 The trough-relative signal is separated from the background cloud climatology by an
 anchor-permutation null in which whole waves keep their track shapes while anchor
 longitudes are permuted within year-month strata, so any enhancement fixed in geography
-rather than tied to the trough averages out. The peak sits at the trough axis at 1.27
-times the null background, with a randomization p of 0.001 on the selection-aware maximum
-over the -10 to +10 degree search interval.
+rather than tied to the trough averages out. The composite is confined to trough
+observations between 20 W and 20 E whose two bracketing time slots pass the availability
+criterion (6,364 observations, 44,757 systems binned) and to 12 degrees on either side of
+the trough. That is the widest region and window for which every bin of every permuted
+wave lies at longitudes the Meteosat catalog covers. The peak sits 2 degrees west of the
+trough axis at 1.24 times the null background, an excess of 131 systems, with a
+randomization p of 0.001 on the selection-aware maximum over the -10 to +10 degree search
+interval (1,000 draws).
 
-Stratifying the trough population by curvature vorticity sharpens the picture. Troughs in
-the upper amplitude tercile produce a higher convective excess at the trough (peak excess
-168 systems in the 5 to 15 N band) than troughs in the lower tercile (102), with the
-strong-minus-weak difference resolved by a paired selection-aware test.
+The concentration increases with wave amplitude. Troughs in the upper tercile of curvature
+vorticity show a peak excess of 71 systems in the 5 to 15 N band against 35 for the lower
+tercile. The strong-minus-weak difference peaks at 44 systems under a selection-aware test
+in which the two terciles are relabeled together under the shared permutation (p = 0.001).
 
-First cold-cloud detections, taken as the first observation of each CT family, are also
-enhanced near the trough. Families already colder than 200 K at first detection are
-distributed the same way. Normalized by their own binned totals, the two curves peak at
-the axis at 4.46 against 4.48 percent and hold 16.69 against 16.61 percent inside the -4
-to +2 degree core. Where a family is first detected does not separate the two sets, and
-no life-cycle transition from genesis to maturity is claimed from this figure.
+First cold-cloud detections, taken as the first observation of each CT family and counted
+once per family, scatter broadly about the trough axis (80,565 first detections, 1984 to
+2007). Families already colder than 200 K at first detection (25,423) fall in much the
+same places. Normalized by their own binned totals, the two curves peak at the axis at
+4.52 against 4.56 percent and hold 16.63 against 16.53 percent inside the -4 to +2 degree
+core. Their centroids differ by 1.87 degrees (1.61 to 2.19 when the 24 seasons are
+resampled), the deep-at-detection centroid lying farther east, which is a difference of
+shape and not a displacement of the whole curve. No life-cycle transition from genesis to
+maturity is claimed from this comparison.
 
 ## Reproducibility
 
@@ -140,7 +156,7 @@ The analysis is a single tested Python package (numpy, scipy, xarray, pandas, ma
 cartopy). Each numerical operator has unit tests on synthetic inputs with known answers,
 and the full suite covers the filter, the composite-date selection, both composite
 operators, the binning routines, the tracker, and the readers. Every non-trivial numerical
-component was checked line by line against the surviving original code by an independent line-by-line check. Input datasets and their access paths are recorded so that each
+component was checked line by line against the surviving original code. Input datasets and their access paths are recorded so that each
 figure can be regenerated from public sources, with the exception of the ISCCP CS/CT
 records, which are the original derived product.
 
@@ -152,6 +168,10 @@ not the absolute counts, and it underweights the Ethiopian Highlands. The AEWC t
 record ends in 2010 and stops at 40 E, which excludes the eastern genesis region that the
 CT record shows to be active. The CT family genesis time is taken from the family time
 coordinate rather than the day-of-month field, which is unreliable in the processed file.
+The cloud-system record is not uniform through time. Counting from one satellite position
+and screening by the availability criterion address two known sources of that and do not
+make the record uniform, so a result pooled over 1983 to 2007 describes the retained
+sample.
 
 ## References (to be completed)
 
