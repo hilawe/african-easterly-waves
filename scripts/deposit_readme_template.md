@@ -15,13 +15,22 @@ Clock convention. All times are relative to trough passage at the sampling merid
 environment sample sits at -24 h and the 48 h back-trajectories extend the record to
 -72 h. Column suffixes `m24` .. `m72` are passage-relative hours.
 
+Counting rules. The convective response and the antecedent count are taken from the
+detections of the Meteosat position of the cloud-system record. A trough is eligible only
+when every 3-hourly slot of its response and antecedent windows passes an availability
+criterion inferred from the detection counts, and the calendar of passing slots is
+`scripts/met_observed_slots.csv` in the code archive. The criterion is an inference from
+the detections and not acquisition metadata, so the tables describe the retained sample.
+
 Class labels. MCS-active and MCS-quiet are the upper and lower terciles of the forward
 mesoscale-convective response within each 10-degree longitude by calendar-month cell
 (minimum 30 troughs per cell). Activity refers to continental convection within 24 h of
 trough passage, never to tropical cyclogenesis.
 
-Tiers. `dev` is the 2000-2004 design sample, `heldout` the 20 untouched seasons
-(1983-1999 and 2005-2007), `pooled` the primary 25-season record (1983-2007).
+Tiers. `dev` is the 2000-2004 design sample, `heldout` the other 20 seasons (1983-1999
+and 2005-2007), `pooled` the primary 25-season record (1983-2007). The held-out seasons
+repeat the design and are not an untouched sample, because the deduplication, the control
+model and the counting rules were applied to all tiers after the split.
 
 ## canonical_numbers.csv
 
@@ -36,8 +45,9 @@ One row per reported statistic.
 
 ## troughs_<tier>.csv
 
-Every JAS corridor trough observation (5-20 N, 30 W to 40 E): `traj_id` (wave), `time`,
-`lat`, `lon`, `year`, `month`, `response` (forward CS-245 count), `label`.
+Every eligible trough observation of the JAS corridor (5-20 N, 30 W to 40 E), which are
+the troughs whose counting windows pass the availability criterion: `traj_id` (wave),
+`time`, `lat`, `lon`, `year`, `month`, `response` (forward CS-245 count), `label`.
 
 ## cases_<tier>_<level>.csv
 
@@ -56,7 +66,7 @@ One row per trough observation in the stratified split. Identifiers as above, pl
 Group-mean inflow path in trough-relative coordinates, one row per trajectory hour per
 class: `elapsed_h` (hours before the seed), `time_rel_h` (passage-relative), `group`,
 `mean_rel_lon` (mean parcel longitude minus trough longitude), `mean_lat`,
-`n_parcels`. Drawn as the mean inflow paths in the supply-contrast figure.
+`n_parcels`. Drawn as the mean inflow paths in Fig. 5a of the paper.
 
 ## parcels_<tier>_<level>.csv
 
@@ -106,7 +116,43 @@ The common-sample within-between decomposition of the inflow-moisture associatio
 control model's tier fits, the control ladder, the full standardized panel, the
 predictor correlation matrix and the negative-binomial dispersion sensitivity.
 `wave_estimands.csv`, `response_sensitivity.csv`, `yearstrat_sensitivity.csv`,
-`leadlag_stats.csv`, `fig3_descriptive_stats.csv`, `null_r1_fig2_stats.csv` and
-`attrition_<tier>.csv` carry the wave-unit estimands, the response-definition and
-year-stratification sensitivities, the lead-lag statistics, the Fig. 3 descriptive peaks,
-the Fig. 2 randomization result and the per-tier attrition ledger.
+`leadlag_stats.csv`, `null_r1_fig2_stats.csv` and `attrition_<tier>.csv` carry the
+wave-unit estimands, the response-definition and year-stratification sensitivities, the
+lead-lag statistics, the Fig. 2 randomization result and the per-tier attrition ledger.
+`null_r1_fig2_profile.csv` holds the curves and envelopes drawn in Fig. 2.
+
+Four files are records of a run and not tables of results. `control_model_summary.txt` is
+the text that `scripts/control_model.py` prints, with the control ladder and the
+coefficients of each specification. `control_model_design_eligible.csv.sources.json` holds
+the hashes of the two tables from which the reuse cache above was built.
+`null_r1_assignment.npz` holds the assignment matrix of the Fig. 2 randomization test, one
+row per draw and one column per wave, with its seed and the digests of the trough
+identifiers, times and longitudes it was drawn for. `null_r1_fig2.npz` holds the null
+matrix and the profile of every draw under that assignment, keyed by the seed, the number
+of draws and the number of troughs, so the figure can be redrawn without recomputing the
+null.
+
+## Tables added in the first revision
+
+- `scale_split.csv` and `scale_split_record.json`: the exact split of each class contrast
+  into parts between years, between cells within a year, between waves within a cell and
+  between passages of one wave, for the whole sample, three longitude sectors and four
+  periods. `diff` is the part, `low` and `high` the wave-cluster interval, `held_low` and
+  `held_high` the interval with the year, cell and wave means held at their sample values.
+- `catalog_sensitivity.csv` and `tierule_sensitivity.csv`: every contrast rebuilt with the
+  classes counted from every satellite position, and under the opposite rule for choosing
+  among equally long merged trajectories. The `_alt` columns hold the alternative build.
+- `sens_pooled` and `sens_tierule`: those two alternative builds themselves, with the
+  same file layout as this folder.
+- `sens_delta0`, `sens_delta50` and `sens_static`: the builds with the terrain-validity
+  margin at 0 and 50 hPa and with a static terrain footprint, in the same layout.
+- `dedup_counts.csv`: observations, trajectories and distinct pairs of time and position
+  in the corridor, as archived and after deduplication.
+- `exceedance_sensitivity.csv`: the moist-tail comparison at the 50th, 60th, 75th, 80th
+  and 90th percentiles, with the threshold and class labels held fixed in each resample.
+- `alignment_region.csv`, `alignment_band_profile.csv` and `alignment_region_profile.csv`:
+  the cross-reanalysis alignment check on the 1.5 degree band and the 0.5 degree regional
+  fields, one summary row and one composite profile for each grid.
+- `fig3_descriptive_stats.csv` and `fig3_centroid_interval.csv`: the descriptive statistics
+  of the first-detection figure (Fig. S5 of the revision) and the season-resampled
+  interval of its centroid difference.
