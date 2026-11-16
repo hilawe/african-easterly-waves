@@ -398,7 +398,9 @@ def main():
     panel_label(ax2, "b", 16)
     ax2.legend(fontsize=15); ax2.grid(alpha=0.3)
 
-    fig.tight_layout(); fig.savefig(a.out, dpi=150)
+    # 300 dots per inch on a figure 13 inches wide gives 3,900 pixels, above the 600 per inch at
+    # the two-column width of 5.5 inches that the journal prefers for line work with shading
+    fig.tight_layout(); fig.savefig(a.out, dpi=300)
     print("\nwrote", a.out)
 
 

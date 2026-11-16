@@ -303,7 +303,9 @@ def main():
     ax3.grid(alpha=0.3)
 
     fig.tight_layout()
-    fig.savefig(a.out, dpi=150)
+    # 450 dots per inch on a figure 8 inches wide gives 3,600 pixels, above the 600 per inch at
+    # the two-column width of 5.5 inches that the journal prefers for line work with shading
+    fig.savefig(a.out, dpi=450)
     print("wrote", a.out)
 
 
