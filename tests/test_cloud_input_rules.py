@@ -12,6 +12,7 @@ import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
+sys.path.insert(0, os.path.join(ROOT, "scripts"))    # so that this file also runs alone
 
 import build_observed_slots as B  # noqa: E402
 import cloud_inputs as C  # noqa: E402
