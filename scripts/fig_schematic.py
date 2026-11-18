@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-"""Compose figure F9, the two-layer signature schematic (rebuild of the approved design).
+"""Compose the two-layer signature schematic, Fig. 8 of the revised paper (rebuild of the approved design).
 
 Design grammar, per the design rulings. transport differences are drawn ONLY in the
 700 hPa arrows (the width of the Saharan-side arrow, the one route difference that is
-resolved), state differences ONLY in the 850 hPa fill; the
+resolved), state differences ONLY in the 850 hPa fill and its labels; the
 850 hPa inflow arrows are identical southwest monsoon arrows in both panels (the
 measured ground-relative origin distribution, west and south dominated); all flow
-arrows are ground-relative, stated in the legend line, with the caption noting the
+arrows are ground-relative, stated in the line beneath the panels, with the caption noting the
 850 hPa arrows reverse in the wave-relative frame; the link from prior-day convection
 to the moist layer is labeled interpretation; the theta-e glyph reads "vapor outweighs cooling"; in-panel labels are
 print-safe charcoal, colored labels use the darkest stops of their ramps, and only the
@@ -82,11 +82,15 @@ def panel(ax, active):
         # reduced Saharan-side influence (thin), an interpretation of the less northerly
         # paths and not a measured import. The monsoon-side share of the origins does
         # not differ between the classes, so no arrow is drawn for it in either panel.
+        # Both labels of this arrow stand above the 700 hPa box, over the tail of the
+        # arrow. At (8.15, 9.25) each sat on the top border of the box (y = 9.2), and
+        # the longer one reached the trough axis. The longer label is set in two lines
+        # so that it also stays clear of the words "trough axis".
         arrow(ax, (8.6, 9.0), (7.2, 7.9), SAHARA, 1.1,
-              "reduced Saharan-side influence", (8.15, 9.25), fs=8.0, ha="center")   # the longer label at the old width
+              "reduced Saharan-side\ninfluence", (8.6, 9.62), fs=8.0, ha="center")
     else:
         arrow(ax, (8.6, 9.0), (7.2, 7.9), SAHARA, 3.0,
-              "drier, warmer inflow", (8.15, 9.25), fs=8.7, ha="center")
+              "drier, warmer inflow", (8.6, 9.50), fs=8.7, ha="center")
 
     # pre-trough convective response region, west of and at the axis
     if active:

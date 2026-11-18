@@ -74,6 +74,9 @@ def main():
     axb.plot(t[seg], pb["era5"][seg], color="tab:red", lw=0.9,
              label="rebuilt from public ERA5")
     axb.set_ylabel("filtered v700 (m/s)")
+    # room above the curves for the key, which otherwise lies over the peaks of September
+    lo_b, hi_b = axb.get_ylim()
+    axb.set_ylim(lo_b, hi_b + 0.30 * (hi_b - lo_b))
     axb.legend(fontsize=7.5, loc="upper right")
     axb.grid(alpha=0.3)
     import matplotlib.dates as mdates
@@ -96,7 +99,9 @@ def main():
     axc.set_xticks(x)
     axc.set_xticklabels(pc["ym"], rotation=55, fontsize=14.5)
     axc.set_ylabel("pattern r vs legacy record")
-    axc.set_ylim(0.55, 1.0)
+    # the axis runs above 1 so that the panel label stands over the first point and not on it
+    axc.set_ylim(0.55, 1.05)
+    axc.set_yticks([0.6, 0.7, 0.8, 0.9, 1.0])
     axc.legend(fontsize=7.5, loc="lower left")
     axc.grid(alpha=0.3)
     axc.set_title("Open GridSat-B1 tracker vs legacy ISCCP record (by month)",
