@@ -182,7 +182,13 @@ No data is bundled. The analysis reads from public archives:
   National Aeronautics and Space Administration (NASA) and NCEI.
 
 Place inputs under `data/` and point the scripts in `scripts/` at them. See `docs/METHODS.md`
-for the full method and `docs/PLAIN_SUMMARY.md` for a non-technical overview.
+for the methods of the reproduction and the composites, section 2 of the paper in revision for
+the methods of its own analysis, and `docs/PLAIN_SUMMARY.md` for a non-technical overview.
+
+Three earlier exploratory scripts remain in `scripts/` (`fig_precondition.py`, `fig_developing.py`
+and `fig_moisture_budget.py`), and `validate_heldout.py` is the earlier form of the repeat on
+other seasons. They predate the revised paper, none of its numbers comes from running them, and
+their docstrings describe the questions they were written for.
 
 ## Layout
 

@@ -4,6 +4,12 @@ Draft methods text for the reproduced and extended African Easterly Wave (AEW) a
 Numbers quoted are the values produced by the Python reimplementation described here.
 They match the original NCL results where a direct comparison was possible.
 
+This page covers the reproduction of the earlier analyses and the composites built on it. The
+methods of the paper in revision at the Journal of the Atmospheric Sciences are described in
+section 2 of that paper, namely the classes of trough observations, the back-trajectories, the
+split of the contrast by scale and the count model, and the README names the modules and
+scripts that hold them.
+
 ## Data
 
 Two wind records support the wave analysis. The original study used ERA-Interim
@@ -89,8 +95,9 @@ bins systems into latitude-longitude cells within a narrow lag window.
 
 ## In-house convective tracking from GridSat-B1
 
-An in-house tracker regenerates an ISCCP-like cloud-system record from GridSat-B1, so the
-convection side of the analysis does not depend on a single external product. Brightness
+An in-house tracker regenerates an ISCCP-like cloud-system record from GridSat-B1. Its counts
+have been compared with the legacy record in space over twelve months, and the classes and
+the contrasts of the paper in revision are computed from the ISCCP record alone. Brightness
 temperature is first coarsened to about 0.28 degrees, near the ISCCP DX sampling, so that
 the equivalent-radius size cut carries the same physical meaning as in the ISCCP record.
 Systems are cold-cloud shields below 245 K containing at least one convective core below
@@ -173,7 +180,7 @@ and screening by the availability criterion address two known sources of that an
 make the record uniform, so a result pooled over 1983 to 2007 describes the retained
 sample.
 
-## References (to be completed)
+## References
 
 Belanger et al. (AEWC / NCEI C00784); Feng et al. (2023, PyFLEXTRKR; 2025, MCSMIP); Frank
 and Roundy (2006); Huang et al. (2018); Knapp et al. (2011, GridSat-B1); Machado et al.
