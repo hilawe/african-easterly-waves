@@ -41,7 +41,8 @@ One row per reported statistic.
 - `n_quiet`, `n_active` (observations); `clusters_quiet`, `clusters_active` (waves)
 - `mean_quiet`, `mean_active`, `diff` (active minus quiet), `ci_lo`, `ci_hi`
   (wave-cluster bootstrap 95 percent interval), `significant`
-- `note` (estimator details; box placement, conditionality, threshold)
+- `note` (estimator details; box placement, conditionality, threshold); `n_boot` (the
+  number of bootstrap replicates behind the interval)
 
 ## troughs_<tier>.csv
 
@@ -51,12 +52,18 @@ the troughs whose counting windows pass the availability criterion: `traj_id` (w
 
 ## cases_<tier>_<level>.csv
 
-One row per trough observation in the stratified split. Identifiers as above, plus:
+One row per classified trough observation: `case` (the row number, which the parcels table
+uses as its key), then `traj_id`, `time`, `lat`, `lon`, `year`, `month` and `label` as
+above. The response is in the troughs table and is not repeated here. Then:
 
 - `box_rh_m24`: the Eulerian box sample
-- `rh_m24`..`rh_m72` and `thetae_m24`..`thetae_m72`: along-inflow case means
-- `mix_*` and `T_*`: the vapor/temperature decomposition
-- `frac_south`..`frac_local`: origin-sector parcel fractions
+- `rh_m24`, `rh_m36`, `rh_m48`, `rh_m60`, `rh_m72` and `thetae_m24`, `thetae_m36`,
+  `thetae_m48`, `thetae_m60`, `thetae_m72`: along-inflow case means of relative humidity
+  (percent) and equivalent potential temperature (K)
+- `mix_m24`, `mix_m48`, `mix_m72` and `T_m24`, `T_m48`, `T_m72`: the vapor/temperature
+  decomposition, mixing ratio (g/kg) and temperature (K)
+- `frac_south`, `frac_north`, `frac_east`, `frac_west`, `frac_local`: origin-sector parcel
+  fractions
 - `dlat_origin`: meridional displacement of the origin, degrees
 - `exceed_p70`: the -72 h inflow sample exceeds the tier's pooled 70th percentile
 - `antecedent`: prior-day CS-245 count (700 hPa table only)
@@ -81,7 +88,15 @@ The audited superset of `canonical_numbers.csv`. It merges the contrast and poin
 above with the model, wave-estimand and sensitivity rows written by the downstream
 producers, and it is what `tools/number_audit.py` checks the manuscript against. Same key
 columns as `canonical_numbers.csv`, plus `irr`, `irr_lo`, `irr_hi` and `pvalue` for the
-model rows.
+model rows. A row also keeps the columns of the table it was read from, each described with
+that table below and empty on the rows of other tables: `n_obs`, `n_waves`,
+`sens_season_lo`, `sens_season_hi`, `n_top`, `n_bottom`, `n_active_only`, `n_quiet_only`,
+`peak_excess`, `peak_rel_lon`, `peak_ratio`, `p_value`, `simult_half_width`, `n_troughs`,
+`n_matched`, `n_binned`, `n_draws`, `n_troughs_region`, `region_half_deg`,
+`window_half_deg`, `peak_count`, `n_events`, `n_seasons`, `year_gap`, `n_cells`,
+`n_cells_kept`, `n_in_kept_cells`, `median_cell`, `smallest_cell`, `ratio` and
+`threshold`. `n_total` is the sum of `n_quiet` and `n_active` on the rows of the
+year-matched comparison.
 
 ## eligible_troughs.csv
 
@@ -107,7 +122,9 @@ The published design table above is derived from it on every run.
 
 The common-sample within-between decomposition of the inflow-moisture association:
 `component` (`between_wave`, `within_wave`, `equality`), `irr`, `irr_lo`, `irr_hi`,
-`pvalue`, and `chi2` on the equality row.
+`pvalue`, and `chi2` on the equality row. `n_obs` and `n_waves` are the observations and
+waves of the common sample, and `rh_sd` is the standard deviation of the inflow humidity,
+in percentage points, to which the ratios are scaled.
 
 ## Other model and sensitivity tables
 
@@ -120,6 +137,72 @@ predictor correlation matrix and the negative-binomial dispersion sensitivity.
 wave-unit estimands, the response-definition and year-stratification sensitivities, the
 lead-lag statistics, the Fig. 2 randomization result and the per-tier attrition ledger.
 `null_r1_fig2_profile.csv` holds the curves and envelopes drawn in Fig. 2.
+
+The columns of these tables:
+
+- `control_model_coeffs.csv`: one row per fit. `moisture` (the humidity predictor of the
+  fit, `inflow_rh` or `box_rh`), `spec` (`primary`, with wave amplitude, shear and the
+  antecedent count beside the fixed effects, or `full+tcwv`, with column water vapor
+  added), `tier`, `n` (observations), `waves`, `coef` and `se` (the logarithm of the
+  incidence-rate ratio for one standard deviation of the humidity predictor, and its
+  wave-clustered standard error), `pvalue`, `irr`, `irr_lo`, `irr_hi` (the ratio and its
+  95 percent interval).
+- `control_model_ladder.csv`: the inflow-humidity term as controls are added. `step` (the
+  controls in the model, added in turn), `coef`, `ci_lo`, `ci_hi` (the logarithm of the
+  ratio and its interval), `pvalue`, `irr`, `irr_lo`, `irr_hi`.
+- `control_model_panel.csv`: the same columns for every `predictor` of the model with
+  column water vapor, each scaled to one standard deviation.
+- `control_model_predictor_corr.csv`: the correlations among the five predictors. The
+  first column has no name and holds the predictor of the row.
+- `control_model_sensitivities.csv`: `model` (`poisson_cluster`, the primary fit, or
+  `negbin2_cluster`, the negative-binomial fit), `predictor`, `coef`, `irr`, `irr_lo`,
+  `irr_hi`, `pvalue`, `note`.
+- `wave_estimands.csv`: one row per `estimand`, each a difference of the inflow humidity
+  at -72 h, 700 hPa, in percentage points. `wave_unit` compares the waves in the upper and
+  lower terciles of the wave-mean response (`n_top`, `n_bottom`). `paired_min1` and
+  `paired_min3` take, within each wave that has at least one or at least three
+  observations in each class, the MCS-active mean less the MCS-quiet mean. `between_only`
+  compares the waves seen in one class only (`n_active_only`, `n_quiet_only`),
+  standardized within cells. `diff`, `ci_lo`, `ci_hi` (waves resampled);
+  `sens_season_lo`, `sens_season_hi` (the interval when seasons are resampled first and
+  waves within them); `n_waves` (waves that enter the estimand); `n_dropped_missing_H` and
+  `n_dropped_small_cell` (waves left out for a missing humidity value or a cell below the
+  minimum); `n_mixed_unusable` (waves in both classes whose class means are unavailable);
+  `n_boot`; `note`.
+- `response_sensitivity.csv`: one row per `variant` of the response definition. `dlon`
+  (half-width of the counting box, degrees), `win_h` (forward window, hours), `split`
+  (terciles, median halves or outer quartiles), `n_window_unobserved` (eligible troughs
+  left out of the variant because a slot of its own window was not observed or lay past
+  the season), `n_quiet`, `n_active`, `diff`, `ci_lo`, `ci_hi`, `significant`, `n_boot`.
+- `yearstrat_sensitivity.csv`: `split` (`monthlon`, the canonical classes; `yearmonthlon`,
+  the year-matched classes; `monthlon_kept_cells`, the canonical classes on the troughs of
+  the cells the year-matched split keeps), `diff`, `ci_lo`, `ci_hi`, `n_quiet`,
+  `n_active`, `clusters_quiet`, `clusters_active`, `year_gap` (the mean year of the
+  MCS-active class less that of the MCS-quiet class), `n_cells` (cells that hold a
+  trough), `n_cells_kept` (cells at or above the minimum), `n_in_kept_cells` (troughs in
+  those), `median_cell` and `smallest_cell` (cell sizes), `n_boot`, `significant`.
+- `leadlag_stats.csv`: one row per `statistic` with its `value`, and `ci_lo`, `ci_hi`
+  where an interval is drawn (the slope of the lead with longitude, hours per degree).
+- `null_r1_fig2_stats.csv`: one row per `subset` of the composite (`all`, the `weak` and
+  `strong` amplitude terciles, and `strong_minus_weak`), with `figure` naming the figure.
+  `peak_excess` (the largest excess of the observed count over the mean of the draws),
+  `peak_rel_lon` (where it stands, degrees from the trough, east positive), `peak_ratio`
+  (the observed count over the mean of the draws there), `p_value`, `n_draws`,
+  `simult_half_width` (half-width of the simultaneous 95 percent envelope),
+  `n_troughs_region` (trough observations of the region), `n_troughs` (those whose slots
+  pass the availability criterion), `n_matched` (those that enter the composite),
+  `n_binned` (systems binned), `region_half_deg` and `window_half_deg` (half-widths of the
+  region of troughs and of the composite window, degrees).
+- `null_r1_fig2_profile.csv`: one row per bin of `rel_lon`. For each of the three
+  subsets, the excess over the mean of the draws (`excess_all`, `excess_weak`,
+  `excess_strong`), the pointwise 95 percent band of the draws (`point_lo_all`,
+  `point_hi_all`, `point_lo_weak`, `point_hi_weak`, `point_lo_strong`, `point_hi_strong`),
+  the half-width of the simultaneous envelope (`simult_half_width_all`,
+  `simult_half_width_weak`, `simult_half_width_strong`) and whether the excess lies
+  outside it (`outside_simultaneous_all`, `outside_simultaneous_weak`,
+  `outside_simultaneous_strong`).
+- `attrition_<tier>.csv`: `tier`, `level`, `statistic` (the count or fraction named),
+  `diff` (its value) and `note`.
 
 Four files are records of a run and not tables of results. `control_model_summary.txt` is
 the text that `scripts/control_model.py` prints, with the control ladder and the
@@ -137,22 +220,55 @@ null.
 - `scale_split.csv` and `scale_split_record.json`: the exact split of each class contrast
   into parts between years, between cells within a year, between waves within a cell and
   between passages of one wave, for the whole sample, three longitude sectors and four
-  periods. `diff` is the part, `low` and `high` the wave-cluster interval, `held_low` and
+  periods. Each row is one `quantity` (`total`, `years`, `cells`, `waves`, `passages`, and
+  the two sums `years and cells` and `waves and passages`) of one `measure` under one
+  labeling (`labels`) in one `sample`, with the `background` over which the means run.
+  `diff` is the part, `low` and `high` the wave-cluster interval, `held_low` and
   `held_high` the interval with the year, cell and wave means held at their sample values.
+  `draws_used` counts the replicates in which the quantity could be computed and
+  `replicate_median` is their median. `n_quiet`, `n_active`, `waves_quiet` and
+  `waves_active` are the observations and waves of the two classes, and `waves_resampled`
+  the waves of the sample.
 - `catalog_sensitivity.csv` and `tierule_sensitivity.csv`: every contrast rebuilt with the
   classes counted from every satellite position, and under the opposite rule for choosing
-  among equally long merged trajectories. The `_alt` columns hold the alternative build.
-- `sens_pooled` and `sens_tierule`: those two alternative builds themselves, with the
-  same file layout as this folder.
+  among equally long merged trajectories. The key columns are those of
+  `canonical_numbers.csv`. `diff`, `ci_lo`, `ci_hi` and `significant` are the canonical
+  build, `diff_alt`, `ci_lo_alt`, `ci_hi_alt` and `significant_alt` the alternative,
+  `delta` is the alternative less the canonical, and `verdict_flips` is true where
+  `significant` differs between the two.
+- `sens_pooled` and `sens_tierule`: those two alternative builds themselves. Each folder
+  holds the nine tables that a build writes for the pooled tier (`canonical_numbers.csv`,
+  `troughs_pooled.csv`, `attrition_pooled.csv`, and the cases, parcels and paths tables at
+  700 and 850 hPa) and this README.
 - `sens_delta0`, `sens_delta50` and `sens_static`: the builds with the terrain-validity
-  margin at 0 and 50 hPa and with a static terrain footprint, in the same layout.
-- `dedup_counts.csv`: observations, trajectories and distinct pairs of time and position
-  in the corridor, as archived and after deduplication.
+  margin at 0 and 50 hPa and with a static terrain footprint, with the same nine tables.
+- `dedup_counts.csv`: one row per `stage` (`as_archived`, `deduplicated`) with the
+  `observations`, `trajectories` and `distinct_time_positions` (distinct pairs of time and
+  position) of the corridor. `pct_archived_repeats` is the percentage of archived
+  observations that repeat another pair, and `pct_waves_of_trajectories` the deduplicated
+  trajectories as a percentage of the archived ones. Both stand on both rows.
 - `exceedance_sensitivity.csv`: the moist-tail comparison at the 50th, 60th, 75th, 80th
   and 90th percentiles, with the threshold and class labels held fixed in each resample.
+  `percentile`, `threshold` (the humidity at that percentile of the classified
+  observations), `mean_quiet` and `mean_active` (percent of each class above it), `diff`,
+  `ratio` (MCS-active over MCS-quiet), `n_quiet`, `n_active`, `ci_lo`, `ci_hi`,
+  `clusters_quiet`, `clusters_active`, `n_boot`, `significant`.
 - `alignment_region.csv`, `alignment_band_profile.csv` and `alignment_region_profile.csv`:
   the cross-reanalysis alignment check on the 1.5 degree band and the 0.5 degree regional
-  fields, one summary row and one composite profile for each grid.
+  fields, one summary row and one composite profile for each grid. The summary has `grid`,
+  `seasons`, `grid_step_deg`, `n_matched` (troughs composited), `n_window_outside_grid`
+  (troughs left out because the window of offsets leaves the grid), `peak_deg` (offset of
+  the composite's peak), `centroid_deg` (centroid of its positive lobe),
+  `median_argmax_deg` (median over troughs of the offset of each trough's own maximum) and
+  `n_argmax` (troughs behind that median). A profile has `offset_deg`,
+  `mean_curvature_vorticity` (the composite at that offset) and `n` (troughs behind it).
 - `fig3_descriptive_stats.csv` and `fig3_centroid_interval.csv`: the descriptive statistics
   of the first-detection figure (Fig. S5 of the revision) and the season-resampled
-  interval of its centroid difference.
+  interval of its centroid difference. The first has one row per `subset` of `figure`:
+  `n_events` (first detections), `n_repeats_dropped` (rows the file lists more than once,
+  counted once), `n_matches` (matches of a detection with a trough), `bandmean_profile_total`
+  (the sum of the 5-15 N mean profile, which is the base of the shares), `peak_count`,
+  `peak_rel_lon`, `peak_frac_pct` (the peak bin as a share of that base), `share_core_pct`
+  (the share within -4 to +2 degrees), `share_west_pct` (the share west of the axis) and
+  `centroid_rel_lon`. The second has `centroid_all`, `centroid_deep`, their `diff` with
+  `ci_lo` and `ci_hi`, `n_seasons`, `n_boot` and `significant`.
