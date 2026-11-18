@@ -1,25 +1,23 @@
 #!/usr/bin/env python
-"""Held-out replication of the Lagrangian moisture-supply contrast.
+"""The earlier form of the repeat of the Lagrangian moisture-supply contrast on other seasons.
 
-The analysis was designed and refined on 2000-2004 (the development sample), which raises
-the adaptive-analysis question: would the same pipeline, frozen, find the same signal in
-seasons it has never seen? The convection record spans 1983-2007, so 20 JAS seasons
-(1983-1999 and 2005-2007) are available as held-out data. This script runs the EXACT
-frozen baseline on any year set, with every constant identical to the development
-analysis: forward response in a trough-relative box (half-width 8 deg, 5-15 N, 24 h),
+KEPT FOR ITS HISTORY AND FOR `parse_years`, which the current drivers import. This script
+counts convection from every satellite position of the cloud-system file and applies no
+availability criterion, so its numbers are not those of the revised paper. The paper's
+values for every tier of seasons are written by scripts/build_deposit.py.
+
+The analysis was designed and refined on 2000-2004 (the design sample). The convection
+record spans 1983-2007, so 20 JAS seasons (1983-1999 and 2005-2007) are available for a
+repeat of the same pipeline. This script runs the baseline of that time on any year set,
+with forward response in a trough-relative box (half-width 8 deg, 5-15 N, 24 h),
 terciles within 10-degree longitude x calendar-month cells (minimum 30 per cell), 9
 parcels per trough integrated 48 h backward at 700 hPa through 0.5-degree ERA5 winds, and
-the wave-cluster bootstrap. Nothing is tuned here; there are no free parameters.
+the wave-cluster bootstrap. Choices made after the first fit were applied to every tier
+of seasons, so the other twenty are a repeat of the fit and not an untouched test.
 
 Reported per run: the Eulerian box contrast at -24 h, the Lagrangian along-inflow
-contrast at -72 h relative to trough passage (the headline), the wave-level estimand, and
-a year-block interval (which becomes real inference at 20 clusters rather than the
-5-cluster stress check of the development sample).
-
-Development-sample reference values (2000-2004): Eulerian +0.65 (-0.1..+1.5) ns;
-Lagrangian -72 h +1.82 (+0.4..+3.1); wave-level +0.62 (-0.3..+1.6) ns. Interval
-endpoints move in the second decimal between runs (per-script bootstrap streams);
-the canonical intervals are the deposit driver's (scripts/build_deposit.py).
+contrast at -72 h relative to trough passage, the wave-level estimand, and a year-block
+interval.
 """
 
 import argparse

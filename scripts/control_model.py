@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-"""Continuous-response control model for the moisture-conditioning claim.
+"""Count model of the forward convective response on the inflow humidity and its controls.
 
-The trough-relative composite and the developing/non-developing split are outcome-
-conditioned, which a referee can read as a bare precursor association. This asks the
-sharper question directly: does the pre-trough 700 hPa inflow moisture still predict the
-forward mesoscale-convective response after controlling for the other environmental
-axes a reviewer would name, and does the relationship hold out of sample?
+The classes of the paper are defined by the outcome, so a contrast between them cannot say
+whether the humidity of the inflow stays associated with the response once other parts of
+the environment are accounted for. This model asks that as a conditional association. It
+does not establish a causal effect of moisture, since antecedent convection can be a
+confounder or a mediator and the design cannot tell the two apart.
 
 Design. Every corridor trough (5-20 N, 30 W to 40 E, JAS) is one observation. The
 response is the forward CS-245 count in a trough-relative box over the next 24 h (the
@@ -13,11 +13,10 @@ same count that defines the MCS-active and MCS-quiet classes, used here as a con
 outcome). The predictors are standardized to pooled unit variance so their coefficients
 are comparable:
 
-  inflow_rh   the along-inflow 700 hPa relative humidity 72 h before passage (the paper's
-              Lagrangian mechanism variable; response-independent, since the back-
-              trajectories never see the outcome)
-  box_rh      the fixed-frame 700 hPa box relative humidity 24 h before passage (the
-              diluted Eulerian measure, run as an alternative moisture predictor)
+  inflow_rh   the along-inflow 700 hPa relative humidity 72 h before passage (sampled on
+              isobaric back-trajectories, which never see the outcome)
+  box_rh      the fixed-box 700 hPa relative humidity 24 h before passage (run as an
+              alternative moisture predictor)
   antecedent  the prior-day CS-245 count near the box (t-48 h .. t-24 h)
   amplitude   the trough-mean curvature vorticity (wave-amplitude proxy)
   shear       the 600-925 hPa box shear 24 h before passage
@@ -25,12 +24,12 @@ are comparable:
 
 with longitude-bin-by-month and calendar-year fixed effects. The model is a Poisson GLM
 with cluster-robust standard errors on the wave (traj_id). Clustering protects the
-inference against within-wave dependence and variance misspecification; it does not make
+inference against within-wave dependence and variance misspecification. It does not make
 the Poisson mean-variance relation an overdispersion model, which is why the
 negative-binomial sensitivity exists. The clustering matches the wave-cluster bootstrap
 used elsewhere. The model is fitted on the development sample (2000-2004), on the 20
-held-out seasons, and on the pooled record; a moisture coefficient that stays positive
-and significant across the three tiers is the out-of-sample validation.
+other seasons, and on the pooled record. Choices made after the first fit were applied to
+all three, so the 20 seasons are a repeat of the fit and not an untouched test.
 
 Writes control_model_summary.txt and control_model_coeffs.csv under --outdir.
 """
@@ -113,8 +112,8 @@ def _freshness_path(cache):
 def write_freshness_record(cache, dep_dir):
     """Record the digests of the two anchor tables the cache was built against.
 
-    THIS RECORDS NOTHING ABOUT THE CACHE ITSELF, and the omission is the design. Round
-    10 showed that a manifest hashing the cache is self-authorizing, because anything
+    THIS RECORDS NOTHING ABOUT THE CACHE ITSELF, and the omission is the design. A
+    manifest hashing the cache is self-authorizing, because anything
     this program writes about its own output can be rewritten by running this program
     again. So the record answers only the one question no other mechanism can answer,
     which is whether the anchors on disk are the ones the cache was built from. Row
@@ -730,8 +729,8 @@ def main():
 
     lines, rows = [ladder(df, scaler_mean, scaler_std)], []
     # PRIMARY spec = one moisture measure + the three non-moisture controls; FULL spec
-    # adds the collinear TCWV. inflow_rh is the Lagrangian mechanism variable; box_rh is
-    # the diluted fixed-frame measure, reported as a robustness comparison.
+    # adds the collinear TCWV. inflow_rh is the humidity along the inflow, and box_rh is
+    # the fixed-box measure, reported as a comparison.
     SPECS = [("primary", ["antecedent", "amplitude", "shear"]),
              ("full+tcwv", ["antecedent", "amplitude", "shear", "tcwv"])]
     for moisture in ("inflow_rh", "box_rh"):

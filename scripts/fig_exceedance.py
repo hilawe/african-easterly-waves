@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 """Supplementary exceedance figure, from canonical tables.
 
-The magnitude paragraph argues that a small mean shift in inflow moisture converts into a
-substantial change in the probability of crossing the moist threshold, because deep
-convection responds nonlinearly to free-tropospheric humidity. This figure shows that
-conversion directly: the cumulative distributions of the -72 h along-inflow 700 hPa
-relative humidity for the two classes, with the exceedance probabilities at the pooled
-70th percentile annotated.
+The figure shows the two humidity distributions behind the moist-tail comparison of the
+paper. It draws the cumulative distributions of the -72 h along-inflow 700 hPa relative
+humidity for the two classes, with the share of each class above the pooled 70th
+percentile annotated. It compares two distributions of humidity and does not measure a
+rainfall response.
 
 A pure consumer of the canonical deposit: the per-selected-trough along-inflow humidity
 (``rh_m72`` in cases_<tier>_<level>.csv) and the canonical exceedance statistics

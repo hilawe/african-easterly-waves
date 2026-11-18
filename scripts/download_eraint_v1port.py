@@ -6,8 +6,8 @@ WHY THIS IS A DIFFERENT RETRIEVAL FROM THE ERA5 ONE, and why it is worth its cos
 The ERA5 retrieval exists to run version 1's method on a modern reanalysis, which is the
 science. This one exists to find out whether the port is version 1 at all.
 
-The original is now executable under Octave, but was not when this was written, and five review
-rounds found twenty-three places the port's reading of it was wrong. Reading harder is not
+The original is now executable under Octave, but was not when this was written, and repeated
+checks found twenty-three places the port's reading of it was wrong. Reading harder is not
 the instrument. The instrument is version 1's own published output, NCEI C00784, which is
 in `data/aewc` for 1983 to 2007. Running the port on the reanalysis version 1 used, over a
 year the record covers, and comparing the tracks is the only check available that does not

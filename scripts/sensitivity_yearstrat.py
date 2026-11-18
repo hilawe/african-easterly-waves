@@ -3,8 +3,8 @@
 
 The canonical split stratifies the response terciles within longitude-by-calendar-month
 cells, which matches the two classes in geography and season but NOT in year: the
-detection catalog's annual abundance varies severalfold across 1983-2007, and the
-MCS-active class sits about four years later on average than the MCS-quiet class. This
+detection catalog's annual abundance varies across 1983-2007, and the mean year of the
+MCS-active class differs from that of the MCS-quiet class (column `year_gap`). This
 harness quantifies what that temporal imbalance contributes to the headline contrast by
 re-splitting the SAME eligible sample within year-by-month-by-longitude cells, so the
 two classes are matched in year as well, and recomputing the -72 h along-inflow 700 hPa

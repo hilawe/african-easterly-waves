@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-"""Compose figure F8, the organization-axis control, from the deposit driver's table.
+"""Compose the figure of the organization-axis control, Fig. 7 of the revised paper, from the deposit driver's table.
 
-The point of F8 is a shape contrast under identical machinery: the 600-925 hPa shear
-deficit shrinks as the sampling box moves upstream and is indistinguishable from zero
-at the wave level, while the 700 hPa moisture contrast grows along the tracked inflow
-and survives collapse to the wave level. Panel (a) draws the shear estimands (meridian
+The figure sets two patterns side by side under identical machinery. The point values of
+the 600-925 hPa shear deficit shrink as the sampling box moves west and at the wave
+level, while those of the 700 hPa moisture contrast grow along the tracked inflow.
+Neither pattern is tested as a trend. Panel (a) draws the shear estimands (meridian
 box, displaced boxes, wave level); panel (b) draws the moisture estimands (meridian
 box, the tracked inflow at -48 and -72 h, wave level). Every value is read from
 deposit/canonical_numbers.csv; this script draws and annotates only.

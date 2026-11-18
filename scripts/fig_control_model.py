@@ -2,10 +2,10 @@
 """Compose the control-model supplement figure from the deposit tables.
 
 Panel (a): the along-inflow moisture effect (incidence-rate ratio per standard
-deviation) as environmental controls are added, showing it fall toward one once
+deviation) as environmental controls are added, showing it decrease as
 antecedent convection and column water vapor enter. Panel (b): the full standardized
-panel, showing antecedent convection as the dominant term and the moisture term
-indistinguishable from one. All values from control_model_ladder.csv and
+panel, in which antecedent convection is the largest term and a small positive
+moisture term remains. All values from control_model_ladder.csv and
 control_model_panel.csv (run scripts/control_model.py first). Draws only.
 
 Writes fig_control_model.png (300 dpi).
